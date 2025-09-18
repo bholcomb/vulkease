@@ -18,18 +18,33 @@
 #define VE_MAX_EXTENSIONS 64
 #define VE_MAX_LAYERS 16
 
-// Required extensions for VulkEase 2.0
-static const char* REQUIRED_INSTANCE_EXTENSIONS[] = {
+// Base required extensions for VulkEase 2.0
+static const char* BASE_INSTANCE_EXTENSIONS[] = {
     VK_KHR_SURFACE_EXTENSION_NAME,
+    VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+    VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME
+};
+
+// Platform-specific surface extensions (define constants if not available)
+#ifndef VK_KHR_XLIB_SURFACE_EXTENSION_NAME
+#define VK_KHR_XLIB_SURFACE_EXTENSION_NAME "VK_KHR_xlib_surface"
+#endif
+#ifndef VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME
+#define VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME "VK_KHR_wayland_surface"
+#endif
+#ifndef VK_MVK_MACOS_SURFACE_EXTENSION_NAME
+#define VK_MVK_MACOS_SURFACE_EXTENSION_NAME "VK_MVK_macos_surface"
+#endif
+
+static const char* PLATFORM_SURFACE_EXTENSIONS[] = {
 #ifdef _WIN32
     VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
 #elif defined(__linux__)
-    // We'll add surface extensions dynamically based on what's available
+    VK_KHR_XLIB_SURFACE_EXTENSION_NAME,
+    VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME,
 #elif defined(__APPLE__)
     VK_MVK_MACOS_SURFACE_EXTENSION_NAME,
 #endif
-    VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
-    VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME
 };
 
 static const char* REQUIRED_DEVICE_EXTENSIONS[] = {
@@ -359,8 +374,23 @@ VEContext* veCreateContext(const char* applicationName) {
         return NULL;
     }
     
-    if (!checkInstanceExtensionSupport(REQUIRED_INSTANCE_EXTENSIONS, 
-                                      sizeof(REQUIRED_INSTANCE_EXTENSIONS) / sizeof(REQUIRED_INSTANCE_EXTENSIONS[0]))) {
+    // Build the same extension list we'll use for instance creation to check support
+    const char* allExtensions[VE_MAX_EXTENSIONS];
+    uint32_t allExtensionCount = 0;
+    
+    // Add base extensions
+    uint32_t baseCount = sizeof(BASE_INSTANCE_EXTENSIONS) / sizeof(BASE_INSTANCE_EXTENSIONS[0]);
+    for (uint32_t i = 0; i < baseCount && allExtensionCount < VE_MAX_EXTENSIONS; i++) {
+        allExtensions[allExtensionCount++] = BASE_INSTANCE_EXTENSIONS[i];
+    }
+    
+    // Add platform-specific surface extensions
+    uint32_t platformCount = sizeof(PLATFORM_SURFACE_EXTENSIONS) / sizeof(PLATFORM_SURFACE_EXTENSIONS[0]);
+    for (uint32_t i = 0; i < platformCount && allExtensionCount < VE_MAX_EXTENSIONS; i++) {
+        allExtensions[allExtensionCount++] = PLATFORM_SURFACE_EXTENSIONS[i];
+    }
+    
+    if (!checkInstanceExtensionSupport(allExtensions, allExtensionCount)) {
         veSetError("Required Vulkan instance extensions not available");
         free(context);
         return NULL;
@@ -372,6 +402,9 @@ VEContext* veCreateContext(const char* applicationName) {
         validationEnabled = true;
     }
 #endif
+    
+    strcpy(context->applicationName, applicationName);
+    context->validationEnabled = validationEnabled;
     
     VkApplicationInfo appInfo = {0};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -385,9 +418,9 @@ VEContext* veCreateContext(const char* applicationName) {
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &appInfo;
     
-    uint32_t extensionCount = sizeof(REQUIRED_INSTANCE_EXTENSIONS) / sizeof(REQUIRED_INSTANCE_EXTENSIONS[0]);
-    createInfo.enabledExtensionCount = extensionCount;
-    createInfo.ppEnabledExtensionNames = REQUIRED_INSTANCE_EXTENSIONS;
+    // Reuse the extension list we already built and validated
+    createInfo.enabledExtensionCount = allExtensionCount;
+    createInfo.ppEnabledExtensionNames = allExtensions;
     
     if (validationEnabled) {
         createInfo.enabledLayerCount = sizeof(VALIDATION_LAYERS) / sizeof(VALIDATION_LAYERS[0]);

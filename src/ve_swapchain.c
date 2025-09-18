@@ -1,17 +1,63 @@
 /**
  * @file ve_swapchain.c
  * @brief Swapchain and Presentation Implementation
+ * 
+ * Platform-specific surface creation for Windows, Linux, and macOS.
+ * 
+ * Window handle format by platform:
+ * - Windows: windowHandle = HWND (window handle)
+ * - Linux X11: windowHandle = uintptr_t[2] where [0] = Display*, [1] = Window  
+ * - Linux Wayland: windowHandle = uintptr_t[2] where [0] = wl_display*, [1] = wl_surface*
+ * - macOS: windowHandle = NSView* (Metal view)
  */
 
 #include "ve_internal.h"
+#include <math.h>
 
 #ifdef _WIN32
 #include <windows.h>
 #elif defined(__linux__)
-#include <X11/Xlib.h>
-#include <wayland-client.h>
+// Define platform-specific types manually to avoid header dependencies
+typedef struct Display Display;
+typedef unsigned long Window;
+typedef struct wl_display wl_display;
+typedef struct wl_surface wl_surface;
+
+// Define flag types first
+typedef VkFlags VkXlibSurfaceCreateFlagsKHR;
+typedef VkFlags VkWaylandSurfaceCreateFlagsKHR;
+
+// Define Vulkan surface structures manually
+typedef struct VkXlibSurfaceCreateInfoKHR {
+    VkStructureType    sType;
+    const void*        pNext;
+    VkXlibSurfaceCreateFlagsKHR flags;
+    Display*           dpy;
+    Window             window;
+} VkXlibSurfaceCreateInfoKHR;
+
+typedef struct VkWaylandSurfaceCreateInfoKHR {
+    VkStructureType    sType;
+    const void*        pNext;
+    VkWaylandSurfaceCreateFlagsKHR flags;
+    struct wl_display* display;
+    struct wl_surface* surface;
+} VkWaylandSurfaceCreateInfoKHR;
+
+// Define function pointer types
+typedef VkResult (VKAPI_PTR *PFN_vkCreateXlibSurfaceKHR)(VkInstance instance, const VkXlibSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
+typedef VkResult (VKAPI_PTR *PFN_vkCreateWaylandSurfaceKHR)(VkInstance instance, const VkWaylandSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
+
+// Define structure type constants
+#ifndef VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR
+#define VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR 1000004000
+#endif
+#ifndef VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR  
+#define VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR 1000006000
+#endif
+
 #elif defined(__APPLE__)
-#include <Cocoa/Cocoa.h>
+// macOS headers will be included conditionally
 #endif
 
 // =============================================================================
@@ -24,6 +70,7 @@ VkResult veCreateSurface(VEContextInternal* context, void* windowHandle, VkSurfa
     }
 
 #ifdef _WIN32
+    // Windows surface creation
     VkWin32SurfaceCreateInfoKHR createInfo = {0};
     createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
     createInfo.hinstance = GetModuleHandle(NULL);
@@ -39,22 +86,39 @@ VkResult veCreateSurface(VEContextInternal* context, void* windowHandle, VkSurfa
     return vkCreateWin32SurfaceKHR(context->instance, &createInfo, NULL, surface);
 
 #elif defined(__linux__)
-    // Assume X11 for simplicity - in real implementation would detect window system
-    VkXlibSurfaceCreateInfoKHR createInfo = {0};
-    createInfo.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
-    createInfo.dpy = XOpenDisplay(NULL);
-    createInfo.window = (Window)(uintptr_t)windowHandle;
-
+    // Linux surface creation - try X11 first, then Wayland
+    // Note: In a real implementation, you would detect the windowing system at runtime
+    
+    // Try X11 surface creation
     PFN_vkCreateXlibSurfaceKHR vkCreateXlibSurfaceKHR = 
         (PFN_vkCreateXlibSurfaceKHR)vkGetInstanceProcAddr(context->instance, "vkCreateXlibSurfaceKHR");
     
-    if (!vkCreateXlibSurfaceKHR) {
-        return VK_ERROR_EXTENSION_NOT_PRESENT;
+    if (vkCreateXlibSurfaceKHR) {
+        VkXlibSurfaceCreateInfoKHR createInfo = {0};
+        createInfo.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
+        createInfo.dpy = (Display*)((uintptr_t*)windowHandle)[0];  // Display* passed as first element
+        createInfo.window = (Window)((uintptr_t*)windowHandle)[1]; // Window passed as second element
+        
+        return vkCreateXlibSurfaceKHR(context->instance, &createInfo, NULL, surface);
     }
     
-    return vkCreateXlibSurfaceKHR(context->instance, &createInfo, NULL, surface);
+    // Try Wayland surface creation if X11 failed
+    PFN_vkCreateWaylandSurfaceKHR vkCreateWaylandSurfaceKHR = 
+        (PFN_vkCreateWaylandSurfaceKHR)vkGetInstanceProcAddr(context->instance, "vkCreateWaylandSurfaceKHR");
+    
+    if (vkCreateWaylandSurfaceKHR) {
+        VkWaylandSurfaceCreateInfoKHR createInfo = {0};
+        createInfo.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
+        createInfo.display = (struct wl_display*)((uintptr_t*)windowHandle)[0];
+        createInfo.surface = (struct wl_surface*)((uintptr_t*)windowHandle)[1];
+        
+        return vkCreateWaylandSurfaceKHR(context->instance, &createInfo, NULL, surface);
+    }
+    
+    return VK_ERROR_EXTENSION_NOT_PRESENT;
 
 #elif defined(__APPLE__)
+    // macOS surface creation
     VkMacOSSurfaceCreateInfoMVK createInfo = {0};
     createInfo.sType = VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK;
     createInfo.pView = windowHandle;
@@ -69,6 +133,10 @@ VkResult veCreateSurface(VEContextInternal* context, void* windowHandle, VkSurfa
     return vkCreateMacOSSurfaceMVK(context->instance, &createInfo, NULL, surface);
 
 #else
+    // Unsupported platform
+    (void)context;
+    (void)windowHandle; 
+    (void)surface;
     return VK_ERROR_FEATURE_NOT_PRESENT;
 #endif
 }
