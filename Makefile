@@ -27,8 +27,8 @@ INCLUDES = -I$(SRC_DIR) -I$(EXTERNAL_DIR) -I/usr/include/vulkan
 # Libraries to link against
 LIBS = -lvulkan -lm -ldl -lpthread -lstdc++
 
-# Source files (exclude problematic files)
-C_SOURCES = $(filter-out $(SRC_DIR)/ve_debug.c $(SRC_DIR)/ve_swapchain.c, $(wildcard $(SRC_DIR)/*.c))
+# Source files (exclude problematic debug file)
+C_SOURCES = $(filter-out $(SRC_DIR)/ve_debug.c, $(wildcard $(SRC_DIR)/*.c))
 CXX_SOURCES = $(wildcard $(SRC_DIR)/*.cpp)
 
 # Object files
