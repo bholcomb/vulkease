@@ -1,9 +1,10 @@
 /**
  * @file ve_texture.c
- * @brief Texture Management Implementation  
+ * @brief Texture Management Implementation
  */
 
 #include "ve_internal.h"
+#include <math.h>
 
 // =============================================================================
 // Bindless Descriptor Management
