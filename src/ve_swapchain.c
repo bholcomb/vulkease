@@ -17,47 +17,13 @@
 #ifdef _WIN32
 #include <windows.h>
 #elif defined(__linux__)
-// Define platform-specific types manually to avoid header dependencies
-typedef struct Display Display;
-typedef unsigned long Window;
-typedef struct wl_display wl_display;
-typedef struct wl_surface wl_surface;
-
-// Define flag types first
-typedef VkFlags VkXlibSurfaceCreateFlagsKHR;
-typedef VkFlags VkWaylandSurfaceCreateFlagsKHR;
-
-// Define Vulkan surface structures manually
-typedef struct VkXlibSurfaceCreateInfoKHR {
-    VkStructureType    sType;
-    const void*        pNext;
-    VkXlibSurfaceCreateFlagsKHR flags;
-    Display*           dpy;
-    Window             window;
-} VkXlibSurfaceCreateInfoKHR;
-
-typedef struct VkWaylandSurfaceCreateInfoKHR {
-    VkStructureType    sType;
-    const void*        pNext;
-    VkWaylandSurfaceCreateFlagsKHR flags;
-    struct wl_display* display;
-    struct wl_surface* surface;
-} VkWaylandSurfaceCreateInfoKHR;
-
-// Define function pointer types
-typedef VkResult (VKAPI_PTR *PFN_vkCreateXlibSurfaceKHR)(VkInstance instance, const VkXlibSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
-typedef VkResult (VKAPI_PTR *PFN_vkCreateWaylandSurfaceKHR)(VkInstance instance, const VkWaylandSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
-
-// Define structure type constants
-#ifndef VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR
-#define VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR 1000004000
-#endif
-#ifndef VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR  
-#define VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR 1000006000
-#endif
-
+#include <X11/Xlib.h>
+#include <wayland-client.h>
+#include <vulkan/vulkan_xlib.h>
+#include <vulkan/vulkan_wayland.h>
 #elif defined(__APPLE__)
-// macOS headers will be included conditionally
+#include <Cocoa/Cocoa.h>
+#include <vulkan/vulkan_macos.h>
 #endif
 
 // =============================================================================
