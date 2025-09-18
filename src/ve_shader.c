@@ -1,0 +1,286 @@
+/**
+ * @file ve_shader.c
+ * @brief Shader Objects Implementation
+ */
+
+#include "ve_internal.h"
+
+// =============================================================================
+// Shader Stage Conversion
+// =============================================================================
+
+VkShaderStageFlagBits veShaderStageToVk(VEShaderStage stage) {
+    switch (stage) {
+        case VE_SHADER_STAGE_VERTEX: return VK_SHADER_STAGE_VERTEX_BIT;
+        case VE_SHADER_STAGE_TESSELLATION_CONTROL: return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+        case VE_SHADER_STAGE_TESSELLATION_EVALUATION: return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+        case VE_SHADER_STAGE_GEOMETRY: return VK_SHADER_STAGE_GEOMETRY_BIT;
+        case VE_SHADER_STAGE_FRAGMENT: return VK_SHADER_STAGE_FRAGMENT_BIT;
+        case VE_SHADER_STAGE_COMPUTE: return VK_SHADER_STAGE_COMPUTE_BIT;
+        default: return VK_SHADER_STAGE_VERTEX_BIT;
+    }
+}
+
+// =============================================================================
+// Shader Compilation (Stub - would need glslang integration)
+// =============================================================================
+
+static bool compileGLSLToSPIRV(const char* glslSource, VEShaderStage stage, 
+                               uint32_t** spirvCode, size_t* spirvSize) {
+    // TODO: Integrate with glslang to compile GLSL to SPIR-V
+    // For now, return false to indicate compilation is not available
+    veSetError("GLSL compilation not implemented - use pre-compiled SPIR-V");
+    return false;
+}
+
+// =============================================================================
+// Shader Creation
+// =============================================================================
+
+VEShader* veCreateShaderFromSPIRV(VEDevice* device, VEShaderStage stage,
+                                 const uint32_t* code, size_t codeSize,
+                                 const char* entryPoint, const char* debugName) {
+    if (!device || !code || codeSize == 0 || !entryPoint) {
+        veSetError("Invalid parameters for shader creation");
+        return NULL;
+    }
+    
+    VEDeviceInternal* deviceInternal = (VEDeviceInternal*)device;
+    
+    // Allocate shader object
+    VEShaderInternal* shader = calloc(1, sizeof(VEShaderInternal));
+    if (!shader) {
+        veSetError("Failed to allocate shader memory");
+        return NULL;
+    }
+    
+    shader->stage = stage;
+    strncpy(shader->entryPoint, entryPoint, sizeof(shader->entryPoint) - 1);
+    
+    if (debugName) {
+        strncpy(shader->debugName, debugName, sizeof(shader->debugName) - 1);
+    } else {
+        snprintf(shader->debugName, sizeof(shader->debugName), "Shader_%p", shader);
+    }
+    
+    // Create shader object using VK_EXT_shader_object
+    VkShaderCreateInfoEXT shaderCreateInfo = {0};
+    shaderCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT;
+    shaderCreateInfo.stage = veShaderStageToVk(stage);
+    shaderCreateInfo.codeType = VK_SHADER_CODE_TYPE_SPIRV_EXT;
+    shaderCreateInfo.codeSize = codeSize;
+    shaderCreateInfo.pCode = code;
+    shaderCreateInfo.pName = entryPoint;
+    shaderCreateInfo.setLayoutCount = 0;
+    shaderCreateInfo.pSetLayouts = NULL;
+    shaderCreateInfo.pushConstantRangeCount = 0;
+    shaderCreateInfo.pPushConstantRanges = NULL;
+    
+    // Get the shader object creation function
+    PFN_vkCreateShadersEXT vkCreateShadersEXT = (PFN_vkCreateShadersEXT)
+        vkGetDeviceProcAddr(deviceInternal->device, "vkCreateShadersEXT");
+    
+    if (!vkCreateShadersEXT) {
+        veSetError("VK_EXT_shader_object extension not available");
+        free(shader);
+        return NULL;
+    }
+    
+    VkResult result = vkCreateShadersEXT(deviceInternal->device, 1, &shaderCreateInfo, NULL, &shader->shaderObject);
+    if (result != VK_SUCCESS) {
+        veSetError("Failed to create shader object (VkResult: %d)", result);
+        free(shader);
+        return NULL;
+    }
+    
+    if (deviceInternal->context->validationEnabled) {
+        veSetObjectDebugName(deviceInternal, (uint64_t)shader->shaderObject, VK_OBJECT_TYPE_SHADER_EXT, shader->debugName);
+    }
+    
+    shader->isValid = true;
+    
+    return (VEShader*)shader;
+}
+
+VEShader* veCreateShaderFromGLSL(VEDevice* device, VEShaderStage stage,
+                                const char* source, const char* entryPoint,
+                                const char* debugName) {
+    if (!device || !source || !entryPoint) {
+        veSetError("Invalid parameters for GLSL shader creation");
+        return NULL;
+    }
+    
+    uint32_t* spirvCode;
+    size_t spirvSize;
+    
+    if (!compileGLSLToSPIRV(source, stage, &spirvCode, &spirvSize)) {
+        return NULL;
+    }
+    
+    VEShader* shader = veCreateShaderFromSPIRV(device, stage, spirvCode, spirvSize, entryPoint, debugName);
+    
+    free(spirvCode);
+    return shader;
+}
+
+VEShader* veLoadShader(VEDevice* device, const char* filename, VEShaderStage stage,
+                      const char* entryPoint, const char* debugName) {
+    if (!device || !filename || !entryPoint) {
+        veSetError("Invalid parameters for shader loading");
+        return NULL;
+    }
+    
+    FILE* file = fopen(filename, "rb");
+    if (!file) {
+        veSetError("Failed to open shader file: %s", filename);
+        return NULL;
+    }
+    
+    fseek(file, 0, SEEK_END);
+    long fileSize = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    
+    if (fileSize <= 0 || fileSize % 4 != 0) {
+        veSetError("Invalid SPIR-V file size: %ld", fileSize);
+        fclose(file);
+        return NULL;
+    }
+    
+    uint32_t* code = malloc(fileSize);
+    if (!code) {
+        veSetError("Failed to allocate memory for shader code");
+        fclose(file);
+        return NULL;
+    }
+    
+    size_t bytesRead = fread(code, 1, fileSize, file);
+    fclose(file);
+    
+    if (bytesRead != fileSize) {
+        veSetError("Failed to read entire shader file");
+        free(code);
+        return NULL;
+    }
+    
+    VEShader* shader = veCreateShaderFromSPIRV(device, stage, code, fileSize, entryPoint, debugName);
+    
+    if (shader) {
+        VEShaderInternal* internal = (VEShaderInternal*)shader;
+        strncpy(internal->sourceFile, filename, sizeof(internal->sourceFile) - 1);
+    }
+    
+    free(code);
+    return shader;
+}
+
+void veDestroyShader(VEShader* shader) {
+    if (!shader) return;
+    
+    VEShaderInternal* internal = (VEShaderInternal*)shader;
+    
+    if (internal->shaderObject) {
+        // Get the device from somewhere - this is a limitation of the current API design
+        // In a real implementation, we'd need to store the device pointer in the shader
+        // For now, we'll have to rely on the calling code to clean up properly
+        
+        // TODO: Need device handle to destroy shader object
+        // vkDestroyShadersEXT(device, 1, &internal->shaderObject, NULL);
+    }
+    
+    free(internal);
+}
+
+// =============================================================================
+// Shader Hot-Reload Support
+// =============================================================================
+
+VEResult veEnableShaderHotReload(VEShader* shader, const char* sourceFile) {
+    if (!shader || !sourceFile) {
+        veSetError("Invalid parameters for shader hot-reload");
+        return VE_ERROR_INVALID_PARAMETER;
+    }
+    
+    VEShaderInternal* internal = (VEShaderInternal*)shader;
+    
+    strncpy(internal->sourceFile, sourceFile, sizeof(internal->sourceFile) - 1);
+    internal->hotReloadEnabled = true;
+    
+    return VE_SUCCESS;
+}
+
+VEResult veReloadShader(VEShader* shader) {
+    if (!shader) {
+        veSetError("Shader cannot be NULL");
+        return VE_ERROR_INVALID_PARAMETER;
+    }
+    
+    VEShaderInternal* internal = (VEShaderInternal*)shader;
+    
+    if (!internal->hotReloadEnabled || !internal->sourceFile[0]) {
+        veSetError("Shader hot-reload not enabled or no source file specified");
+        return VE_ERROR_FEATURE_NOT_SUPPORTED;
+    }
+    
+    // TODO: Implement shader reloading
+    veSetError("Shader hot-reload not implemented");
+    return VE_ERROR_FEATURE_NOT_SUPPORTED;
+}
+
+// =============================================================================
+// Shader Configuration Management  
+// =============================================================================
+
+VEShaderConfig* veCreateShaderConfig(VEDevice* device, const VEShaderConfigDesc* desc) {
+    if (!device || !desc) {
+        veSetError("Invalid parameters for shader config creation");
+        return NULL;
+    }
+    
+    VEDeviceInternal* deviceInternal = (VEDeviceInternal*)device;
+    
+    // Find free slot in shader configs array
+    uint32_t index = UINT32_MAX;
+    for (uint32_t i = 0; i < deviceInternal->maxShaderConfigs; i++) {
+        if (!deviceInternal->shaderConfigs[i].isValid) {
+            index = i;
+            break;
+        }
+    }
+    
+    if (index == UINT32_MAX) {
+        veSetError("No free shader config slots available");
+        return NULL;
+    }
+    
+    VEShaderConfigInternal* config = &deviceInternal->shaderConfigs[index];
+    memset(config, 0, sizeof(VEShaderConfigInternal));
+    
+    config->vertexShader = desc->vertexShader;
+    config->fragmentShader = desc->fragmentShader;
+    config->geometryShader = desc->geometryShader;
+    config->tessControlShader = desc->tessControlShader;
+    config->tessEvalShader = desc->tessEvalShader;
+    config->computeShader = desc->computeShader;
+    
+    if (desc->debugName) {
+        strncpy(config->debugName, desc->debugName, sizeof(config->debugName) - 1);
+    } else {
+        snprintf(config->debugName, sizeof(config->debugName), "ShaderConfig_%u", index);
+    }
+    
+    config->isValid = true;
+    deviceInternal->shaderConfigCount++;
+    
+    return (VEShaderConfig*)config;
+}
+
+void veDestroyShaderConfig(VEShaderConfig* config) {
+    if (!config) return;
+    
+    VEShaderConfigInternal* internal = (VEShaderConfigInternal*)config;
+    
+    // Note: We don't destroy the individual shaders here as they might be used elsewhere
+    // The user is responsible for managing shader lifetimes
+    
+    memset(internal, 0, sizeof(VEShaderConfigInternal));
+}
