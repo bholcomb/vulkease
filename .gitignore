@@ -1,0 +1,52 @@
+# Build outputs
+*.o
+*.so
+*.a
+*.dylib
+*.dll
+*.lib
+*.exp
+*.pdb
+*.ilk
+
+# Build directories
+build/
+bin/
+lib/
+dist/
+
+# IDE and editor files
+.vscode/
+.vs/
+*.swp
+*.swo
+*~
+.idea/
+*.user
+*.vcxproj.user
+
+# OS files
+.DS_Store
+Thumbs.db
+*.log
+
+# Debug files
+*.dSYM/
+core
+vgcore.*
+
+# Package manager files
+node_modules/
+*.lock
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.orig
+
+# Generated files
+tags
+TAGS
+.clangd/
+compile_commands.json
