@@ -22,7 +22,8 @@
 static const char* BASE_INSTANCE_EXTENSIONS[] = {
     VK_KHR_SURFACE_EXTENSION_NAME,
     VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
-    VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME
+    VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
+    VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME  // For advanced surface queries
 };
 
 // Platform-specific surface extensions (define constants if not available)
@@ -117,7 +118,8 @@ static bool checkInstanceExtensionSupport(const char** requiredExtensions, uint3
             }
         }
         if (!found) {
-            printf("Required instance extension not available: %s\\n", requiredExtensions[i]);
+            printf("CRITICAL: Required instance extension not available: %s\n", requiredExtensions[i]);
+            printf("This indicates outdated GPU drivers or incompatible hardware.\n");
             allSupported = false;
         }
     }
@@ -168,6 +170,72 @@ static bool checkDeviceExtensionSupport(VkPhysicalDevice device, const char** re
     
     free(extensions);
     return allSupported;
+}
+
+// =============================================================================
+// GPU Capability Validation
+// =============================================================================
+
+static bool validateMinimumGPUCapabilities(VkInstance instance) {
+    uint32_t deviceCount = 0;
+    vkEnumeratePhysicalDevices(instance, &deviceCount, NULL);
+    
+    if (deviceCount == 0) {
+        return false;
+    }
+    
+    VkPhysicalDevice* devices = malloc(deviceCount * sizeof(VkPhysicalDevice));
+    vkEnumeratePhysicalDevices(instance, &deviceCount, devices);
+    
+    bool foundSuitableGPU = false;
+    
+    for (uint32_t i = 0; i < deviceCount; i++) {
+        VkPhysicalDeviceProperties properties;
+        vkGetPhysicalDeviceProperties(devices[i], &properties);
+        
+        // Require Vulkan 1.3+ API support on the GPU
+        if (properties.apiVersion < VK_API_VERSION_1_3) {
+            continue;
+        }
+        
+        // Check for bindless-critical extensions
+        const char* criticalExtensions[] = {
+            VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+            VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+            VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME
+        };
+        
+        bool hasAllExtensions = checkDeviceExtensionSupport(devices[i], criticalExtensions, 
+                                                           sizeof(criticalExtensions) / sizeof(criticalExtensions[0]));
+        
+        if (!hasAllExtensions) {
+            continue;
+        }
+        
+        // Check for bindless-critical features
+        VkPhysicalDeviceVulkan12Features vulkan12Features = {0};
+        vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+        
+        VkPhysicalDeviceVulkan13Features vulkan13Features = {0};
+        vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+        vulkan13Features.pNext = &vulkan12Features;
+        
+        VkPhysicalDeviceFeatures2 features2 = {0};
+        features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        features2.pNext = &vulkan13Features;
+        
+        vkGetPhysicalDeviceFeatures2(devices[i], &features2);
+        
+        if (vulkan12Features.bufferDeviceAddress && 
+            vulkan12Features.descriptorIndexing && 
+            vulkan13Features.dynamicRendering) {
+            foundSuitableGPU = true;
+            break;
+        }
+    }
+    
+    free(devices);
+    return foundSuitableGPU;
 }
 
 // =============================================================================
@@ -391,7 +459,7 @@ VEContext* veCreateContext(const char* applicationName) {
     }
     
     if (!checkInstanceExtensionSupport(allExtensions, allExtensionCount)) {
-        veSetError("Required Vulkan instance extensions not available");
+        veSetError("Missing required Vulkan instance extensions. Ensure your GPU drivers support Vulkan 1.3+ and platform surface extensions are available.");
         free(context);
         return NULL;
     }
@@ -434,6 +502,26 @@ VEContext* veCreateContext(const char* applicationName) {
         return NULL;
     }
     
+    // Validate that the instance actually supports Vulkan 1.3+
+    uint32_t apiVersion;
+    if (vkEnumerateInstanceVersion(&apiVersion) == VK_SUCCESS) {
+        if (apiVersion < VK_API_VERSION_1_3) {
+            veSetError("Vulkan 1.3 or later required, found version %d.%d.%d", 
+                       VK_VERSION_MAJOR(apiVersion), VK_VERSION_MINOR(apiVersion), VK_VERSION_PATCH(apiVersion));
+            vkDestroyInstance(context->instance, NULL);
+            free(context);
+            return NULL;
+        }
+    }
+    
+    // Validate that we have at least one compatible GPU with bindless support
+    if (!validateMinimumGPUCapabilities(context->instance)) {
+        veSetError("No compatible GPU found with required Vulkan 1.3+ features (buffer device address, descriptor indexing, dynamic rendering). Ensure your GPU drivers support modern Vulkan features.");
+        vkDestroyInstance(context->instance, NULL);
+        free(context);
+        return NULL;
+    }
+    
     if (validationEnabled) {
         VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo = {0};
         debugCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -453,8 +541,6 @@ VEContext* veCreateContext(const char* applicationName) {
         
         context->validationEnabled = true;
     }
-    
-    strncpy(context->applicationName, applicationName, sizeof(context->applicationName) - 1);
     
     return (VEContext*)context;
 }
