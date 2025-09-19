@@ -115,6 +115,7 @@ typedef struct VETextureInternal {
     VEFormat format;
     VETextureUsage usage;
     VESampleCount sampleCount;
+    VkImageLayout currentLayout;  // Track current layout for optimized transitions
     char debugName[VE_MAX_DEBUG_NAME_LENGTH];
     bool isValid;
     uint32_t index;
@@ -308,6 +309,7 @@ VkBuffer veGetVkBufferFromAddress(VEDeviceInternal* device, VEBufferAddress addr
 uint32_t veAllocateTextureIndex(VEDeviceInternal* device);
 void veFreeTextureIndex(VEDeviceInternal* device, uint32_t index);
 VETextureInternal* veGetTexture(VEDeviceInternal* device, VETextureIndex index);
+VkImageView veGetImageViewFromTexture(VEDeviceInternal* device, VETextureIndex index);
 
 uint32_t veAllocateSamplerIndex(VEDeviceInternal* device);
 void veFreeSamplerIndex(VEDeviceInternal* device, uint32_t index);
