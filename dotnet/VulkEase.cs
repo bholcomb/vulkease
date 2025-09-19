@@ -133,6 +133,7 @@ namespace VulkEase
         ErrorFeatureNotSupported = 4,
         ErrorShaderCompilationFailed = 5,
         ErrorSwapchainOutOfDate = 6,
+        ErrorUnsupported = 7,
         ErrorUnknown = 999
     }
 
@@ -722,33 +723,28 @@ namespace VulkEase
     [StructLayout(LayoutKind.Sequential)]
     public struct VEPerformanceStats
     {
-        public float FrameTime;
-        public float Fps;
-        public float AverageFrameTime;
-        public float AverageFps;
-        public float MinFrameTime;
-        public float MaxFrameTime;
-        public ulong TotalFrames;
+        public ulong FrameTime;                    // GPU time in nanoseconds
         public uint DrawCalls;
         public uint ComputeDispatches;
         public ulong VerticesRendered;
-        public ulong PrimitivesRendered;
+        public ulong TrianglesRendered;
+        public uint PipelineBinds;                 // For legacy compatibility
+        public uint DescriptorBinds;               // For legacy compatibility
     }
 
     [StructLayout(LayoutKind.Sequential)]
     public unsafe struct VEMemoryStats
     {
-        public ulong TotalAllocatedBytes;
-        public ulong TotalUsedBytes;
-        public ulong TotalFreeBytes;
-        public uint AllocationCount;
-        public uint UnusedRangeCount;
-        public ulong BufferMemoryUsage;
-        public ulong TextureMemoryUsage;
-        public uint HeapCount;
-        public fixed ulong HeapSizes[16];
-        public ulong DeviceLocalHeapSize;
-        public ulong HostVisibleHeapSize;
+        public ulong TotalAllocated;              // Total VMA allocations in bytes
+        public ulong TotalUsed;                   // Actually used memory in bytes
+        public uint BufferCount;                  // Number of active buffers
+        public uint TextureCount;                 // Number of active textures
+        public uint SamplerCount;                 // Number of active samplers
+        
+        // Per-heap statistics (16 heaps max)
+        public fixed ulong HeapSize[16];
+        public fixed ulong HeapUsed[16];
+        public fixed ulong HeapBudget[16];
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -756,9 +752,9 @@ namespace VulkEase
     {
         public uint TotalConfigs;
         public uint ActiveConfigs;
-        public uint VertexConfigs;
-        public uint ShaderConfigs;
-        public uint MaxConfigs;
+        public uint ConfigSwitches;
+        public uint StateSwitches;
+        public uint Overrides;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -1299,31 +1295,41 @@ namespace VulkEase
             [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
 
         [DllImport(Constants.LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
-        public static extern void veInsertDebugLabel(VECommandBuffer cmd, [MarshalAs(UnmanagedType.LPUTF8Str)] string labelName,
-            IntPtr color);
+        public static extern VEResult veSetBufferDebugName(VEDevice device, VEBufferAddress address, 
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
 
         [DllImport(Constants.LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
-        public static extern void veBeginDebugRegion(VECommandBuffer cmd, [MarshalAs(UnmanagedType.LPUTF8Str)] string regionName,
-            IntPtr color);
+        public static extern VEResult veSetTextureDebugName(VEDevice device, VETextureIndex texture, 
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
 
         [DllImport(Constants.LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
-        public static extern void veEndDebugRegion(VECommandBuffer cmd);
+        public static extern VEResult veSetSamplerDebugName(VEDevice device, VESamplerIndex sampler, 
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
+
+        [DllImport(Constants.LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void veBeginDebugLabel(VECommandBuffer cmd, [MarshalAs(UnmanagedType.LPUTF8Str)] string label, VEColor color);
+
+        [DllImport(Constants.LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void veEndDebugLabel(VECommandBuffer cmd);
+
+        [DllImport(Constants.LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void veInsertDebugLabel(VECommandBuffer cmd, [MarshalAs(UnmanagedType.LPUTF8Str)] string label, VEColor color);
 
         [DllImport(Constants.LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
         public static extern void veLogMessage(VEDevice device, VEMessageSeverity severity,
             [MarshalAs(UnmanagedType.LPUTF8Str)] string message);
 
         [DllImport(Constants.LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
-        public static extern VEPerformanceStats veGetPerformanceStats(VEDevice device);
+        public static extern VEResult veGetPerformanceStats(VEDevice device, out VEPerformanceStats stats);
 
         [DllImport(Constants.LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
         public static extern void veResetPerformanceStats(VEDevice device);
 
         [DllImport(Constants.LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
-        public static extern VEMemoryStats veGetMemoryStats(VEDevice device);
+        public static extern VEResult veGetMemoryStats(VEDevice device, out VEMemoryStats stats);
 
         [DllImport(Constants.LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
-        public static extern VERenderConfigStats veGetRenderConfigStats(VEDevice device);
+        public static extern VEResult veGetRenderConfigStats(VEDevice device, out VERenderConfigStats stats);
 
         [DllImport(Constants.LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
         public static extern VEResult veBeginGPUTiming(VECommandBuffer cmd, uint queryIndex);

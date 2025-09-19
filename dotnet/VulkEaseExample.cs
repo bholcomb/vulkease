@@ -86,10 +86,10 @@ namespace VulkEaseExample
 
                 // Print resource statistics
                 var memStats = device.GetMemoryStats();
-                Console.WriteLine($"Total allocated memory: {memStats.TotalAllocatedBytes / 1024 / 1024} MB");
-                Console.WriteLine($"Active buffers: {device.GetBufferCount()}");
-                Console.WriteLine($"Active textures: {device.GetTextureCount()}");
-                Console.WriteLine($"Active samplers: {device.GetSamplerCount()}");
+                Console.WriteLine($"Total allocated memory: {memStats.TotalAllocated / 1024 / 1024} MB");
+                Console.WriteLine($"Active buffers: {memStats.BufferCount}");
+                Console.WriteLine($"Active textures: {memStats.TextureCount}");
+                Console.WriteLine($"Active samplers: {memStats.SamplerCount}");
 
                 // Cleanup
                 device.DestroyBuffer(vertexBuffer);

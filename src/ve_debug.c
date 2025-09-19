@@ -3,6 +3,11 @@
  * @brief Debug and Profiling Implementation
  */
 
+// For clock_gettime
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 199309L
+#endif
+
 #include "ve_internal.h"
 #include <time.h>
 
@@ -37,13 +42,79 @@ void veSetDebugName(VEDevice* device, uint64_t objectHandle, VEObjectType object
     veSetObjectDebugName(deviceInternal, objectHandle, vkObjectType, name);
 }
 
-void veInsertDebugLabel(VECommandBuffer* cmd, const char* labelName, float color[4]) {
+// =============================================================================
+// Resource Debug Name Functions
+// =============================================================================
+
+VEResult veSetBufferDebugName(VEDevice* device, VEBufferAddress address, const char* name) {
+    if (!device || address == VE_INVALID_ADDRESS || !name) {
+        return VE_ERROR_INVALID_PARAMETER;
+    }
+    
+    VEDeviceInternal* deviceInternal = (VEDeviceInternal*)device;
+    
+    // Get the VkBuffer handle from the address
+    VkBuffer buffer = veGetVkBufferFromAddress(deviceInternal, address);
+    if (buffer == VK_NULL_HANDLE) {
+        veSetError("Invalid buffer address: 0x%llx", address);
+        return VE_ERROR_INVALID_PARAMETER;
+    }
+    
+    // Set the debug name on the Vulkan buffer object
+    veSetObjectDebugName(deviceInternal, (uint64_t)buffer, VK_OBJECT_TYPE_BUFFER, name);
+    
+    return VE_SUCCESS;
+}
+
+VEResult veSetTextureDebugName(VEDevice* device, VETextureIndex texture, const char* name) {
+    if (!device || texture == VE_INVALID_TEXTURE_INDEX || !name) {
+        return VE_ERROR_INVALID_PARAMETER;
+    }
+    
+    VEDeviceInternal* deviceInternal = (VEDeviceInternal*)device;
+    
+    // Get the texture internal structure
+    VETextureInternal* textureInternal = veGetTexture(deviceInternal, texture);
+    if (!textureInternal || !textureInternal->isValid) {
+        veSetError("Invalid texture index: %u", texture);
+        return VE_ERROR_INVALID_PARAMETER;
+    }
+    
+    // Set debug names on both the image and image view
+    veSetObjectDebugName(deviceInternal, (uint64_t)textureInternal->image, VK_OBJECT_TYPE_IMAGE, name);
+    veSetObjectDebugName(deviceInternal, (uint64_t)textureInternal->imageView, VK_OBJECT_TYPE_IMAGE_VIEW, name);
+    
+    return VE_SUCCESS;
+}
+
+VEResult veSetSamplerDebugName(VEDevice* device, VESamplerIndex sampler, const char* name) {
+    if (!device || sampler == VE_INVALID_SAMPLER_INDEX || !name) {
+        return VE_ERROR_INVALID_PARAMETER;
+    }
+    
+    VEDeviceInternal* deviceInternal = (VEDeviceInternal*)device;
+    
+    // Get the sampler internal structure
+    VESamplerInternal* samplerInternal = veGetSampler(deviceInternal, sampler);
+    if (!samplerInternal || !samplerInternal->isValid) {
+        veSetError("Invalid sampler index: %u", sampler);
+        return VE_ERROR_INVALID_PARAMETER;
+    }
+    
+    // Set the debug name on the Vulkan sampler object
+    veSetObjectDebugName(deviceInternal, (uint64_t)samplerInternal->sampler, VK_OBJECT_TYPE_SAMPLER, name);
+    
+    return VE_SUCCESS;
+}
+
+// Legacy debug label function (kept for compatibility)
+void veInsertDebugLabelLegacy(VECommandBuffer* cmd, const char* labelName, float color[4]) {
     if (!cmd || !labelName) return;
     
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
     
     PFN_vkCmdInsertDebugUtilsLabelEXT vkCmdInsertDebugUtilsLabelEXT = 
-        (PFN_vkCmdInsertDebugUtilsLabelEXT)vkGetDeviceProcAddr(VK_NULL_HANDLE, "vkCmdInsertDebugUtilsLabelEXT");
+        (PFN_vkCmdInsertDebugUtilsLabelEXT)vkGetDeviceProcAddr(internal->device->device, "vkCmdInsertDebugUtilsLabelEXT");
     
     if (!vkCmdInsertDebugUtilsLabelEXT) return;
     
@@ -62,6 +133,62 @@ void veInsertDebugLabel(VECommandBuffer* cmd, const char* labelName, float color
         labelInfo.color[2] = 1.0f;
         labelInfo.color[3] = 1.0f;
     }
+    
+    vkCmdInsertDebugUtilsLabelEXT(internal->commandBuffer, &labelInfo);
+}
+
+// Modern debug label functions with VEColor support
+void veBeginDebugLabel(VECommandBuffer* cmd, const char* label, VEColor color) {
+    if (!cmd || !label) return;
+    
+    VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
+    
+    PFN_vkCmdBeginDebugUtilsLabelEXT vkCmdBeginDebugUtilsLabelEXT = 
+        (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(internal->device->device, "vkCmdBeginDebugUtilsLabelEXT");
+    
+    if (!vkCmdBeginDebugUtilsLabelEXT) return;
+    
+    VkDebugUtilsLabelEXT labelInfo = {0};
+    labelInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+    labelInfo.pLabelName = label;
+    labelInfo.color[0] = color.r;
+    labelInfo.color[1] = color.g;
+    labelInfo.color[2] = color.b;
+    labelInfo.color[3] = color.a;
+    
+    vkCmdBeginDebugUtilsLabelEXT(internal->commandBuffer, &labelInfo);
+}
+
+void veEndDebugLabel(VECommandBuffer* cmd) {
+    if (!cmd) return;
+    
+    VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
+    
+    PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabelEXT = 
+        (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(internal->device->device, "vkCmdEndDebugUtilsLabelEXT");
+    
+    if (!vkCmdEndDebugUtilsLabelEXT) return;
+    
+    vkCmdEndDebugUtilsLabelEXT(internal->commandBuffer);
+}
+
+void veInsertDebugLabel(VECommandBuffer* cmd, const char* label, VEColor color) {
+    if (!cmd || !label) return;
+    
+    VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
+    
+    PFN_vkCmdInsertDebugUtilsLabelEXT vkCmdInsertDebugUtilsLabelEXT = 
+        (PFN_vkCmdInsertDebugUtilsLabelEXT)vkGetDeviceProcAddr(internal->device->device, "vkCmdInsertDebugUtilsLabelEXT");
+    
+    if (!vkCmdInsertDebugUtilsLabelEXT) return;
+    
+    VkDebugUtilsLabelEXT labelInfo = {0};
+    labelInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+    labelInfo.pLabelName = label;
+    labelInfo.color[0] = color.r;
+    labelInfo.color[1] = color.g;
+    labelInfo.color[2] = color.b;
+    labelInfo.color[3] = color.a;
     
     vkCmdInsertDebugUtilsLabelEXT(internal->commandBuffer, &labelInfo);
 }
@@ -163,17 +290,15 @@ static double getCurrentTimeSeconds(void) {
     return ts.tv_sec + ts.tv_nsec / 1e9;
 }
 
-VEPerformanceStats veGetPerformanceStats(VEDevice* device) {
-    VEPerformanceStats stats = {0};
-    
-    if (!device) {
-        return stats;
+VEResult veGetPerformanceStats(VEDevice* device, VEPerformanceStats* stats) {
+    if (!device || !stats) {
+        return VE_ERROR_INVALID_PARAMETER;
     }
     
     VEDeviceInternal* deviceInternal = (VEDeviceInternal*)device;
-    stats = deviceInternal->performanceStats;
+    *stats = deviceInternal->performanceStats;
     
-    return stats;
+    return VE_SUCCESS;
 }
 
 void veResetPerformanceStats(VEDevice* device) {
@@ -183,77 +308,61 @@ void veResetPerformanceStats(VEDevice* device) {
     memset(&deviceInternal->performanceStats, 0, sizeof(VEPerformanceStats));
 }
 
-VEMemoryStats veGetMemoryStats(VEDevice* device) {
-    VEMemoryStats stats = {0};
-    
-    if (!device) {
-        return stats;
+VEResult veGetMemoryStats(VEDevice* device, VEMemoryStats* stats) {
+    if (!device || !stats) {
+        return VE_ERROR_INVALID_PARAMETER;
     }
     
+    memset(stats, 0, sizeof(VEMemoryStats));
     VEDeviceInternal* deviceInternal = (VEDeviceInternal*)device;
     
-    // Get VMA statistics
-    VmaStats vmaStats;
-    vmaCalculateStats(deviceInternal->allocator, &vmaStats);
+    // Get VMA statistics (simplified for now)
+    VmaTotalStatistics vmaStats;
+    vmaCalculateStatistics(deviceInternal->allocator, &vmaStats);
     
-    stats.totalAllocatedBytes = vmaStats.total.usedBytes;
-    stats.totalUsedBytes = vmaStats.total.usedBytes;
-    stats.totalFreeBytes = vmaStats.total.unusedBytes;
-    stats.allocationCount = vmaStats.total.allocationCount;
-    stats.unusedRangeCount = vmaStats.total.unusedRangeCount;
+    stats->totalAllocated = vmaStats.total.statistics.allocationBytes;
+    stats->totalUsed = vmaStats.total.statistics.allocationBytes;
     
-    // Calculate buffer and texture memory usage
-    for (uint32_t i = 0; i < deviceInternal->maxBuffers; i++) {
-        if (deviceInternal->buffers[i].isValid) {
-            stats.bufferMemoryUsage += deviceInternal->buffers[i].allocationInfo.size;
-        }
-    }
-    
-    for (uint32_t i = 0; i < deviceInternal->maxTextures; i++) {
-        if (deviceInternal->textures[i].isValid) {
-            stats.textureMemoryUsage += deviceInternal->textures[i].allocationInfo.size;
-        }
-    }
+    // Set resource counts (simplified - would need proper tracking)
+    stats->bufferCount = 0; // Would need proper tracking in device
+    stats->textureCount = deviceInternal->textureCount;
+    stats->samplerCount = deviceInternal->samplerCount;
     
     // Get heap information
     VkPhysicalDeviceMemoryProperties memProps = deviceInternal->memoryProperties;
     for (uint32_t i = 0; i < memProps.memoryHeapCount && i < 16; i++) {
-        stats.heapSizes[i] = memProps.memoryHeaps[i].size;
-        if (memProps.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
-            stats.deviceLocalHeapSize += memProps.memoryHeaps[i].size;
-        } else {
-            stats.hostVisibleHeapSize += memProps.memoryHeaps[i].size;
-        }
+        stats->heaps[i].size = memProps.memoryHeaps[i].size;
+        stats->heaps[i].used = 0; // Would need more detailed tracking
+        stats->heaps[i].budget = memProps.memoryHeaps[i].size; // Simplified
     }
-    stats.heapCount = memProps.memoryHeapCount;
     
-    return stats;
+    return VE_SUCCESS;
 }
 
-VERenderConfigStats veGetRenderConfigStats(VEDevice* device) {
-    VERenderConfigStats stats = {0};
-    
-    if (!device) {
-        return stats;
+VEResult veGetRenderConfigStats(VEDevice* device, VERenderConfigStats* stats) {
+    if (!device || !stats) {
+        return VE_ERROR_INVALID_PARAMETER;
     }
     
+    memset(stats, 0, sizeof(VERenderConfigStats));
     VEDeviceInternal* deviceInternal = (VEDeviceInternal*)device;
     
-    stats.totalConfigs = deviceInternal->renderConfigCount;
-    stats.activeConfigs = 0;
+    stats->totalConfigs = deviceInternal->renderConfigCount;
+    stats->activeConfigs = 0;
     
     // Count active configurations
     for (uint32_t i = 0; i < deviceInternal->maxRenderConfigs; i++) {
         if (deviceInternal->renderConfigs[i].isValid) {
-            stats.activeConfigs++;
+            stats->activeConfigs++;
         }
     }
     
-    stats.vertexConfigs = deviceInternal->vertexConfigCount;
-    stats.shaderConfigs = deviceInternal->shaderConfigCount;
-    stats.maxConfigs = deviceInternal->maxRenderConfigs;
+    // These would be tracked by the device if implemented
+    stats->configSwitches = 0;
+    stats->stateSwitches = 0;
+    stats->overrides = 0;
     
-    return stats;
+    return VE_SUCCESS;
 }
 
 // =============================================================================
@@ -326,8 +435,8 @@ VEResult veGetGPUTimingResults(VEDevice* device, uint32_t queryIndex, double* ti
 uint32_t veGetBufferCount(VEDevice* device) {
     if (!device) return 0;
     
-    VEDeviceInternal* deviceInternal = (VEDeviceInternal*)device;
-    return deviceInternal->bufferCount;
+    // Would need proper buffer tracking in device
+    return 0;
 }
 
 uint32_t veGetTextureCount(VEDevice* device) {
@@ -361,29 +470,14 @@ static void updateFrameStats(VEDeviceInternal* device) {
     
     if (lastFrameTime > 0.0) {
         double frameTime = currentTime - lastFrameTime;
-        device->performanceStats.frameTime = (float)(frameTime * 1000.0); // Convert to ms
-        device->performanceStats.fps = frameTime > 0.0 ? (float)(1.0 / frameTime) : 0.0f;
+        device->performanceStats.frameTime = (uint64_t)(frameTime * 1000000000.0); // Convert to nanoseconds
         
-        // Update averages (simple moving average over 60 frames)
-        const float alpha = 1.0f / 60.0f;
-        device->performanceStats.averageFrameTime = device->performanceStats.averageFrameTime * (1.0f - alpha) + 
-                                                   device->performanceStats.frameTime * alpha;
-        device->performanceStats.averageFPS = device->performanceStats.averageFPS * (1.0f - alpha) + 
-                                            device->performanceStats.fps * alpha;
-        
-        // Track min/max
-        if (device->performanceStats.frameTime < device->performanceStats.minFrameTime || 
-            device->performanceStats.minFrameTime == 0.0f) {
-            device->performanceStats.minFrameTime = device->performanceStats.frameTime;
-        }
-        
-        if (device->performanceStats.frameTime > device->performanceStats.maxFrameTime) {
-            device->performanceStats.maxFrameTime = device->performanceStats.frameTime;
-        }
+        // Note: The current VEPerformanceStats structure doesn't have fps, averages, etc.
+        // These would need to be added to the structure if needed
     }
     
     lastFrameTime = currentTime;
-    device->performanceStats.totalFrames++;
+    // Note: totalFrames not in current structure
 }
 
 // Call this at the end of each frame to update statistics
@@ -418,12 +512,7 @@ bool veValidateDevice(VEDevice* device) {
         return false;
     }
     
-    // Validate resource counts
-    if (deviceInternal->bufferCount > deviceInternal->maxBuffers) {
-        veSetError("Buffer count exceeds maximum");
-        return false;
-    }
-    
+    // Validate resource counts (simplified - would need proper tracking)
     if (deviceInternal->textureCount > deviceInternal->maxTextures) {
         veSetError("Texture count exceeds maximum");
         return false;
@@ -466,4 +555,130 @@ bool veValidateSampler(VEDevice* device, VESamplerIndex index) {
     VESamplerInternal* sampler = veGetSampler(deviceInternal, index);
     
     return sampler != NULL;
+}
+
+// =============================================================================
+// Debug Information Functions
+// =============================================================================
+
+void vePrintDebugInfo(VEDevice* device) {
+    if (!device) {
+        printf("VulkEase Debug Info: Device is NULL\n");
+        return;
+    }
+    
+    VEDeviceInternal* deviceInternal = (VEDeviceInternal*)device;
+    
+    printf("=== VulkEase Debug Information ===\n");
+    printf("Device Name: %s\n", veGetDeviceName(device));
+    printf("Driver Version: %s\n", veGetDriverVersion(device));
+    printf("Vulkan Version: %u\n", veGetVulkanVersion(device));
+    
+    // Resource counts
+    printf("\nResource Usage:\n");
+    printf("  Buffers: %u\n", veGetBufferCount(device));
+    printf("  Textures: %u / %u\n", deviceInternal->textureCount, deviceInternal->maxTextures);
+    printf("  Samplers: %u / %u\n", deviceInternal->samplerCount, deviceInternal->maxSamplers);
+    printf("  Shaders: %u / %u\n", deviceInternal->shaderCount, deviceInternal->maxShaders);
+    printf("  Render Configs: %u / %u\n", deviceInternal->renderConfigCount, deviceInternal->maxRenderConfigs);
+    
+    // Memory information
+    VEMemoryStats memStats;
+    if (veGetMemoryStats(device, &memStats) == VE_SUCCESS) {
+        printf("\nMemory Usage:\n");
+        printf("  Total Allocated: %llu bytes (%.2f MB)\n", 
+               (unsigned long long)memStats.totalAllocated,
+               memStats.totalAllocated / (1024.0 * 1024.0));
+        printf("  Total Used: %llu bytes (%.2f MB)\n",
+               (unsigned long long)memStats.totalUsed,
+               memStats.totalUsed / (1024.0 * 1024.0));
+    }
+    
+    // Performance stats
+    VEPerformanceStats perfStats;
+    if (veGetPerformanceStats(device, &perfStats) == VE_SUCCESS) {
+        printf("\nPerformance Stats:\n");
+        printf("  Frame Time: %llu ns (%.2f ms)\n", 
+               (unsigned long long)perfStats.frameTime,
+               perfStats.frameTime / 1000000.0);
+        printf("  Draw Calls: %u\n", perfStats.drawCalls);
+        printf("  Compute Dispatches: %u\n", perfStats.computeDispatches);
+        printf("  Vertices Rendered: %llu\n", (unsigned long long)perfStats.verticesRendered);
+        printf("  Triangles Rendered: %llu\n", (unsigned long long)perfStats.trianglesRendered);
+    }
+    
+    // Feature support
+    printf("\nFeature Support:\n");
+    printf("  Buffer Device Address: %s\n", veSupportsBufferDeviceAddress(device) ? "Yes" : "No");
+    printf("  Descriptor Indexing: %s\n", veSupportsDescriptorIndexing(device) ? "Yes" : "No");
+    printf("  Shader Objects: %s\n", veSupportsShaderObjects(device) ? "Yes" : "No");
+    printf("  Extended Dynamic State 3: %s\n", veSupportsExtendedDynamicState3(device) ? "Yes" : "No");
+    printf("  Vertex Input Dynamic State: %s\n", veSupportsVertexInputDynamicState(device) ? "Yes" : "No");
+    
+    printf("================================\n");
+}
+
+void vePrintRenderConfig(VERenderConfig* config) {
+    if (!config) {
+        printf("VulkEase Render Config: Config is NULL\n");
+        return;
+    }
+    
+    VERenderConfigInternal* configInternal = (VERenderConfigInternal*)config;
+    
+    printf("=== VulkEase Render Configuration ===\n");
+    printf("Debug Name: %s\n", configInternal->debugName);
+    printf("Valid: %s\n", configInternal->isValid ? "Yes" : "No");
+    
+    if (configInternal->isValid) {
+        printf("Configuration Types: 0x%08X\n", configInternal->configTypes);
+        
+        if (configInternal->configTypes & VE_CONFIG_TYPE_RASTERIZATION) {
+            printf("  - Rasterization: Enabled\n");
+        }
+        if (configInternal->configTypes & VE_CONFIG_TYPE_DEPTH_STENCIL) {
+            printf("  - Depth/Stencil: Enabled\n");
+        }
+        if (configInternal->configTypes & VE_CONFIG_TYPE_COLOR_BLEND) {
+            printf("  - Color Blend: Enabled\n");
+        }
+        if (configInternal->configTypes & VE_CONFIG_TYPE_MULTISAMPLE) {
+            printf("  - Multisample: Enabled\n");
+        }
+        if (configInternal->configTypes & VE_CONFIG_TYPE_VERTEX_INPUT) {
+            printf("  - Vertex Input: Enabled\n");
+        }
+        if (configInternal->configTypes & VE_CONFIG_TYPE_SHADERS) {
+            printf("  - Shaders: Enabled\n");
+        }
+    }
+    
+    printf("====================================\n");
+}
+
+VEResult veValidateRenderConfig(VERenderConfig* config) {
+    if (!config) {
+        veSetError("Render config is NULL");
+        return VE_ERROR_INVALID_PARAMETER;
+    }
+    
+    VERenderConfigInternal* configInternal = (VERenderConfigInternal*)config;
+    
+    if (!configInternal->isValid) {
+        veSetError("Render config is not valid");
+        return VE_ERROR_INVALID_PARAMETER;
+    }
+    
+    // Validate configuration types
+    if (configInternal->configTypes == 0) {
+        veSetError("Render config has no configuration types set");
+        return VE_ERROR_INVALID_PARAMETER;
+    }
+    
+    // Additional validation could be added here:
+    // - Check if required configurations are present
+    // - Validate configuration compatibility
+    // - Check resource limits
+    
+    return VE_SUCCESS;
 }

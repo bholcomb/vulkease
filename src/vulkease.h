@@ -281,6 +281,27 @@ typedef enum VEStencilOp {
     VE_STENCIL_OP_DECREMENT_AND_WRAP = 7
 } VEStencilOp;
 
+// Debug and profiling enums
+typedef enum VEObjectType {
+    VE_OBJECT_TYPE_BUFFER,
+    VE_OBJECT_TYPE_IMAGE,
+    VE_OBJECT_TYPE_IMAGE_VIEW,
+    VE_OBJECT_TYPE_SAMPLER,
+    VE_OBJECT_TYPE_SHADER,
+    VE_OBJECT_TYPE_COMMAND_BUFFER,
+    VE_OBJECT_TYPE_QUEUE,
+    VE_OBJECT_TYPE_DEVICE,
+    VE_OBJECT_TYPE_INSTANCE,
+    VE_OBJECT_TYPE_PHYSICAL_DEVICE
+} VEObjectType;
+
+typedef enum VEMessageSeverity {
+    VE_MESSAGE_SEVERITY_VERBOSE,
+    VE_MESSAGE_SEVERITY_INFO,
+    VE_MESSAGE_SEVERITY_WARNING,
+    VE_MESSAGE_SEVERITY_ERROR
+} VEMessageSeverity;
+
 // Color blending enums
 typedef enum VEBlendFactor {
     VE_BLEND_FACTOR_ZERO = 0,

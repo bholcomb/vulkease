@@ -33,8 +33,8 @@ INCLUDES = -I$(SRC_DIR) -I$(EXTERNAL_DIR) -I/usr/include/vulkan
 LIBS = -lvulkan -lm -ldl -lpthread -lstdc++
 EXAMPLE_LIBS = -L$(BIN_DIR) -lvulkease -lglfw -lm
 
-# Source files (exclude problematic debug file)
-C_SOURCES = $(filter-out $(SRC_DIR)/ve_debug.c, $(wildcard $(SRC_DIR)/*.c))
+# Source files (exclude stub debug file, use full implementation)
+C_SOURCES = $(filter-out $(SRC_DIR)/ve_debug_stub.c, $(wildcard $(SRC_DIR)/*.c))
 CXX_SOURCES = $(wildcard $(SRC_DIR)/*.cpp)
 
 # Object files

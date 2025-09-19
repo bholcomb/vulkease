@@ -373,13 +373,28 @@ namespace VulkEase
         public VEPerformanceStats GetPerformanceStats()
         {
             CheckDisposed();
-            return Native.veGetPerformanceStats(_handle);
+            var result = Native.veGetPerformanceStats(_handle, out VEPerformanceStats stats);
+            if (result != VEResult.Success)
+                throw new VulkEaseException(result);
+            return stats;
         }
 
         public VEMemoryStats GetMemoryStats()
         {
             CheckDisposed();
-            return Native.veGetMemoryStats(_handle);
+            var result = Native.veGetMemoryStats(_handle, out VEMemoryStats stats);
+            if (result != VEResult.Success)
+                throw new VulkEaseException(result);
+            return stats;
+        }
+
+        public VERenderConfigStats GetRenderConfigStats()
+        {
+            CheckDisposed();
+            var result = Native.veGetRenderConfigStats(_handle, out VERenderConfigStats stats);
+            if (result != VEResult.Success)
+                throw new VulkEaseException(result);
+            return stats;
         }
 
         public void UpdateFrameStats()
@@ -630,25 +645,25 @@ namespace VulkEase
         }
 
         // Debug Labels
-        public unsafe void BeginDebugRegion(string regionName, VEColor color = default)
+        public void BeginDebugLabel(string labelName, VEColor color = default)
         {
             if (color.Equals(default(VEColor)))
                 color = VEColor.Blue;
                 
-            Native.veBeginDebugRegion(_handle, regionName, (IntPtr)(&color));
+            Native.veBeginDebugLabel(_handle, labelName, color);
         }
 
-        public void EndDebugRegion()
+        public void EndDebugLabel()
         {
-            Native.veEndDebugRegion(_handle);
+            Native.veEndDebugLabel(_handle);
         }
 
-        public unsafe void InsertDebugLabel(string labelName, VEColor color = default)
+        public void InsertDebugLabel(string labelName, VEColor color = default)
         {
             if (color.Equals(default(VEColor)))
                 color = VEColor.White;
                 
-            Native.veInsertDebugLabel(_handle, labelName, (IntPtr)(&color));
+            Native.veInsertDebugLabel(_handle, labelName, color);
         }
 
         // Submit Command Buffer
@@ -952,12 +967,12 @@ namespace VulkEase
         public DebugScope(CommandBuffer cmd, string name, VEColor color = default)
         {
             _cmd = cmd;
-            _cmd?.BeginDebugRegion(name, color);
+            _cmd?.BeginDebugLabel(name, color);
         }
 
         public void Dispose()
         {
-            _cmd?.EndDebugRegion();
+            _cmd?.EndDebugLabel();
         }
     }
 
