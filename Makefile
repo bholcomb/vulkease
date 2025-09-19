@@ -17,14 +17,14 @@ SHADERS_DIR = $(EXAMPLES_DIR)/shaders
 # Output library and examples
 LIBRARY = libvulkease.so
 EXAMPLE_TRIANGLE = 01_triangle
-EXAMPLE_PARTICLES = 03_compute_particles
+EXAMPLE_PARTICLES = 02_compute_particles
 
 # Compilers and flags
 CC = gcc
 CXX = g++
-CFLAGS = -std=c11 -fPIC -Wall -Wextra -O2 -DNDEBUG
-CXXFLAGS = -std=c++14 -fPIC -Wall -Wextra -O2 -DNDEBUG
-EXAMPLE_CFLAGS = -std=c11 -Wall -Wextra -O2 -DNDEBUG
+CFLAGS = -std=c11 -fPIC -Wall -Wextra -O0 -DDEBUG -g
+CXXFLAGS = -std=c++14 -fPIC -Wall -Wextra -std=c++17 -O0 -DDEBUG -g
+EXAMPLE_CFLAGS = -std=c11 -Wall -Wextra -O0 -DDEBUG -g
 
 # Include directories
 INCLUDES = -I$(SRC_DIR) -I$(EXTERNAL_DIR) -I/usr/include/vulkan
