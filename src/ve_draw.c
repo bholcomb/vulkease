@@ -241,19 +241,30 @@ void veDrawIndirect(VECommandBuffer* cmd, VEBufferAddress indirectBuffer,
                    size_t offset, uint32_t drawCount, uint32_t stride) {
     if (!cmd || indirectBuffer == VE_INVALID_ADDRESS || drawCount == 0) return;
     
-    // TODO: Convert buffer address to VkBuffer
-    // This requires access to the device to look up the buffer
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
-    // vkCmdDrawIndirect(internal->commandBuffer, buffer, offset, drawCount, stride);
+    VkBuffer buffer = veGetVkBufferFromAddress(internal->device, indirectBuffer);
+    
+    if (buffer == VK_NULL_HANDLE) {
+        veSetError("Invalid indirect buffer address");
+        return;
+    }
+    
+    vkCmdDrawIndirect(internal->commandBuffer, buffer, offset, drawCount, stride);
 }
 
 void veDrawIndexedIndirect(VECommandBuffer* cmd, VEBufferAddress indirectBuffer,
                           size_t offset, uint32_t drawCount, uint32_t stride) {
     if (!cmd || indirectBuffer == VE_INVALID_ADDRESS || drawCount == 0) return;
     
-    // TODO: Convert buffer address to VkBuffer
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
-    // vkCmdDrawIndexedIndirect(internal->commandBuffer, buffer, offset, drawCount, stride);
+    VkBuffer buffer = veGetVkBufferFromAddress(internal->device, indirectBuffer);
+    
+    if (buffer == VK_NULL_HANDLE) {
+        veSetError("Invalid indirect buffer address");
+        return;
+    }
+    
+    vkCmdDrawIndexedIndirect(internal->commandBuffer, buffer, offset, drawCount, stride);
 }
 
 void veDrawIndirectCount(VECommandBuffer* cmd, VEBufferAddress indirectBuffer,
@@ -261,10 +272,17 @@ void veDrawIndirectCount(VECommandBuffer* cmd, VEBufferAddress indirectBuffer,
                         size_t countOffset, uint32_t maxDrawCount, uint32_t stride) {
     if (!cmd || indirectBuffer == VE_INVALID_ADDRESS || countBuffer == VE_INVALID_ADDRESS) return;
     
-    // TODO: Convert buffer addresses to VkBuffer
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
-    // vkCmdDrawIndirectCount(internal->commandBuffer, indirectBuf, indirectOffset, 
-    //                       countBuf, countOffset, maxDrawCount, stride);
+    VkBuffer indirectBuf = veGetVkBufferFromAddress(internal->device, indirectBuffer);
+    VkBuffer countBuf = veGetVkBufferFromAddress(internal->device, countBuffer);
+    
+    if (indirectBuf == VK_NULL_HANDLE || countBuf == VK_NULL_HANDLE) {
+        veSetError("Invalid buffer address for indirect count draw");
+        return;
+    }
+    
+    vkCmdDrawIndirectCount(internal->commandBuffer, indirectBuf, indirectOffset, 
+                          countBuf, countOffset, maxDrawCount, stride);
 }
 
 void veDrawIndexedIndirectCount(VECommandBuffer* cmd, VEBufferAddress indirectBuffer,
@@ -272,10 +290,17 @@ void veDrawIndexedIndirectCount(VECommandBuffer* cmd, VEBufferAddress indirectBu
                                size_t countOffset, uint32_t maxDrawCount, uint32_t stride) {
     if (!cmd || indirectBuffer == VE_INVALID_ADDRESS || countBuffer == VE_INVALID_ADDRESS) return;
     
-    // TODO: Convert buffer addresses to VkBuffer
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
-    // vkCmdDrawIndexedIndirectCount(internal->commandBuffer, indirectBuf, indirectOffset,
-    //                              countBuf, countOffset, maxDrawCount, stride);
+    VkBuffer indirectBuf = veGetVkBufferFromAddress(internal->device, indirectBuffer);
+    VkBuffer countBuf = veGetVkBufferFromAddress(internal->device, countBuffer);
+    
+    if (indirectBuf == VK_NULL_HANDLE || countBuf == VK_NULL_HANDLE) {
+        veSetError("Invalid buffer address for indexed indirect count draw");
+        return;
+    }
+    
+    vkCmdDrawIndexedIndirectCount(internal->commandBuffer, indirectBuf, indirectOffset,
+                                 countBuf, countOffset, maxDrawCount, stride);
 }
 
 
