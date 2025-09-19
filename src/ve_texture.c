@@ -278,6 +278,142 @@ VkSampleCountFlagBits veSampleCountToVk(VESampleCount sampleCount) {
 }
 
 // =============================================================================
+// Texture Data Upload
+// =============================================================================
+
+static VEResult veUploadTextureData(VEDeviceInternal* device, VETextureInternal* texture, 
+                                   const void* data, size_t dataSize) {
+    if (!device || !texture || !data || dataSize == 0) {
+        veSetError("Invalid parameters for texture upload");
+        return VE_ERROR_INVALID_PARAMETER;
+    }
+    
+    // Create staging buffer for upload
+    VkBufferCreateInfo stagingBufferInfo = {0};
+    stagingBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    stagingBufferInfo.size = dataSize;
+    stagingBufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    stagingBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    
+    VmaAllocationCreateInfo stagingAllocInfo = {0};
+    stagingAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    
+    VkBuffer stagingBuffer;
+    VmaAllocation stagingAllocation;
+    VmaAllocationInfo stagingAllocInfo_result;
+    
+    VkResult result = vmaCreateBuffer(device->allocator, &stagingBufferInfo, &stagingAllocInfo,
+                                     &stagingBuffer, &stagingAllocation, &stagingAllocInfo_result);
+    if (result != VK_SUCCESS) {
+        veSetError("Failed to create staging buffer for texture upload (VkResult: %d)", result);
+        return VE_ERROR_OUT_OF_MEMORY;
+    }
+    
+    // Copy data to staging buffer
+    memcpy(stagingAllocInfo_result.pMappedData, data, dataSize);
+    vmaFlushAllocation(device->allocator, stagingAllocation, 0, dataSize);
+    
+    // Allocate command buffer for the transfer
+    VECommandBufferInternal* cmd;
+    VEResult allocResult = veAllocateCommandBuffer(device, &cmd);
+    if (allocResult != VE_SUCCESS) {
+        vmaDestroyBuffer(device->allocator, stagingBuffer, stagingAllocation);
+        return allocResult;
+    }
+    
+    // Begin command buffer
+    VkCommandBufferBeginInfo beginInfo = {0};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    
+    result = vkBeginCommandBuffer(cmd->commandBuffer, &beginInfo);
+    if (result != VK_SUCCESS) {
+        veSetError("Failed to begin command buffer for texture upload (VkResult: %d)", result);
+        vmaDestroyBuffer(device->allocator, stagingBuffer, stagingAllocation);
+        veFreeCommandBuffer(device, cmd);
+        return VE_ERROR_OUT_OF_MEMORY;
+    }
+    
+    // Transition image to transfer destination layout
+    VkImageMemoryBarrier barrier = {0};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = texture->image;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = texture->mipLevels;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = texture->arrayLayers;
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    
+    vkCmdPipelineBarrier(cmd->commandBuffer,
+                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        0, 0, NULL, 0, NULL, 1, &barrier);
+    
+    // Copy buffer to image
+    VkBufferImageCopy region = {0};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = texture->arrayLayers;
+    region.imageOffset = (VkOffset3D){0, 0, 0};
+    region.imageExtent = (VkExtent3D){texture->width, texture->height, texture->depth};
+    
+    vkCmdCopyBufferToImage(cmd->commandBuffer, stagingBuffer, texture->image,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    
+    // Transition image to shader read layout
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    
+    vkCmdPipelineBarrier(cmd->commandBuffer,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                        0, 0, NULL, 0, NULL, 1, &barrier);
+    
+    // End command buffer
+    result = vkEndCommandBuffer(cmd->commandBuffer);
+    if (result != VK_SUCCESS) {
+        veSetError("Failed to end command buffer for texture upload (VkResult: %d)", result);
+        vmaDestroyBuffer(device->allocator, stagingBuffer, stagingAllocation);
+        veFreeCommandBuffer(device, cmd);
+        return VE_ERROR_OUT_OF_MEMORY;
+    }
+    
+    // Submit command buffer
+    VkSubmitInfo submitInfo = {0};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd->commandBuffer;
+    
+    result = vkQueueSubmit(device->graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    if (result != VK_SUCCESS) {
+        veSetError("Failed to submit texture upload command buffer (VkResult: %d)", result);
+        vmaDestroyBuffer(device->allocator, stagingBuffer, stagingAllocation);
+        veFreeCommandBuffer(device, cmd);
+        return VE_ERROR_OUT_OF_MEMORY;
+    }
+    
+    // Wait for completion
+    vkQueueWaitIdle(device->graphicsQueue);
+    
+    // Cleanup
+    vmaDestroyBuffer(device->allocator, stagingBuffer, stagingAllocation);
+    veFreeCommandBuffer(device, cmd);
+    
+    return VE_SUCCESS;
+}
+
+// =============================================================================
 // Texture Creation
 // =============================================================================
 
@@ -385,8 +521,13 @@ VETextureIndex veCreateTexture(VEDevice* device, const VETextureDesc* desc) {
     
     // Upload initial data if provided
     if (desc->initialData && desc->initialDataSize > 0) {
-        // TODO: Implement texture data upload
-        // This would require staging buffer creation and command buffer submission
+        VEResult uploadResult = veUploadTextureData(deviceInternal, texture, desc->initialData, desc->initialDataSize);
+        if (uploadResult != VE_SUCCESS) {
+            vkDestroyImageView(deviceInternal->device, texture->imageView, NULL);
+            vmaDestroyImage(deviceInternal->allocator, texture->image, texture->allocation);
+            veFreeTextureIndex(deviceInternal, index);
+            return VE_INVALID_TEXTURE_INDEX;
+        }
     }
     
     if (deviceInternal->context->validationEnabled) {
