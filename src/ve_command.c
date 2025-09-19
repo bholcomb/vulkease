@@ -181,7 +181,15 @@ void veBeginRendering(VECommandBuffer* cmd, const VERenderingInfo* renderingInfo
     VkRenderingAttachmentInfo colorAttachments[8] = {0};
     for (uint32_t i = 0; i < renderingInfo->colorAttachmentCount && i < 8; i++) {
         colorAttachments[i].sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        // TODO: Get image view from texture index
+        
+        // Get image view from texture index
+        VkImageView imageView = veGetImageViewFromTexture(internal->device, renderingInfo->colorAttachments[i].texture);
+        if (imageView == VK_NULL_HANDLE) {
+            veSetError("Invalid texture index %u for color attachment %u", renderingInfo->colorAttachments[i].texture, i);
+            return;
+        }
+        colorAttachments[i].imageView = imageView;
+        
         colorAttachments[i].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         colorAttachments[i].loadOp = (VkAttachmentLoadOp)renderingInfo->colorAttachments[i].loadOp;
         colorAttachments[i].storeOp = (VkAttachmentStoreOp)renderingInfo->colorAttachments[i].storeOp;
@@ -189,6 +197,18 @@ void veBeginRendering(VECommandBuffer* cmd, const VERenderingInfo* renderingInfo
         colorAttachments[i].clearValue.color.float32[1] = renderingInfo->colorAttachments[i].clearValue.g;
         colorAttachments[i].clearValue.color.float32[2] = renderingInfo->colorAttachments[i].clearValue.b;
         colorAttachments[i].clearValue.color.float32[3] = renderingInfo->colorAttachments[i].clearValue.a;
+        
+        // Handle resolve attachment if present
+        if (renderingInfo->colorAttachments[i].resolveTexture != VE_INVALID_TEXTURE_INDEX) {
+            VkImageView resolveImageView = veGetImageViewFromTexture(internal->device, renderingInfo->colorAttachments[i].resolveTexture);
+            if (resolveImageView == VK_NULL_HANDLE) {
+                veSetError("Invalid resolve texture index %u for color attachment %u", 
+                          renderingInfo->colorAttachments[i].resolveTexture, i);
+                return;
+            }
+            colorAttachments[i].resolveImageView = resolveImageView;
+            colorAttachments[i].resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+        }
     }
     
     vkRenderingInfo.colorAttachmentCount = renderingInfo->colorAttachmentCount;
@@ -198,12 +218,32 @@ void veBeginRendering(VECommandBuffer* cmd, const VERenderingInfo* renderingInfo
     VkRenderingAttachmentInfo depthAttachment = {0};
     if (renderingInfo->depthAttachment) {
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        // TODO: Get image view from texture index
+        
+        // Get image view from texture index
+        VkImageView depthImageView = veGetImageViewFromTexture(internal->device, renderingInfo->depthAttachment->texture);
+        if (depthImageView == VK_NULL_HANDLE) {
+            veSetError("Invalid texture index %u for depth attachment", renderingInfo->depthAttachment->texture);
+            return;
+        }
+        depthAttachment.imageView = depthImageView;
+        
         depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         depthAttachment.loadOp = (VkAttachmentLoadOp)renderingInfo->depthAttachment->loadOp;
         depthAttachment.storeOp = (VkAttachmentStoreOp)renderingInfo->depthAttachment->storeOp;
         depthAttachment.clearValue.depthStencil.depth = 1.0f;
         depthAttachment.clearValue.depthStencil.stencil = 0;
+        
+        // Handle resolve attachment if present
+        if (renderingInfo->depthAttachment->resolveTexture != VE_INVALID_TEXTURE_INDEX) {
+            VkImageView resolveImageView = veGetImageViewFromTexture(internal->device, renderingInfo->depthAttachment->resolveTexture);
+            if (resolveImageView == VK_NULL_HANDLE) {
+                veSetError("Invalid resolve texture index %u for depth attachment", 
+                          renderingInfo->depthAttachment->resolveTexture);
+                return;
+            }
+            depthAttachment.resolveImageView = resolveImageView;
+            depthAttachment.resolveMode = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
+        }
         
         vkRenderingInfo.pDepthAttachment = &depthAttachment;
     }
@@ -212,12 +252,32 @@ void veBeginRendering(VECommandBuffer* cmd, const VERenderingInfo* renderingInfo
     VkRenderingAttachmentInfo stencilAttachment = {0};
     if (renderingInfo->stencilAttachment) {
         stencilAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        // TODO: Get image view from texture index
+        
+        // Get image view from texture index
+        VkImageView stencilImageView = veGetImageViewFromTexture(internal->device, renderingInfo->stencilAttachment->texture);
+        if (stencilImageView == VK_NULL_HANDLE) {
+            veSetError("Invalid texture index %u for stencil attachment", renderingInfo->stencilAttachment->texture);
+            return;
+        }
+        stencilAttachment.imageView = stencilImageView;
+        
         stencilAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         stencilAttachment.loadOp = (VkAttachmentLoadOp)renderingInfo->stencilAttachment->loadOp;
         stencilAttachment.storeOp = (VkAttachmentStoreOp)renderingInfo->stencilAttachment->storeOp;
         stencilAttachment.clearValue.depthStencil.depth = 1.0f;
         stencilAttachment.clearValue.depthStencil.stencil = 0;
+        
+        // Handle resolve attachment if present
+        if (renderingInfo->stencilAttachment->resolveTexture != VE_INVALID_TEXTURE_INDEX) {
+            VkImageView resolveImageView = veGetImageViewFromTexture(internal->device, renderingInfo->stencilAttachment->resolveTexture);
+            if (resolveImageView == VK_NULL_HANDLE) {
+                veSetError("Invalid resolve texture index %u for stencil attachment", 
+                          renderingInfo->stencilAttachment->resolveTexture);
+                return;
+            }
+            stencilAttachment.resolveImageView = resolveImageView;
+            stencilAttachment.resolveMode = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
+        }
         
         vkRenderingInfo.pStencilAttachment = &stencilAttachment;
     }

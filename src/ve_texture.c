@@ -247,6 +247,11 @@ VETextureInternal* veGetTexture(VEDeviceInternal* device, VETextureIndex index) 
     return texture->isValid ? texture : NULL;
 }
 
+VkImageView veGetImageViewFromTexture(VEDeviceInternal* device, VETextureIndex index) {
+    VETextureInternal* texture = veGetTexture(device, index);
+    return (texture && texture->isValid) ? texture->imageView : VK_NULL_HANDLE;
+}
+
 // =============================================================================
 // Format Conversion Utilities
 // =============================================================================
@@ -371,6 +376,11 @@ static VEResult veUploadTextureData(VEDeviceInternal* device, VETextureInternal*
     // Submit command buffer and wait for completion
     VEResult submitResult = veSubmitCommandBuffer(cmdPublic, true);
     
+    // Update tracked layout if command submission succeeded
+    if (submitResult == VE_SUCCESS) {
+        texture->currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
+    
     // Cleanup staging buffer
     vmaDestroyBuffer(device->allocator, stagingBuffer, stagingAllocation);
     
@@ -409,6 +419,7 @@ VETextureIndex veCreateTexture(VEDevice* device, const VETextureDesc* desc) {
     texture->format = desc->format;
     texture->usage = desc->usage;
     texture->sampleCount = desc->sampleCount;
+    texture->currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;  // All textures start undefined
     texture->index = index;
     
     if (desc->debugName) {
@@ -729,6 +740,17 @@ VETextureIndex veLoadTexture(VEDevice* device, const char* filename,
     
     VETextureIndex result = veCreateTexture(device, &desc);
     
+    // Generate mipmaps if requested and texture creation succeeded
+    if (result != VE_INVALID_TEXTURE_INDEX && generateMips && desc.mipLevels > 1) {
+        VEResult mipmapResult = veGenerateMipmapsImmediate(device, result);
+        if (mipmapResult != VE_SUCCESS) {
+            veSetError("Failed to generate mipmaps for loaded texture: %s", filename);
+            veDestroyTexture(device, result);
+            stbi_image_free(pixels);
+            return VE_INVALID_TEXTURE_INDEX;
+        }
+    }
+    
     stbi_image_free(pixels);
     return result;
 }
@@ -764,6 +786,17 @@ VETextureIndex veLoadHDRTexture(VEDevice* device, const char* filename,
     
     VETextureIndex result = veCreateTexture(device, &desc);
     
+    // Generate mipmaps if requested and texture creation succeeded
+    if (result != VE_INVALID_TEXTURE_INDEX && generateMips && desc.mipLevels > 1) {
+        VEResult mipmapResult = veGenerateMipmapsImmediate(device, result);
+        if (mipmapResult != VE_SUCCESS) {
+            veSetError("Failed to generate mipmaps for loaded HDR texture: %s", filename);
+            veDestroyTexture(device, result);
+            stbi_image_free(pixels);
+            return VE_INVALID_TEXTURE_INDEX;
+        }
+    }
+    
     stbi_image_free(pixels);
     return result;
 }
@@ -775,8 +808,169 @@ VETextureIndex veLoadCubeTexture(VEDevice* device, const char* filenames[6],
 }
 
 VEResult veGenerateMipmaps(VEDevice* device, VECommandBuffer* cmd, VETextureIndex texture) {
-    veSetError("Mipmap generation not implemented");
-    return VE_ERROR_FEATURE_NOT_SUPPORTED;
+    if (!device || !cmd || texture == VE_INVALID_TEXTURE_INDEX) {
+        veSetError("Invalid parameters for mipmap generation");
+        return VE_ERROR_INVALID_PARAMETER;
+    }
+    
+    VEDeviceInternal* deviceInternal = (VEDeviceInternal*)device;
+    VECommandBufferInternal* cmdInternal = (VECommandBufferInternal*)cmd;
+    
+    // Get texture and validate
+    VETextureInternal* textureInternal = veGetTexture(deviceInternal, texture);
+    if (!textureInternal || !textureInternal->isValid) {
+        veSetError("Invalid texture index: %u", texture);
+        return VE_ERROR_INVALID_PARAMETER;
+    }
+    
+    // Validate mipmap generation requirements
+    if (textureInternal->mipLevels <= 1) {
+        veSetError("Texture has only 1 mip level - no mipmaps to generate");
+        return VE_ERROR_INVALID_PARAMETER;
+    }
+    
+    if (textureInternal->sampleCount != VE_SAMPLE_COUNT_1) {
+        veSetError("Cannot generate mipmaps for multisampled textures");
+        return VE_ERROR_INVALID_PARAMETER;
+    }
+    
+    // Check if format supports linear filtering (required for mipmap generation)
+    VkFormatProperties formatProps;
+    vkGetPhysicalDeviceFormatProperties(deviceInternal->physicalDevice, 
+                                       veFormatToVk(textureInternal->format), &formatProps);
+    
+    if (!(formatProps.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
+        veSetError("Format does not support linear filtering required for mipmap generation");
+        return VE_ERROR_FEATURE_NOT_SUPPORTED;
+    }
+    
+    // Ensure texture has transfer source usage for blitting
+    VkImageUsageFlags usage = veTextureUsageToVk(textureInternal->usage);
+    if (!(usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT)) {
+        veSetError("Texture must have transfer source usage for mipmap generation");
+        return VE_ERROR_INVALID_PARAMETER;
+    }
+    
+    VkImage image = textureInternal->image;
+    uint32_t mipWidth = textureInternal->width;
+    uint32_t mipHeight = textureInternal->height;
+    
+    // Generate mipmaps by blitting from level i to level i+1
+    for (uint32_t i = 1; i < textureInternal->mipLevels; i++) {
+        // Transition previous mip level to transfer source layout
+        VkImageMemoryBarrier2 barrier = {0};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = image;
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.baseMipLevel = i - 1;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = textureInternal->arrayLayers;
+        
+        VkDependencyInfo dependencyInfo = {0};
+        dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dependencyInfo.imageMemoryBarrierCount = 1;
+        dependencyInfo.pImageMemoryBarriers = &barrier;
+        
+        vkCmdPipelineBarrier2(cmdInternal->commandBuffer, &dependencyInfo);
+        
+        // Calculate dimensions for current mip level
+        uint32_t nextMipWidth = mipWidth > 1 ? mipWidth / 2 : 1;
+        uint32_t nextMipHeight = mipHeight > 1 ? mipHeight / 2 : 1;
+        
+        // Blit from previous level to current level
+        VkImageBlit blit = {0};
+        blit.srcOffsets[0] = (VkOffset3D){0, 0, 0};
+        blit.srcOffsets[1] = (VkOffset3D){(int32_t)mipWidth, (int32_t)mipHeight, 1};
+        blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.srcSubresource.mipLevel = i - 1;
+        blit.srcSubresource.baseArrayLayer = 0;
+        blit.srcSubresource.layerCount = textureInternal->arrayLayers;
+        
+        blit.dstOffsets[0] = (VkOffset3D){0, 0, 0};
+        blit.dstOffsets[1] = (VkOffset3D){(int32_t)nextMipWidth, (int32_t)nextMipHeight, 1};
+        blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.dstSubresource.mipLevel = i;
+        blit.dstSubresource.baseArrayLayer = 0;
+        blit.dstSubresource.layerCount = textureInternal->arrayLayers;
+        
+        vkCmdBlitImage(cmdInternal->commandBuffer,
+                      image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                      image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                      1, &blit, VK_FILTER_LINEAR);
+        
+        // Update dimensions for next iteration
+        mipWidth = nextMipWidth;
+        mipHeight = nextMipHeight;
+    }
+    
+    // Transition all mip levels to shader read optimal layout
+    VkImageMemoryBarrier2 finalBarrier = {0};
+    finalBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+    finalBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+    finalBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    finalBarrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+    finalBarrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+    finalBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    finalBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    finalBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    finalBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    finalBarrier.image = image;
+    finalBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    finalBarrier.subresourceRange.baseMipLevel = 0;
+    finalBarrier.subresourceRange.levelCount = textureInternal->mipLevels;
+    finalBarrier.subresourceRange.baseArrayLayer = 0;
+    finalBarrier.subresourceRange.layerCount = textureInternal->arrayLayers;
+    
+    VkDependencyInfo finalDependencyInfo = {0};
+    finalDependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    finalDependencyInfo.imageMemoryBarrierCount = 1;
+    finalDependencyInfo.pImageMemoryBarriers = &finalBarrier;
+    
+    vkCmdPipelineBarrier2(cmdInternal->commandBuffer, &finalDependencyInfo);
+    
+    // Update tracked layout
+    textureInternal->currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    
+    return VE_SUCCESS;
+}
+
+VEResult veGenerateMipmapsImmediate(VEDevice* device, VETextureIndex texture) {
+    if (!device || texture == VE_INVALID_TEXTURE_INDEX) {
+        veSetError("Invalid parameters for immediate mipmap generation");
+        return VE_ERROR_INVALID_PARAMETER;
+    }
+    
+    // Create a temporary command buffer for mipmap generation
+    VECommandBuffer* cmd = veBeginCommandBuffer(device);
+    if (!cmd) {
+        veSetError("Failed to create command buffer for mipmap generation");
+        return VE_ERROR_OUT_OF_MEMORY;
+    }
+    
+    // Generate mipmaps
+    VEResult result = veGenerateMipmaps(device, cmd, texture);
+    if (result != VE_SUCCESS) {
+        // Note: command buffer will be cleaned up automatically on submission failure
+        return result;
+    }
+    
+    // Submit and wait for completion
+    result = veSubmitCommandBuffer(cmd, true);
+    if (result != VE_SUCCESS) {
+        veSetError("Failed to submit mipmap generation command buffer");
+        return result;
+    }
+    
+    return VE_SUCCESS;
 }
 
 VEResult veSaveTexture(VEDevice* device, VETextureIndex texture, const char* filename) {

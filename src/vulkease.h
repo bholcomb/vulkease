@@ -793,6 +793,12 @@ VULKEASE_API VETextureIndex veLoadCubeTexture(VEDevice* device, const char* file
 VULKEASE_API VEResult veGenerateMipmaps(VEDevice* device, VECommandBuffer* cmd, VETextureIndex texture);
 
 /**
+ * Generate mipmaps immediately (convenience function)
+ * Creates a temporary command buffer, generates mipmaps, and submits immediately
+ */
+VULKEASE_API VEResult veGenerateMipmapsImmediate(VEDevice* device, VETextureIndex texture);
+
+/**
  * Save texture to file
  */
 VULKEASE_API VEResult veSaveTexture(VEDevice* device, VETextureIndex texture, const char* filename);
@@ -1038,6 +1044,21 @@ VULKEASE_API void veBarrierGraphicsToPresent(VECommandBuffer* cmd);
 VULKEASE_API void veTransitionTexture(VECommandBuffer* cmd, VETextureIndex texture,
                                      uint32_t oldLayout, uint32_t newLayout);
 
+/**
+ * Common texture layout transition helpers
+ */
+VULKEASE_API void veTransitionTextureForShaderRead(VECommandBuffer* cmd, VETextureIndex texture);
+VULKEASE_API void veTransitionTextureForColorAttachment(VECommandBuffer* cmd, VETextureIndex texture);
+VULKEASE_API void veTransitionTextureForDepthAttachment(VECommandBuffer* cmd, VETextureIndex texture);
+VULKEASE_API void veTransitionTextureForTransferSrc(VECommandBuffer* cmd, VETextureIndex texture);
+VULKEASE_API void veTransitionTextureForTransferDst(VECommandBuffer* cmd, VETextureIndex texture);
+VULKEASE_API void veTransitionTextureForPresent(VECommandBuffer* cmd, VETextureIndex texture);
+
+/**
+ * Smart layout transition - automatically detects current layout
+ */
+VULKEASE_API void veTransitionTextureToLayout(VECommandBuffer* cmd, VETextureIndex texture, uint32_t newLayout);
+
 // =============================================================================
 // Swapchain and Presentation
 // =============================================================================
@@ -1114,28 +1135,47 @@ VULKEASE_API VEResult veValidateRenderConfig(VERenderConfig* config);
 typedef struct VEGraphicsPushConstants {
     VEBufferAddress vertexBuffer;          // 8 bytes - vertex data address
     VEBufferAddress indexBuffer;           // 8 bytes - index data address (optional)
-    VEBufferAddress uniformBuffer;         // 8 bytes - uniform data address
-    VETextureIndex diffuseTexture;         // 4 bytes - bindless texture index
-    VETextureIndex normalTexture;          // 4 bytes - bindless texture index
-    VESamplerIndex sampler;                // 4 bytes - bindless sampler index
+    VEBufferAddress uniformBuffers[4];     // 32 bytes - up to 4 uniform buffer addresses
+    VETextureIndex textures[8];            // 32 bytes - up to 8 bindless texture indices
+    VESamplerIndex samplers[8];            // 32 bytes - up to 8 bindless sampler indices
     float objectScale;                     // 4 bytes - per-object scale
-    uint32_t padding;                      // 4 bytes - alignment
-} VEGraphicsPushConstants;                 // Total: 48 bytes
+    uint32_t activeTextureCount;           // 4 bytes - number of active textures (0-8)
+    uint32_t activeSamplerCount;           // 4 bytes - number of active samplers (0-8)
+    uint32_t activeUniformCount;           // 4 bytes - number of active uniform buffers (0-4)
+} VEGraphicsPushConstants;                 // Total: 128 bytes
 
 // Standard push constants for compute shaders
 typedef struct VEComputePushConstants {
-    VEBufferAddress inputBuffer;           // 8 bytes - input data address
-    VEBufferAddress outputBuffer;          // 8 bytes - output data address
-    VEBufferAddress paramBuffer;           // 8 bytes - parameter data address
-    VETextureIndex inputTexture;           // 4 bytes - input texture index
-    VETextureIndex outputTexture;          // 4 bytes - output texture index
+    VEBufferAddress buffers[8];            // 64 bytes - up to 8 buffer addresses (input/output/params)
+    VETextureIndex textures[8];            // 32 bytes - up to 8 texture indices
+    VESamplerIndex samplers[4];            // 16 bytes - up to 4 sampler indices (usually fewer needed for compute)
     uint32_t elementCount;                 // 4 bytes - number of elements to process
-    uint32_t padding[2];                   // 8 bytes - alignment
-} VEComputePushConstants;                  // Total: 48 bytes
+    uint32_t activeBufferCount;            // 4 bytes - number of active buffers (0-8)
+    uint32_t activeTextureCount;           // 4 bytes - number of active textures (0-8)
+    uint32_t activeSamplerCount;           // 4 bytes - number of active samplers (0-4)
+} VEComputePushConstants;                  // Total: 128 bytes
 
 /**
  * Helper macros
  */
+
+// Initialize push constant structures with safe defaults
+#define VE_INIT_GRAPHICS_PUSH_CONSTANTS() \
+    { .vertexBuffer = VE_INVALID_ADDRESS, .indexBuffer = VE_INVALID_ADDRESS, \
+      .uniformBuffers = {VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS}, \
+      .textures = {VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, \
+                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX}, \
+      .samplers = {VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, \
+                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX}, \
+      .objectScale = 1.0f, .activeTextureCount = 0, .activeSamplerCount = 0, .activeUniformCount = 0 }
+
+#define VE_INIT_COMPUTE_PUSH_CONSTANTS() \
+    { .buffers = {VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, \
+                  VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS}, \
+      .textures = {VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, \
+                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX}, \
+      .samplers = {VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX}, \
+      .elementCount = 0, .activeBufferCount = 0, .activeTextureCount = 0, .activeSamplerCount = 0 }
 
 // Create default descriptors with common settings
 #define VE_DEFAULT_BUFFER_DESC() \

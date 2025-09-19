@@ -73,9 +73,28 @@ void veSetComputeConstants(VECommandBuffer* cmd, const void* data, size_t size, 
     // In a full implementation, we would need pipeline layout information
     // For now, assume standard compute push constant layout
     
-    // TODO: Need pipeline layout for push constants
-    // This would need to be provided by the compute shader or a compute config
-    // vkCmdPushConstants(internal->commandBuffer, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, offset, size, data);
+    // With VK_EXT_shader_object, push constants are defined in the shader objects themselves
+    // when creating the shader with vkCreateShadersEXT
+    // 
+    // NOTE: Currently VulkEase shaders don't define push constant ranges in their creation.
+    // The shader creation in ve_shader.c needs to be updated to include:
+    // - pushConstantRangeCount = 1  
+    // - pPushConstantRanges pointing to VulkEase's standard push constant layout
+    //
+    // Once shaders properly define their push constant interface, this function will work.
+    
+    // Simple bounds check for VulkEase's standard push constant structures (128 bytes each)
+    if (offset + size > 128) { // VulkEase standard structures are exactly 128 bytes
+        veSetError("Push constant size exceeds VulkEase standard limit (max 128 bytes, requested %zu+%zu)", offset, size);
+        return;
+    }
+    
+    // TODO: This will work once shaders define push constant ranges in their creation
+    // For now, this is a placeholder that shows the correct approach for shader objects
+    veSetError("Push constants not yet implemented - shader creation needs push constant ranges");
+    
+    // vkCmdPushConstants(internal->commandBuffer, ???, VK_SHADER_STAGE_COMPUTE_BIT, 
+    //                   (uint32_t)offset, (uint32_t)size, data);
 }
 
 // =============================================================================
@@ -294,26 +313,10 @@ void veBarrierImage(VECommandBuffer* cmd, VETextureIndex texture,
     }
     
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
-    
-    // Convert texture index to VkImage
-    // This requires device access which we don't have in this context
-    VEDeviceInternal* device = NULL; // Would need proper device reference
+    VEDeviceInternal* device = internal->device;
     
     if (!device) {
-        // Fallback to memory barrier
-        VkMemoryBarrier2 memoryBarrier = {0};
-        memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-        memoryBarrier.srcStageMask = srcStage;
-        memoryBarrier.srcAccessMask = srcAccess;
-        memoryBarrier.dstStageMask = dstStage;
-        memoryBarrier.dstAccessMask = dstAccess;
-        
-        VkDependencyInfo dependencyInfo = {0};
-        dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dependencyInfo.memoryBarrierCount = 1;
-        dependencyInfo.pMemoryBarriers = &memoryBarrier;
-        
-        vkCmdPipelineBarrier2(internal->commandBuffer, &dependencyInfo);
+        veSetError("Command buffer has no device reference");
         return;
     }
     
