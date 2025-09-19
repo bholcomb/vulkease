@@ -27,10 +27,103 @@ VkShaderStageFlagBits veShaderStageToVk(VEShaderStage stage) {
 
 static bool compileGLSLToSPIRV(const char* glslSource, VEShaderStage stage, 
                                uint32_t** spirvCode, size_t* spirvSize) {
-    // TODO: Integrate with glslang to compile GLSL to SPIR-V
-    // For now, return false to indicate compilation is not available
-    veSetError("GLSL compilation not implemented - use pre-compiled SPIR-V");
-    return false;
+    if (!glslSource || !spirvCode || !spirvSize) {
+        veSetError("Invalid parameters for GLSL compilation");
+        return false;
+    }
+    
+    // Create temporary file names
+    char tempGLSL[256];
+    char tempSPIRV[256];
+    snprintf(tempGLSL, sizeof(tempGLSL), "/tmp/vulkease_shader_%p.glsl", (void*)glslSource);
+    snprintf(tempSPIRV, sizeof(tempSPIRV), "/tmp/vulkease_shader_%p.spv", (void*)glslSource);
+    
+    // Write GLSL source to temporary file
+    FILE* glslFile = fopen(tempGLSL, "w");
+    if (!glslFile) {
+        veSetError("Failed to create temporary GLSL file");
+        return false;
+    }
+    
+    if (fprintf(glslFile, "%s", glslSource) < 0) {
+        veSetError("Failed to write GLSL source to temporary file");
+        fclose(glslFile);
+        remove(tempGLSL);
+        return false;
+    }
+    fclose(glslFile);
+    
+    // Determine stage flag for glslangValidator
+    const char* stageFlag;
+    switch (stage) {
+        case VE_SHADER_STAGE_VERTEX: stageFlag = "-S vert"; break;
+        case VE_SHADER_STAGE_FRAGMENT: stageFlag = "-S frag"; break;
+        case VE_SHADER_STAGE_COMPUTE: stageFlag = "-S comp"; break;
+        case VE_SHADER_STAGE_GEOMETRY: stageFlag = "-S geom"; break;
+        case VE_SHADER_STAGE_TESSELLATION_CONTROL: stageFlag = "-S tesc"; break;
+        case VE_SHADER_STAGE_TESSELLATION_EVALUATION: stageFlag = "-S tese"; break;
+        default:
+            veSetError("Unsupported shader stage for compilation");
+            remove(tempGLSL);
+            return false;
+    }
+    
+    // Compile GLSL to SPIR-V using glslangValidator
+    char command[512];
+    snprintf(command, sizeof(command), "glslangValidator %s -V --target-env vulkan1.3 -o %s %s 2>/dev/null", 
+             stageFlag, tempSPIRV, tempGLSL);
+    
+    int result = system(command);
+    remove(tempGLSL); // Clean up GLSL file
+    
+    if (result != 0) {
+        veSetError("GLSL compilation failed - ensure glslangValidator is installed");
+        remove(tempSPIRV);
+        return false;
+    }
+    
+    // Read compiled SPIR-V
+    FILE* spirvFile = fopen(tempSPIRV, "rb");
+    if (!spirvFile) {
+        veSetError("Failed to open compiled SPIR-V file");
+        remove(tempSPIRV);
+        return false;
+    }
+    
+    // Get file size
+    fseek(spirvFile, 0, SEEK_END);
+    long fileSize = ftell(spirvFile);
+    fseek(spirvFile, 0, SEEK_SET);
+    
+    if (fileSize <= 0 || fileSize % 4 != 0) {
+        veSetError("Invalid SPIR-V file size: %ld", fileSize);
+        fclose(spirvFile);
+        remove(tempSPIRV);
+        return false;
+    }
+    
+    // Allocate and read SPIR-V code
+    *spirvCode = malloc(fileSize);
+    if (!*spirvCode) {
+        veSetError("Failed to allocate memory for SPIR-V code");
+        fclose(spirvFile);
+        remove(tempSPIRV);
+        return false;
+    }
+    
+    size_t bytesRead = fread(*spirvCode, 1, fileSize, spirvFile);
+    fclose(spirvFile);
+    remove(tempSPIRV); // Clean up SPIR-V file
+    
+    if (bytesRead != fileSize) {
+        veSetError("Failed to read complete SPIR-V file");
+        free(*spirvCode);
+        *spirvCode = NULL;
+        return false;
+    }
+    
+    *spirvSize = fileSize;
+    return true;
 }
 
 // =============================================================================
