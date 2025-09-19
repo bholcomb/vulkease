@@ -133,6 +133,12 @@ extern "C" bool veValidateBufferAddress(VEDeviceInternal* device, VEBufferAddres
     return veGetBufferFromAddress(device, address) != nullptr;
 }
 
+// Get VkBuffer handle from buffer address for command buffer operations
+extern "C" VkBuffer veGetVkBufferFromAddress(VEDeviceInternal* device, VEBufferAddress address) {
+    VEBufferInternal* buffer = veGetBufferFromAddress(device, address);
+    return (buffer && buffer->isValid) ? buffer->buffer : VK_NULL_HANDLE;
+}
+
 // =============================================================================
 // Buffer Creation
 // =============================================================================

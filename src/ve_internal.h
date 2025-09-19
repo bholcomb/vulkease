@@ -303,6 +303,7 @@ uint32_t veAllocateBufferIndex(VEDeviceInternal* device);
 void veFreeBufferIndex(VEDeviceInternal* device, uint32_t index);
 VEBufferInternal* veGetBufferFromAddress(VEDeviceInternal* device, VEBufferAddress address);
 bool veValidateBufferAddress(VEDeviceInternal* device, VEBufferAddress address);
+VkBuffer veGetVkBufferFromAddress(VEDeviceInternal* device, VEBufferAddress address);
 
 uint32_t veAllocateTextureIndex(VEDeviceInternal* device);
 void veFreeTextureIndex(VEDeviceInternal* device, uint32_t index);

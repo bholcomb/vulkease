@@ -24,27 +24,14 @@ void veDispatchIndirect(VECommandBuffer* cmd, VEBufferAddress indirectBuffer, si
     }
     
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
+    VkBuffer buffer = veGetVkBufferFromAddress(internal->device, indirectBuffer);
     
-    // We need to convert buffer address back to VkBuffer
-    // This requires access to the device to look up the buffer
-    // In a full implementation, we would store device reference in command buffer
-    
-    // Get device from global context or command buffer
-    // For now, we'll need to pass this through the command buffer somehow
-    VEDeviceInternal* device = NULL; // Would need proper device reference
-    
-    if (!device) {
-        veSetError("Cannot dispatch indirect - device reference not available");
+    if (buffer == VK_NULL_HANDLE) {
+        veSetError("Invalid indirect buffer address for compute dispatch");
         return;
     }
     
-    VEBufferInternal* buffer = veGetBufferFromAddress(device, indirectBuffer);
-    if (!buffer || !buffer->isValid) {
-        veSetError("Invalid indirect buffer address: 0x%llx", indirectBuffer);
-        return;
-    }
-    
-    vkCmdDispatchIndirect(internal->commandBuffer, buffer->buffer, offset);
+    vkCmdDispatchIndirect(internal->commandBuffer, buffer, offset);
 }
 
 // =============================================================================
