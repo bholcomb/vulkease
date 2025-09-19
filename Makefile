@@ -19,7 +19,7 @@ LIBRARY = libvulkease.so
 CC = gcc
 CXX = g++
 CFLAGS = -std=c11 -fPIC -Wall -Wextra -O2 -DNDEBUG
-CXXFLAGS = -std=c++11 -fPIC -Wall -Wextra -O2 -DNDEBUG
+CXXFLAGS = -std=c++14 -fPIC -Wall -Wextra -O2 -DNDEBUG
 
 # Include directories
 INCLUDES = -I$(SRC_DIR) -I$(EXTERNAL_DIR) -I/usr/include/vulkan
