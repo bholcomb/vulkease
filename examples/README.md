@@ -16,21 +16,7 @@ This collection demonstrates the key features of VulkEase 2.0, a modern bindless
 - Buffer device addresses passed via push constants
 - Modern dynamic rendering (no render passes)
 
-### 2. **02_textured_quad.c** - Textured Quad with Index Buffer  
-**Features demonstrated:**
-- Indexed rendering with index buffers
-- Texture loading with STB Image integration
-- Uniform buffers with persistent mapping
-- Matrix transformations and animation
-- Sampler creation and usage
-
-**Key concepts:**
-- Bindless textures accessed by index
-- Automatic mipmap generation
-- Uniform buffer updates with persistent mapping
-- Procedural texture fallback if file loading fails
-
-### 3. **03_compute_particles.c** - GPU Particle System
+### 3. **02_compute_particles.c** - GPU Particle System
 **Features demonstrated:**
 - Compute shader dispatch and synchronization
 - Storage buffers for particle data
@@ -43,20 +29,6 @@ This collection demonstrates the key features of VulkEase 2.0, a modern bindless
 - Compute workgroup size calculation
 - Storage buffer access from both compute and graphics shaders
 - Real-time performance statistics
-
-### 4. **04_deferred_rendering.c** - Multi-Pass Deferred Rendering
-**Features demonstrated:**
-- Multiple render targets (G-buffer)
-- Depth buffer usage
-- Multi-pass rendering pipeline
-- Deferred shading techniques
-- Resource management and cleanup
-
-**Key concepts:**
-- G-buffer layout: Albedo+Metallic, Normal+Roughness, Depth
-- Geometry pass fills G-buffer
-- Lighting pass samples G-buffer for final output
-- Multiple render configurations for different passes
 
 ## Building the Examples
 
