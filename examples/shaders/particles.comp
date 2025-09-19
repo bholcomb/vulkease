@@ -1,0 +1,105 @@
+#version 450 core
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+// Local workgroup size
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// Particle structure matching the C struct
+struct Particle {
+    vec2 position;
+    vec2 velocity;
+    float life;
+    float size;
+    vec4 color;
+    float padding; // Align to 16 bytes
+};
+
+// Buffer reference for bindless particle access
+layout(buffer_reference, std430) restrict buffer ParticleBuffer {
+    Particle particles[];
+};
+
+// Push constants for compute parameters
+layout(push_constant) uniform ComputePushConstants {
+    uint64_t particleBufferAddress;
+    float deltaTime;
+    float time;
+    vec2 attractorPos;
+    float attractorStrength;
+    uint particleCount;
+} pc;
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    
+    // Early exit if we're beyond the particle count
+    if (index >= pc.particleCount) {
+        return;
+    }
+    
+    // Get particle buffer reference
+    ParticleBuffer particleBuffer = ParticleBuffer(pc.particleBufferAddress);
+    
+    // Load current particle
+    Particle particle = particleBuffer.particles[index];
+    
+    // Update particle life
+    particle.life -= pc.deltaTime;
+    
+    // Reset particle if it's dead
+    if (particle.life <= 0.0) {
+        // Reset to random position in circle
+        float angle = fract(sin(float(index) * 43758.5453 + pc.time)) * 6.28318530718; // 2*PI
+        float radius = sqrt(fract(sin(float(index) * 12.9898 + pc.time * 0.1))) * 0.5;
+        
+        particle.position = vec2(cos(angle) * radius, sin(angle) * radius);
+        
+        // Random velocity
+        particle.velocity = vec2(
+            (fract(sin(float(index) * 78.233 + pc.time * 0.2)) - 0.5) * 0.1,
+            (fract(sin(float(index) * 91.311 + pc.time * 0.3)) - 0.5) * 0.1
+        );
+        
+        // Reset life
+        particle.life = fract(sin(float(index) * 23.421 + pc.time * 0.15)) * 5.0 + 1.0;
+        
+        // Random size
+        particle.size = fract(sin(float(index) * 56.789 + pc.time * 0.25)) * 0.02 + 0.005;
+        
+        // Random color
+        particle.color = vec4(
+            fract(sin(float(index) * 34.567 + pc.time * 0.4)),
+            fract(sin(float(index) * 67.891 + pc.time * 0.5)),
+            fract(sin(float(index) * 89.123 + pc.time * 0.6)),
+            1.0
+        );
+    } else {
+        // Apply attractor force
+        vec2 toAttractor = pc.attractorPos - particle.position;
+        float distance = length(toAttractor);
+        
+        if (distance > 0.001) {
+            vec2 force = normalize(toAttractor) * pc.attractorStrength / (distance * distance + 0.01);
+            particle.velocity += force * pc.deltaTime;
+        }
+        
+        // Apply some damping
+        particle.velocity *= 0.995;
+        
+        // Update position
+        particle.position += particle.velocity * pc.deltaTime;
+        
+        // Wrap around screen boundaries
+        if (particle.position.x > 1.0) particle.position.x = -1.0;
+        if (particle.position.x < -1.0) particle.position.x = 1.0;
+        if (particle.position.y > 1.0) particle.position.y = -1.0;
+        if (particle.position.y < -1.0) particle.position.y = 1.0;
+        
+        // Update alpha based on life
+        particle.color.a = clamp(particle.life / 2.0, 0.1, 1.0);
+    }
+    
+    // Store updated particle
+    particleBuffer.particles[index] = particle;
+}

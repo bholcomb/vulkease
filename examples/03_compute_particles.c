@@ -5,6 +5,10 @@
 
 #include "vulkease.h"
 #include <GLFW/glfw3.h>
+#ifdef __linux__
+#define GLFW_EXPOSE_NATIVE_X11
+#include <GLFW/glfw3native.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +17,11 @@
 
 #define PARTICLE_COUNT 10000
 #define WORKGROUP_SIZE 64
+
+// Shader file paths (compiled SPIR-V)
+#define COMPUTE_SHADER_PATH "examples/shaders/particles.comp.spv"
+#define VERTEX_SHADER_PATH "examples/shaders/particles.vert.spv"
+#define FRAGMENT_SHADER_PATH "examples/shaders/particles.frag.spv"
 
 // Particle structure (used in both CPU and GPU)
 typedef struct {
@@ -26,7 +35,7 @@ typedef struct {
 
 // Compute push constants
 typedef struct {
-    VEBufferAddress particleBuffer;
+    uint64_t particleBufferAddress;
     float deltaTime;
     float time;
     float attractorPos[2];
@@ -36,8 +45,8 @@ typedef struct {
 
 // Graphics push constants
 typedef struct {
-    VEBufferAddress vertexBuffer;
-    VEBufferAddress particleBuffer;
+    uint64_t vertexBufferAddress;
+    uint64_t particleBufferAddress;
     float screenSize[2];
     float padding[2];
 } GraphicsPushConstants;
@@ -70,33 +79,45 @@ static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
 static bool initVulkEase(GLFWwindow* window) {
     g_context = veCreateContext("VulkEase Compute Particle System");
     if (!g_context) {
-        fprintf(stderr, "Failed to create context: %s\\n", veGetLastError());
+        fprintf(stderr, "Failed to create context: %s\n", veGetLastError());
         return false;
     }
     
     g_device = veCreateDevice(g_context);
     if (!g_device) {
-        fprintf(stderr, "Failed to create device: %s\\n", veGetLastError());
+        fprintf(stderr, "Failed to create device: %s\n", veGetLastError());
         return false;
     }
     
-    printf("Device: %s\\n", veGetDeviceName(g_device));
+    printf("Device: %s\n", veGetDeviceName(g_device));
     
-    // Check compute capabilities
-    VEComputeCapabilities computeCaps;
-    if (veGetComputeCapabilities(g_device, &computeCaps) == VE_SUCCESS) {
-        printf("Max compute workgroup size: %ux%ux%u\\n", 
-               computeCaps.maxWorkgroupSize[0], 
-               computeCaps.maxWorkgroupSize[1], 
-               computeCaps.maxWorkgroupSize[2]);
-        printf("Optimal workgroup size: %u\\n", veGetOptimalWorkgroupSize(g_device));
-    }
+    // Note: Compute capabilities check not implemented yet
+    printf("Compute workgroup size: %d (assumed optimal)\n", WORKGROUP_SIZE);
     
     int width, height;
     glfwGetFramebufferSize(window, &width, &height);
-    g_swapchain = veCreateSwapchain(g_device, glfwGetWin32Window(window), width, height, VE_FORMAT_BGRA8_SRGB);
+    
+    // Get native window handle for VulkEase's simple approach
+    void* windowHandle = NULL;
+    
+#if defined(_WIN32)
+    windowHandle = glfwGetWin32Window(window);
+#elif defined(__linux__)
+    // For simplicity, assume X11 for now
+    // In production, you'd detect the platform properly
+    windowHandle = (void*)(uintptr_t)glfwGetX11Window(window);
+#elif defined(__APPLE__)
+    windowHandle = glfwGetCocoaWindow(window);
+#endif
+    
+    if (!windowHandle) {
+        fprintf(stderr, "Failed to get native window handle\n");
+        return false;
+    }
+    
+    g_swapchain = veCreateSwapchain(g_device, windowHandle, width, height, VE_FORMAT_BGRA8_SRGB);
     if (!g_swapchain) {
-        fprintf(stderr, "Failed to create swapchain: %s\\n", veGetLastError());
+        fprintf(stderr, "Failed to create swapchain: %s\n", veGetLastError());
         return false;
     }
     
@@ -105,28 +126,29 @@ static bool initVulkEase(GLFWwindow* window) {
 
 static bool createShaders() {
     // Load compute shader for particle simulation
-    g_computeShader = veLoadShader(g_device, "shaders/particles.comp.spv", 
+    g_computeShader = veLoadShader(g_device, COMPUTE_SHADER_PATH, 
                                   VE_SHADER_STAGE_COMPUTE, "main", "ParticleComputeShader");
     if (!g_computeShader) {
-        fprintf(stderr, "Failed to load compute shader: %s\\n", veGetLastError());
+        fprintf(stderr, "Failed to load compute shader: %s\n", veGetLastError());
         return false;
     }
     
     // Load graphics shaders for particle rendering
-    g_vertexShader = veLoadShader(g_device, "shaders/particles.vert.spv", 
+    g_vertexShader = veLoadShader(g_device, VERTEX_SHADER_PATH, 
                                  VE_SHADER_STAGE_VERTEX, "main", "ParticleVertexShader");
     if (!g_vertexShader) {
-        fprintf(stderr, "Failed to load vertex shader: %s\\n", veGetLastError());
+        fprintf(stderr, "Failed to load vertex shader: %s\n", veGetLastError());
         return false;
     }
     
-    g_fragmentShader = veLoadShader(g_device, "shaders/particles.frag.spv", 
+    g_fragmentShader = veLoadShader(g_device, FRAGMENT_SHADER_PATH, 
                                    VE_SHADER_STAGE_FRAGMENT, "main", "ParticleFragmentShader");
     if (!g_fragmentShader) {
-        fprintf(stderr, "Failed to load fragment shader: %s\\n", veGetLastError());
+        fprintf(stderr, "Failed to load fragment shader: %s\n", veGetLastError());
         return false;
     }
     
+    printf("Shaders loaded successfully\n");
     return true;
 }
 
@@ -135,7 +157,7 @@ static void initializeParticles(Particle* particles, uint32_t count) {
     
     for (uint32_t i = 0; i < count; i++) {
         // Random position in circle
-        float angle = ((float)rand() / RAND_MAX) * 2.0f * M_PI;
+        float angle = ((float)rand() / RAND_MAX) * 2.0f * 3.14159265359f;
         float radius = ((float)rand() / RAND_MAX) * 0.5f;
         
         particles[i].position[0] = cosf(angle) * radius;
@@ -163,7 +185,7 @@ static bool createBuffers() {
     // Allocate and initialize particle data
     Particle* particles = malloc(sizeof(Particle) * PARTICLE_COUNT);
     if (!particles) {
-        fprintf(stderr, "Failed to allocate particle data\\n");
+        fprintf(stderr, "Failed to allocate particle data\n");
         return false;
     }
     
@@ -181,7 +203,7 @@ static bool createBuffers() {
     
     g_particleBuffer = veCreateBuffer(g_device, &particleBufferDesc);
     if (g_particleBuffer == VE_INVALID_ADDRESS) {
-        fprintf(stderr, "Failed to create particle buffer: %s\\n", veGetLastError());
+        fprintf(stderr, "Failed to create particle buffer: %s\n", veGetLastError());
         free(particles);
         return false;
     }
@@ -200,12 +222,12 @@ static bool createBuffers() {
     
     g_vertexBuffer = veCreateBuffer(g_device, &vertexBufferDesc);
     if (g_vertexBuffer == VE_INVALID_ADDRESS) {
-        fprintf(stderr, "Failed to create vertex buffer: %s\\n", veGetLastError());
+        fprintf(stderr, "Failed to create vertex buffer: %s\n", veGetLastError());
         return false;
     }
     
-    printf("Created particle buffer (0x%llx) for %d particles\\n", g_particleBuffer, PARTICLE_COUNT);
-    printf("Created vertex buffer (0x%llx) for quad geometry\\n", g_vertexBuffer);
+    printf("Created particle buffer (0x%lx) for %d particles\n", g_particleBuffer, PARTICLE_COUNT);
+    printf("Created vertex buffer (0x%lx) for quad geometry\n", g_vertexBuffer);
     
     return true;
 }
@@ -214,7 +236,7 @@ static bool createRenderConfig() {
     // Use transparent render config for particles with alpha blending
     g_renderConfig = veCreateTransparentRenderConfig(g_device, "ParticleRenderConfig");
     if (!g_renderConfig) {
-        fprintf(stderr, "Failed to create render config: %s\\n", veGetLastError());
+        fprintf(stderr, "Failed to create render config: %s\n", veGetLastError());
         return false;
     }
     
@@ -223,15 +245,15 @@ static bool createRenderConfig() {
 
 static void runComputeShader(VECommandBuffer* cmd, float deltaTime, float time, float mouseX, float mouseY) {
     // Begin compute debug region
-    float computeColor[] = {1.0f, 0.0f, 1.0f, 1.0f};
-    veBeginDebugRegion(cmd, "Particle Simulation", computeColor);
+    VEColor computeColor = {1.0f, 0.0f, 1.0f, 1.0f};
+    veBeginDebugLabel(cmd, "Particle Simulation", computeColor);
     
     // Bind compute shader
-    veBindComputeShader(cmd, g_computeShader);
+    veBindShader(cmd, g_computeShader);
     
     // Set compute push constants
     ComputePushConstants computeConstants = {
-        .particleBuffer = g_particleBuffer,
+        .particleBufferAddress = g_particleBuffer,
         .deltaTime = deltaTime,
         .time = time,
         .attractorPos = {mouseX, mouseY},
@@ -239,19 +261,18 @@ static void runComputeShader(VECommandBuffer* cmd, float deltaTime, float time, 
         .particleCount = PARTICLE_COUNT
     };
     
-    veSetComputeConstants(cmd, &computeConstants, sizeof(computeConstants), 0);
+    vePushConstants(cmd, &computeConstants, sizeof(computeConstants), 0);
     
-    // Calculate dispatch size
-    uint32_t numGroups;
-    veCalculateDispatchSize(PARTICLE_COUNT, WORKGROUP_SIZE, &numGroups);
+    // Calculate dispatch size (simple calculation)
+    uint32_t numGroups = (PARTICLE_COUNT + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE;
     
     // Dispatch compute work
     veDispatch(cmd, numGroups, 1, 1);
     
     // Add barrier between compute and graphics
-    veBarrierComputeToGraphics(cmd);
+    veBarrierComputeToVertex(cmd);
     
-    veEndDebugRegion(cmd);
+    veEndDebugLabel(cmd);
 }
 
 static void renderParticles(VECommandBuffer* cmd, VETextureIndex backbuffer) {
@@ -279,8 +300,8 @@ static void renderParticles(VECommandBuffer* cmd, VETextureIndex backbuffer) {
     };
     
     // Begin graphics debug region
-    float graphicsColor[] = {0.0f, 1.0f, 0.5f, 1.0f};
-    veBeginDebugRegion(cmd, "Particle Rendering", graphicsColor);
+    VEColor graphicsColor = {0.0f, 1.0f, 0.5f, 1.0f};
+    veBeginDebugLabel(cmd, "Particle Rendering", graphicsColor);
     
     // Begin rendering
     veBeginRendering(cmd, &renderingInfo);
@@ -297,8 +318,8 @@ static void renderParticles(VECommandBuffer* cmd, VETextureIndex backbuffer) {
     
     // Set graphics push constants
     GraphicsPushConstants graphicsConstants = {
-        .vertexBuffer = g_vertexBuffer,
-        .particleBuffer = g_particleBuffer,
+        .vertexBufferAddress = g_vertexBuffer,
+        .particleBufferAddress = g_particleBuffer,
         .screenSize = {(float)width, (float)height},
         .padding = {0.0f, 0.0f}
     };
@@ -311,7 +332,7 @@ static void renderParticles(VECommandBuffer* cmd, VETextureIndex backbuffer) {
     // End rendering
     veEndRendering(cmd);
     
-    veEndDebugRegion(cmd);
+    veEndDebugLabel(cmd);
 }
 
 static void render(float deltaTime, float time) {
@@ -334,7 +355,7 @@ static void render(float deltaTime, float time) {
     // Begin command buffer
     VECommandBuffer* cmd = veBeginCommandBuffer(g_device);
     if (!cmd) {
-        fprintf(stderr, "Failed to begin command buffer\\n");
+        fprintf(stderr, "Failed to begin command buffer\n");
         return;
     }
     
@@ -354,13 +375,14 @@ static void render(float deltaTime, float time) {
 }
 
 static void printPerformanceStats() {
-    VEPerformanceStats stats = veGetPerformanceStats(g_device);
-    VEMemoryStats memStats = veGetMemoryStats(g_device);
+    VEPerformanceStats stats = {0};
+    VEMemoryStats memStats = {0};
     
-    printf("\\rFPS: %.1f | Frame: %.2fms | Buffers: %u | Memory: %lluMB", 
-           stats.fps, stats.frameTime, 
-           veGetBufferCount(g_device),
-           memStats.totalAllocatedBytes / 1024 / 1024);
+    veGetPerformanceStats(g_device, &stats);
+    veGetMemoryStats(g_device, &memStats);
+    
+    printf("\rFrame: %lu ns | Draws: %u | Memory: %lu bytes", 
+           (unsigned long)stats.frameTime, stats.drawCalls, (unsigned long)memStats.totalAllocated);
     fflush(stdout);
 }
 
@@ -429,8 +451,8 @@ int main() {
         return -1;
     }
     
-    printf("Starting particle simulation with %d particles...\\n", PARTICLE_COUNT);
-    printf("Move mouse to attract particles\\n");
+    printf("Starting particle simulation with %d particles...\n", PARTICLE_COUNT);
+    printf("Move mouse to attract particles\n");
     
     double lastTime = glfwGetTime();
     double statsTime = lastTime;
@@ -445,8 +467,7 @@ int main() {
         
         render(deltaTime, time);
         
-        // Update frame stats
-        veUpdateFrameStats(g_device);
+        // Note: Frame stats update not implemented yet
         
         // Print performance stats every second
         if (currentTime - statsTime >= 1.0) {
@@ -463,7 +484,7 @@ int main() {
         }
     }
     
-    printf("\\nShutting down...\\n");
+    printf("\nShutting down...\n");
     
     cleanup();
     glfwDestroyWindow(window);

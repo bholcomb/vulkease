@@ -17,6 +17,7 @@ SHADERS_DIR = $(EXAMPLES_DIR)/shaders
 # Output library and examples
 LIBRARY = libvulkease.so
 EXAMPLE_TRIANGLE = 01_triangle
+EXAMPLE_PARTICLES = 03_compute_particles
 
 # Compilers and flags
 CC = gcc
@@ -52,7 +53,7 @@ all: library examples
 library: $(BIN_DIR)/$(LIBRARY)
 
 # Build examples
-examples: shaders $(BIN_DIR)/$(EXAMPLE_TRIANGLE)
+examples: shaders $(BIN_DIR)/$(EXAMPLE_TRIANGLE) $(BIN_DIR)/$(EXAMPLE_PARTICLES)
 
 # Build shaders
 shaders: $(SHADER_SPIRV)
@@ -100,6 +101,11 @@ $(BIN_DIR)/$(EXAMPLE_TRIANGLE): $(EXAMPLES_DIR)/$(EXAMPLE_TRIANGLE).c $(BIN_DIR)
 	@echo "Building example: $(EXAMPLE_TRIANGLE)"
 	$(CC) $(EXAMPLE_CFLAGS) $(INCLUDES) -Wl,-rpath,'$$ORIGIN' $< $(EXAMPLE_LIBS) -o $@
 
+# Build compute particles example
+$(BIN_DIR)/$(EXAMPLE_PARTICLES): $(EXAMPLES_DIR)/$(EXAMPLE_PARTICLES).c $(BIN_DIR)/$(LIBRARY) | $(BIN_DIR)
+	@echo "Building example: $(EXAMPLE_PARTICLES)"
+	$(CC) $(EXAMPLE_CFLAGS) $(INCLUDES) -Wl,-rpath,'$$ORIGIN' $< $(EXAMPLE_LIBS) -o $@
+
 # Install system dependencies (requires sudo)
 install-deps:
 	@echo "Installing system dependencies..."
@@ -120,7 +126,7 @@ clean-shaders:
 info:
 	@echo "Project: $(PROJECT_NAME) v$(VERSION)"
 	@echo "Library: $(LIBRARY)"
-	@echo "Examples: $(EXAMPLE_TRIANGLE)"
+	@echo "Examples: $(EXAMPLE_TRIANGLE) $(EXAMPLE_PARTICLES)"
 	@echo "Sources: $(C_SOURCES) $(CXX_SOURCES)"
 	@echo "Objects: $(OBJECTS)"
 
