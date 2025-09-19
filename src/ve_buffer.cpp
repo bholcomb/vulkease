@@ -25,6 +25,10 @@ extern "C" VEResult veInitializeVMA(VEDeviceInternal* device) {
         veSetError("Buffer device address support is required - no fallback strategy");
         return VE_ERROR_UNSUPPORTED;
     }
+
+    VmaVulkanFunctions vulkanFunctions = {};
+    vulkanFunctions.vkGetInstanceProcAddr = &vkGetInstanceProcAddr;
+    vulkanFunctions.vkGetDeviceProcAddr = &vkGetDeviceProcAddr;
     
     VmaAllocatorCreateInfo allocatorInfo = {};
     allocatorInfo.physicalDevice = device->physicalDevice;
@@ -32,6 +36,7 @@ extern "C" VEResult veInitializeVMA(VEDeviceInternal* device) {
     allocatorInfo.instance = device->context->instance;
     allocatorInfo.vulkanApiVersion = device->deviceProperties.apiVersion;
     allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+    allocatorInfo.pVulkanFunctions = &vulkanFunctions;
     
     VkResult result = vmaCreateAllocator(&allocatorInfo, &device->allocator);
     if (result != VK_SUCCESS) {
