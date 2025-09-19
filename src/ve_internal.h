@@ -224,12 +224,8 @@ typedef struct VEDeviceInternal {
     // VMA allocator
     VmaAllocator allocator;
     
-    // Resource management
-    VEBufferInternal* buffers;
-    uint32_t* freeBufferIndices;
-    uint32_t freeBufferCount;
-    uint32_t bufferCount;
-    uint32_t maxBuffers;
+    // Resource management - simplified for address-only API
+    void* bufferMap; // std::unordered_map<VEBufferAddress, VEBufferInternal*>* (C++ container)
     
     VETextureInternal* textures;
     uint32_t* freeTextureIndices;
