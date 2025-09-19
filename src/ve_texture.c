@@ -314,26 +314,14 @@ static VEResult veUploadTextureData(VEDeviceInternal* device, VETextureInternal*
     memcpy(stagingAllocInfo_result.pMappedData, data, dataSize);
     vmaFlushAllocation(device->allocator, stagingAllocation, 0, dataSize);
     
-    // Allocate command buffer for the transfer
-    VECommandBufferInternal* cmd;
-    VEResult allocResult = veAllocateCommandBuffer(device, &cmd);
-    if (allocResult != VE_SUCCESS) {
+    // Use the public API to get a command buffer
+    VECommandBuffer* cmdPublic = veBeginCommandBuffer((VEDevice*)device);
+    if (!cmdPublic) {
         vmaDestroyBuffer(device->allocator, stagingBuffer, stagingAllocation);
-        return allocResult;
-    }
-    
-    // Begin command buffer
-    VkCommandBufferBeginInfo beginInfo = {0};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    
-    result = vkBeginCommandBuffer(cmd->commandBuffer, &beginInfo);
-    if (result != VK_SUCCESS) {
-        veSetError("Failed to begin command buffer for texture upload (VkResult: %d)", result);
-        vmaDestroyBuffer(device->allocator, stagingBuffer, stagingAllocation);
-        veFreeCommandBuffer(device, cmd);
         return VE_ERROR_OUT_OF_MEMORY;
     }
+    
+    VECommandBufferInternal* cmd = (VECommandBufferInternal*)cmdPublic;
     
     // Transition image to transfer destination layout
     VkImageMemoryBarrier barrier = {0};
@@ -380,35 +368,15 @@ static VEResult veUploadTextureData(VEDeviceInternal* device, VETextureInternal*
                         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                         0, 0, NULL, 0, NULL, 1, &barrier);
     
-    // End command buffer
-    result = vkEndCommandBuffer(cmd->commandBuffer);
-    if (result != VK_SUCCESS) {
-        veSetError("Failed to end command buffer for texture upload (VkResult: %d)", result);
-        vmaDestroyBuffer(device->allocator, stagingBuffer, stagingAllocation);
-        veFreeCommandBuffer(device, cmd);
-        return VE_ERROR_OUT_OF_MEMORY;
-    }
+    // Submit command buffer and wait for completion
+    VEResult submitResult = veSubmitCommandBuffer(cmdPublic, true);
     
-    // Submit command buffer
-    VkSubmitInfo submitInfo = {0};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &cmd->commandBuffer;
-    
-    result = vkQueueSubmit(device->graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    if (result != VK_SUCCESS) {
-        veSetError("Failed to submit texture upload command buffer (VkResult: %d)", result);
-        vmaDestroyBuffer(device->allocator, stagingBuffer, stagingAllocation);
-        veFreeCommandBuffer(device, cmd);
-        return VE_ERROR_OUT_OF_MEMORY;
-    }
-    
-    // Wait for completion
-    vkQueueWaitIdle(device->graphicsQueue);
-    
-    // Cleanup
+    // Cleanup staging buffer
     vmaDestroyBuffer(device->allocator, stagingBuffer, stagingAllocation);
-    veFreeCommandBuffer(device, cmd);
+    
+    if (submitResult != VE_SUCCESS) {
+        return submitResult;
+    }
     
     return VE_SUCCESS;
 }

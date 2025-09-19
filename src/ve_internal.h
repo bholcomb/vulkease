@@ -46,6 +46,12 @@ extern "C" {
 #define VE_MAX_SWAPCHAIN_IMAGES 8
 
 // =============================================================================
+// Forward Declarations
+// =============================================================================
+
+typedef struct VEDeviceInternal VEDeviceInternal;
+
+// =============================================================================
 // Internal Structures
 // =============================================================================
 
@@ -180,6 +186,7 @@ typedef struct VEShaderConfigInternal {
 typedef struct VECommandBufferInternal {
     VkCommandBuffer commandBuffer;
     VkCommandPool commandPool;
+    VEDeviceInternal* device;  // Reference to device for submission
     bool isRecording;
     bool isOneTime;
     uint32_t index;

@@ -37,6 +37,7 @@ VEResult veAllocateCommandBuffer(VEDeviceInternal* device, VECommandBufferIntern
             }
             
             device->commandBufferInUse[i] = true;
+            device->commandBuffers[i].device = device;  // Store device reference
             device->commandBuffers[i].isRecording = false;
             device->commandBuffers[i].isOneTime = false;
             
@@ -113,10 +114,49 @@ VEResult veSubmitCommandBuffer(VECommandBuffer* cmd, bool waitForCompletion) {
     
     internal->isRecording = false;
     
-    // TODO: Get device from command buffer - this is a design limitation
-    // For now, we'll need to submit through device
-    veSetError("Command buffer submission not fully implemented - need device reference");
-    return VE_ERROR_FEATURE_NOT_SUPPORTED;
+    // Submit command buffer using stored device reference
+    VkSubmitInfo submitInfo = {0};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &internal->commandBuffer;
+    
+    VkFence fence = VK_NULL_HANDLE;
+    if (waitForCompletion) {
+        // Create fence for synchronization
+        VkFenceCreateInfo fenceInfo = {0};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        
+        result = vkCreateFence(internal->device->device, &fenceInfo, NULL, &fence);
+        if (result != VK_SUCCESS) {
+            veSetError("Failed to create fence for command buffer submission (VkResult: %d)", result);
+            return VE_ERROR_OUT_OF_MEMORY;
+        }
+    }
+    
+    result = vkQueueSubmit(internal->device->graphicsQueue, 1, &submitInfo, fence);
+    if (result != VK_SUCCESS) {
+        if (fence != VK_NULL_HANDLE) {
+            vkDestroyFence(internal->device->device, fence, NULL);
+        }
+        veSetError("Failed to submit command buffer (VkResult: %d)", result);
+        return VE_ERROR_OUT_OF_MEMORY;
+    }
+    
+    if (waitForCompletion) {
+        // Wait for completion and cleanup fence
+        result = vkWaitForFences(internal->device->device, 1, &fence, VK_TRUE, UINT64_MAX);
+        vkDestroyFence(internal->device->device, fence, NULL);
+        
+        if (result != VK_SUCCESS) {
+            veSetError("Failed to wait for command buffer completion (VkResult: %d)", result);
+            return VE_ERROR_OUT_OF_MEMORY;
+        }
+    }
+    
+    // Free the command buffer for reuse
+    veFreeCommandBuffer(internal->device, internal);
+    
+    return VE_SUCCESS;
 }
 
 // =============================================================================
