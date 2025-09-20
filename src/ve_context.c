@@ -691,6 +691,44 @@ VEDevice* veCreateDevice(VEContext* context) {
         free(device);
         return NULL;
     }
+
+    device->graphicsCommandPool = calloc(1, sizeof(VECommandPool));
+    if(veInitCommandPool(device, device->queueFamilies.graphicsFamily, device->graphicsCommandPool) == false)
+    {
+        vkDestroyDevice(device->device, NULL);
+        free(device);
+        return NULL;
+    }
+
+    if(device->computeQueue != device->graphicsQueue)
+    {
+        device->computeCommandPool = calloc(1, sizeof(VECommandPool));
+        if(veInitCommandPool(device, device->queueFamilies.computeFamily, device->computeCommandPool) == false)
+        {
+            vkDestroyDevice(device->device, NULL);
+            free(device);
+            return NULL;
+        }
+    }
+    else
+    {
+        device->computeCommandPool = device->graphicsCommandPool;
+    }
+
+    if(device->transferQueue != device->graphicsQueue)
+    {
+        device->transferCommandPool = calloc(1, sizeof(VECommandPool));
+        if(veInitCommandPool(device, device->queueFamilies.transferFamily, device->transferCommandPool) == false)
+        {
+            vkDestroyDevice(device->device, NULL);
+            free(device);
+            return NULL;
+        }
+    }
+    else
+    {
+        device->transferCommandPool = device->graphicsCommandPool;
+    }
     
     VEResult bindlessResult = veInitializeBindlessDescriptors(device);
     if (bindlessResult != VE_SUCCESS) {
@@ -710,6 +748,27 @@ void veDestroyDevice(VEDevice* device) {
     
     if (internal->device) {
         vkDeviceWaitIdle(internal->device);
+    }
+
+    if(internal->transferCommandPool && internal->transferCommandPool != internal->graphicsCommandPool)
+    {
+        veDestroyCommandPool(internal, internal->transferCommandPool);
+        free(internal->transferCommandPool);
+        internal->transferCommandPool = NULL;
+    }
+
+    if(internal->computeCommandPool && internal->computeCommandPool != internal->graphicsCommandPool)
+    {
+        veDestroyCommandPool(internal, internal->computeCommandPool);
+        free(internal->computeCommandPool);
+        internal->computeCommandPool = NULL;
+    }
+
+    if(internal->graphicsCommandPool)
+    {
+        veDestroyCommandPool(internal, internal->graphicsCommandPool);
+        free(internal->graphicsCommandPool);
+        internal->graphicsCommandPool = NULL;
     }
     
     veCleanupBindlessDescriptors(internal);
