@@ -71,6 +71,11 @@ static const float quadVertices[] = {
 };
 
 static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
+    if(!window)
+    {
+        return;
+    }
+    
     if (g_swapchain && width > 0 && height > 0) {
         veResizeSwapchain(g_swapchain, width, height);
     }

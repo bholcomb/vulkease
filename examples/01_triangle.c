@@ -48,6 +48,11 @@ static void errorCallback(int error, const char* description) {
 }
 
 static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
+    if(!window)
+    {
+        return;
+    }
+    
     if (g_swapchain && width > 0 && height > 0) {
         veResizeSwapchain(g_swapchain, width, height);
     }
@@ -92,25 +97,42 @@ static bool initVulkEase(GLFWwindow* window) {
     glfwGetFramebufferSize(window, &width, &height);
     
     // Get native window handle for VulkEase's simple approach
+    void* displayHandle = NULL;
     void* windowHandle = NULL;
     
 #if defined(_WIN32)
     windowHandle = glfwGetWin32Window(window);
+    if (!windowHandle) {
+        fprintf(stderr, "Failed to get native window data\n");
+        return false;
+    }
+
+    g_swapchain = veCreateSwapchain(g_device, windowHandle, width, height, VE_FORMAT_BGRA8_SRGB);
 #elif defined(__linux__)
     // For simplicity, assume X11 for now
     // In production, you'd detect the platform properly
-    windowHandle = (void*)(uintptr_t)glfwGetX11Window(window);
-#elif defined(__APPLE__)
-    windowHandle = glfwGetCocoaWindow(window);
-#endif
+    displayHandle = (void*)glfwGetX11Display();
+    windowHandle = (void*)glfwGetX11Window(window);
     
-    if (!windowHandle) {
-        fprintf(stderr, "Failed to get native window handle\n");
+    if (!displayHandle || !windowHandle) {
+        fprintf(stderr, "Failed to get native window data\n");
         return false;
     }
-    
+
+    void* windowData[] = {displayHandle, windowHandle};
+
     // Create swapchain using VulkEase's simple window handle approach
+    g_swapchain = veCreateSwapchain(g_device, windowData, width, height, VE_FORMAT_BGRA8_SRGB);
+
+#elif defined(__APPLE__)
+    windowHandle = glfwGetCocoaWindow(window);
+    if (!windowHandle) {
+        fprintf(stderr, "Failed to get native window data\n");
+        return false;
+    }
     g_swapchain = veCreateSwapchain(g_device, windowHandle, width, height, VE_FORMAT_BGRA8_SRGB);
+#endif    
+    
     if (!g_swapchain) {
         fprintf(stderr, "Failed to create swapchain: %s\n", veGetLastError());
         return false;

@@ -6,6 +6,7 @@
 #include "ve_internal.h"
 #include <unordered_map>
 #include <memory>
+#include <vector>
 
 // Type aliases for cleaner code
 using BufferMap = std::unordered_map<VEBufferAddress, std::unique_ptr<VEBufferInternal>>;
@@ -52,29 +53,6 @@ extern "C" VEResult veInitializeVMA(VEDeviceInternal* device) {
         return VE_ERROR_OUT_OF_MEMORY;
     }
     
-    VkCommandPoolCreateInfo poolInfo = {};
-    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    poolInfo.queueFamilyIndex = device->queueFamilies.graphicsFamily;
-    
-    result = vkCreateCommandPool(device->device, &poolInfo, NULL, &device->commandPool);
-    if (result != VK_SUCCESS) {
-        veSetError("Failed to create command pool (VkResult: %d)", result);
-        veCleanupVMA(device);
-        return VE_ERROR_OUT_OF_MEMORY;
-    }
-    
-    device->commandBuffers = static_cast<VECommandBufferInternal*>(
-        calloc(VE_MAX_COMMAND_BUFFERS, sizeof(VECommandBufferInternal)));
-    device->commandBufferInUse = static_cast<bool*>(
-        calloc(VE_MAX_COMMAND_BUFFERS, sizeof(bool)));
-    device->commandBufferCount = 0;
-    
-    if (!device->commandBuffers || !device->commandBufferInUse) {
-        veCleanupVMA(device);
-        return VE_ERROR_OUT_OF_MEMORY;
-    }
-    
     return VE_SUCCESS;
 }
 
@@ -96,21 +74,6 @@ extern "C" void veCleanupVMA(VEDeviceInternal* device) {
         }
         delete bufferMap;
         device->bufferMap = nullptr;
-    }
-    
-    if (device->commandBuffers) {
-        free(device->commandBuffers);
-        device->commandBuffers = nullptr;
-    }
-    
-    if (device->commandBufferInUse) {
-        free(device->commandBufferInUse);
-        device->commandBufferInUse = nullptr;
-    }
-    
-    if (device->commandPool) {
-        vkDestroyCommandPool(device->device, device->commandPool, NULL);
-        device->commandPool = VK_NULL_HANDLE;
     }
     
     if (device->allocator) {
@@ -204,15 +167,15 @@ extern "C" VEBufferAddress veCreateBuffer(VEDevice* device, const VEBufferDesc* 
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     
     VmaAllocationCreateInfo allocInfo = {};
-    
-    if (desc->usage & VE_BUFFER_USAGE_UNIFORM) {
-        allocInfo.usage = desc->persistentlyMapped ? VMA_MEMORY_USAGE_CPU_TO_GPU : VMA_MEMORY_USAGE_CPU_TO_GPU;
-    } else {
-        allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-    }
+    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
     
     if (desc->persistentlyMapped) {
         allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+    }
+    else
+    {
+        // Prefer GPU memory for better performance, but allow fallback
+        allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
     }
     
     VkResult result = vmaCreateBuffer(deviceInternal->allocator, &bufferInfo, &allocInfo,
@@ -230,28 +193,32 @@ extern "C" VEBufferAddress veCreateBuffer(VEDevice* device, const VEBufferDesc* 
     
     VEBufferAddress deviceAddress = vkGetBufferDeviceAddress(deviceInternal->device, &addressInfo);
     buffer->deviceAddress = deviceAddress;
-    
-    if (desc->persistentlyMapped && buffer->allocationInfo.pMappedData) {
-        buffer->mappedData = buffer->allocationInfo.pMappedData;
-    }
-    
-    if (desc->initialData && desc->initialDataSize > 0) {
-        VEResult uploadResult = veUpdateBuffer(device, deviceAddress, desc->initialData, 
-                                              desc->initialDataSize, 0);
-        if (uploadResult != VE_SUCCESS) {
-            vmaDestroyBuffer(deviceInternal->allocator, buffer->buffer, buffer->allocation);
-            return VE_INVALID_ADDRESS;
-        }
-    }
-    
+
     if (deviceInternal->context->validationEnabled) {
         veSetObjectDebugName(deviceInternal, (uint64_t)buffer->buffer, VK_OBJECT_TYPE_BUFFER, buffer->debugName);
     }
     
     buffer->isValid = true;
     
-    // Store in map and transfer ownership
+    //hold on to the raw pointer for initializing
+    VEBufferInternal* bufferPtr = buffer.get();
+
+    // Store in map and transfer ownership.  Buffer is empty after this, hence the bufferPtr
     (*bufferMap)[deviceAddress] = std::move(buffer);
+
+    
+    if (desc->persistentlyMapped && bufferPtr->allocationInfo.pMappedData) {
+        bufferPtr->mappedData = bufferPtr->allocationInfo.pMappedData;
+    }
+    
+    if (desc->initialData && desc->initialDataSize > 0) {
+        VEResult uploadResult = veUpdateBuffer(device, deviceAddress, desc->initialData, 
+                                              desc->initialDataSize, 0);
+        if (uploadResult != VE_SUCCESS) {
+            vmaDestroyBuffer(deviceInternal->allocator, bufferPtr->buffer, bufferPtr->allocation);
+            return VE_INVALID_ADDRESS;
+        }
+    }
     
     return deviceAddress;
 }
@@ -286,6 +253,105 @@ extern "C" void veDestroyBuffer(VEDevice* device, VEBufferAddress address) {
     
     // Remove from map (automatically deletes the buffer via unique_ptr)
     bufferMap->erase(it);
+}
+
+// =============================================================================
+// Transfer Commands
+// =============================================================================
+
+static VECommandBuffer* veBeginTransferCommandBuffer(VEDeviceInternal* device) {
+    if (!device) {
+        veSetError("Device cannot be NULL");
+        return NULL;
+    }
+    
+    VECommandBufferInternal* cmd;
+    VEResult result = veAllocateCommandBuffer(device, device->transferCommandPool, &cmd);
+    if (result != VE_SUCCESS) {
+        return NULL;
+    }
+    
+    VkCommandBufferBeginInfo beginInfo = {};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    
+    VkResult vkResult = vkBeginCommandBuffer(cmd->commandBuffer, &beginInfo);
+    if (vkResult != VK_SUCCESS) {
+        veSetError("Failed to begin transfer command buffer (VkResult: %d)", vkResult);
+        veFreeCommandBuffer(cmd);
+        return NULL;
+    }
+    
+    cmd->isRecording = true;
+    cmd->isOneTime = true;
+    
+    return (VECommandBuffer*)cmd;
+}
+
+static VEResult veSubmitTransferCommandBuffer(VECommandBuffer* cmd, bool waitForCompletion) {
+    if (!cmd) {
+        veSetError("Command buffer cannot be NULL");
+        return VE_ERROR_INVALID_PARAMETER;
+    }
+    
+    VECommandBufferInternal* internalCmd = (VECommandBufferInternal*)cmd;
+    
+    if (!internalCmd->isRecording) {
+        veSetError("Command buffer is not recording");
+        return VE_ERROR_INVALID_PARAMETER;
+    }
+    
+    VkResult result = vkEndCommandBuffer(internalCmd->commandBuffer);
+    if (result != VK_SUCCESS) {
+        veSetError("Failed to end command buffer (VkResult: %d)", result);
+        return VE_ERROR_UNKNOWN;
+    }
+    
+    internalCmd->isRecording = false;
+    
+    // Submit command buffer using stored device reference
+    VkSubmitInfo submitInfo = {};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &internalCmd->commandBuffer;
+    
+    VkFence fence = VK_NULL_HANDLE;
+    if (waitForCompletion) {
+        // Create fence for synchronization
+        VkFenceCreateInfo fenceInfo = {};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        
+        result = vkCreateFence(internalCmd->device->device, &fenceInfo, NULL, &fence);
+        if (result != VK_SUCCESS) {
+            veSetError("Failed to create fence for transfer command buffer submission (VkResult: %d)", result);
+            return VE_ERROR_OUT_OF_MEMORY;
+        }
+    }
+    
+    result = vkQueueSubmit(internalCmd->device->transferQueue, 1, &submitInfo, fence);
+    if (result != VK_SUCCESS) {
+        if (fence != VK_NULL_HANDLE) {
+            vkDestroyFence(internalCmd->device->device, fence, NULL);
+        }
+        veSetError("Failed to submit command buffer (VkResult: %d)", result);
+        return VE_ERROR_OUT_OF_MEMORY;
+    }
+    
+    if (waitForCompletion) {
+        // Wait for completion and cleanup fence
+        result = vkWaitForFences(internalCmd->device->device, 1, &fence, VK_TRUE, UINT64_MAX);
+        vkDestroyFence(internalCmd->device->device, fence, NULL);
+        
+        if (result != VK_SUCCESS) {
+            veSetError("Failed to wait for transfer command buffer completion (VkResult: %d)", result);
+            return VE_ERROR_OUT_OF_MEMORY;
+        }
+    }
+    
+    // Free the command buffer for reuse
+    veFreeCommandBuffer(internalCmd);
+    
+    return VE_SUCCESS;
 }
 
 // =============================================================================
@@ -339,6 +405,98 @@ extern "C" void veUnmapBuffer(VEDevice* device, VEBufferAddress address) {
     }
 }
 
+static VEResult veUpdateBufferWithStaging(VEDeviceInternal* device, VEBufferInternal* dstBuffer,
+                                         const void* data, size_t size, size_t offset) {
+    // Create staging buffer
+    VkBufferCreateInfo stagingBufferInfo = {};
+    stagingBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    stagingBufferInfo.size = size;
+    stagingBufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    stagingBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    
+    VmaAllocationCreateInfo stagingAllocInfo = {};
+    stagingAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT; // Keep mapped
+    
+    VkBuffer stagingBuffer;
+    VmaAllocation stagingAllocation;
+    VmaAllocationInfo stagingAllocationInfo;
+    
+    VkResult result = vmaCreateBuffer(device->allocator, &stagingBufferInfo, &stagingAllocInfo,
+                                     &stagingBuffer, &stagingAllocation, &stagingAllocationInfo);
+    if (result != VK_SUCCESS) {
+        veSetError("Failed to create staging buffer (VkResult: %d)", result);
+        return VE_ERROR_OUT_OF_MEMORY;
+    }
+    
+    // Copy data to staging buffer (it's already mapped)
+    memcpy(stagingAllocationInfo.pMappedData, data, size);
+    vmaFlushAllocation(device->allocator, stagingAllocation, 0, size);
+    
+    // Get command buffer for transfer
+    VECommandBuffer* transferCmd = veBeginTransferCommandBuffer(device);
+    VECommandBufferInternal* transferCmdIternal = (VECommandBufferInternal*)transferCmd;
+
+    if (transferCmdIternal->commandBuffer == VK_NULL_HANDLE) {
+        vmaDestroyBuffer(device->allocator, stagingBuffer, stagingAllocation);
+        veSetError("Failed to get transfer command buffer");
+        return VE_ERROR_TRANSFER_FAILED;
+    }
+    
+    // Record copy command
+    VkBufferCopy copyRegion = {};
+    copyRegion.srcOffset = 0;
+    copyRegion.dstOffset = offset;
+    copyRegion.size = size;
+    
+    vkCmdCopyBuffer(transferCmdIternal->commandBuffer, stagingBuffer, dstBuffer->buffer, 1, &copyRegion);
+    
+    // Add memory barrier if destination buffer will be used in different stage
+    if (dstBuffer->usage & (VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | 
+                           VK_BUFFER_USAGE_INDEX_BUFFER_BIT | 
+                           VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)) 
+    {
+        VkMemoryBarrier2 memoryBarrier = {};
+        memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+        memoryBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        memoryBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        
+        // Determine destination stage based on buffer usage
+        memoryBarrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
+        memoryBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+        
+        if (dstBuffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
+            memoryBarrier.dstStageMask |= VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT;
+            memoryBarrier.dstAccessMask |= VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
+        }
+        if (dstBuffer->usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) {
+            memoryBarrier.dstStageMask |= VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT;
+            memoryBarrier.dstAccessMask |= VK_ACCESS_2_INDEX_READ_BIT;
+        }
+        if (dstBuffer->usage & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT) {
+            memoryBarrier.dstStageMask |= VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
+            memoryBarrier.dstAccessMask |= VK_ACCESS_2_UNIFORM_READ_BIT;
+        }
+        if (dstBuffer->usage & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) {
+            memoryBarrier.dstStageMask |= VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            memoryBarrier.dstAccessMask |= VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
+        }
+        
+        VkDependencyInfo dependencyInfo = {};
+        dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dependencyInfo.memoryBarrierCount = 1;
+        dependencyInfo.pMemoryBarriers = &memoryBarrier;
+        
+        vkCmdPipelineBarrier2(transferCmdIternal->commandBuffer, &dependencyInfo);
+    }
+    
+    // Submit transfer command and wait for completion
+    VEResult submitResult = veSubmitTransferCommandBuffer(transferCmd, true);
+    
+    return submitResult;
+}
+
 extern "C" VEResult veUpdateBuffer(VEDevice* device, VEBufferAddress address, 
                                    const void* data, size_t size, size_t offset) {
     if (!device || address == VE_INVALID_ADDRESS || !data || size == 0) {
@@ -358,27 +516,28 @@ extern "C" VEResult veUpdateBuffer(VEDevice* device, VEBufferAddress address,
         veSetError("Update size exceeds buffer bounds");
         return VE_ERROR_INVALID_PARAMETER;
     }
-    
-    void* mappedData = buffer->mappedData;
-    bool needsUnmap = false;
-    
-    if (!mappedData) {
-        VkResult result = vmaMapMemory(deviceInternal->allocator, buffer->allocation, &mappedData);
-        if (result != VK_SUCCESS) {
-            veSetError("Failed to map buffer for update (VkResult: %d)", result);
-            return VE_ERROR_OUT_OF_MEMORY;
-        }
-        needsUnmap = true;
+
+    // Check if buffer is persistently mapped or can be mapped
+    if (buffer->mappedData) {
+        // Buffer is persistently mapped - direct update
+        memcpy(static_cast<char*>(buffer->mappedData) + offset, data, size);
+        vmaFlushAllocation(deviceInternal->allocator, buffer->allocation, offset, size);
+        return VE_SUCCESS;
     }
-    
-    memcpy(static_cast<char*>(mappedData) + offset, data, size);
-    vmaFlushAllocation(deviceInternal->allocator, buffer->allocation, offset, size);
-    
-    if (needsUnmap) {
+
+    // Try to map the buffer directly (for host-visible memory)
+    void* mappedData = nullptr;
+    VkResult result = vmaMapMemory(deviceInternal->allocator, buffer->allocation, &mappedData);
+    if (result == VK_SUCCESS) {
+        // Buffer can be mapped directly
+        memcpy(static_cast<char*>(mappedData) + offset, data, size);
+        vmaFlushAllocation(deviceInternal->allocator, buffer->allocation, offset, size);
         vmaUnmapMemory(deviceInternal->allocator, buffer->allocation);
+        return VE_SUCCESS;
     }
     
-    return VE_SUCCESS;
+    // Buffer cannot be mapped (GPU-only memory) - use staging buffer approach
+    return veUpdateBufferWithStaging(deviceInternal, buffer, data, size, offset);
 }
 
 // =============================================================================

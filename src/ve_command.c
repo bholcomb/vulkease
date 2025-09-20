@@ -5,58 +5,6 @@
 
 #include "ve_internal.h"
 
-// =============================================================================
-// Command Buffer Management
-// =============================================================================
-
-VECommandBufferInternal* veGetCommandBufferInternal(VECommandBuffer* cmd) {
-    return (VECommandBufferInternal*)cmd;
-}
-
-VEResult veAllocateCommandBuffer(VEDeviceInternal* device, VECommandBufferInternal** outCmd) {
-    // Find free command buffer
-    for (uint32_t i = 0; i < VE_MAX_COMMAND_BUFFERS; i++) {
-        if (!device->commandBufferInUse[i]) {
-            if (!device->commandBuffers[i].commandBuffer) {
-                // Allocate new command buffer
-                VkCommandBufferAllocateInfo allocInfo = {0};
-                allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-                allocInfo.commandPool = device->commandPool;
-                allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-                allocInfo.commandBufferCount = 1;
-                
-                VkResult result = vkAllocateCommandBuffers(device->device, &allocInfo, 
-                                                         &device->commandBuffers[i].commandBuffer);
-                if (result != VK_SUCCESS) {
-                    veSetError("Failed to allocate command buffer (VkResult: %d)", result);
-                    return VE_ERROR_OUT_OF_MEMORY;
-                }
-                
-                device->commandBuffers[i].commandPool = device->commandPool;
-                device->commandBuffers[i].index = i;
-            }
-            
-            device->commandBufferInUse[i] = true;
-            device->commandBuffers[i].device = device;  // Store device reference
-            device->commandBuffers[i].isRecording = false;
-            device->commandBuffers[i].isOneTime = false;
-            
-            *outCmd = &device->commandBuffers[i];
-            return VE_SUCCESS;
-        }
-    }
-    
-    veSetError("No free command buffers available");
-    return VE_ERROR_OUT_OF_MEMORY;
-}
-
-void veFreeCommandBuffer(VEDeviceInternal* device, VECommandBufferInternal* cmd) {
-    if (!cmd || cmd->index >= VE_MAX_COMMAND_BUFFERS) return;
-    
-    device->commandBufferInUse[cmd->index] = false;
-    cmd->isRecording = false;
-    cmd->isOneTime = false;
-}
 
 // =============================================================================
 // Command Buffer Operations
@@ -71,7 +19,7 @@ VECommandBuffer* veBeginCommandBuffer(VEDevice* device) {
     VEDeviceInternal* deviceInternal = (VEDeviceInternal*)device;
     
     VECommandBufferInternal* cmd;
-    VEResult result = veAllocateCommandBuffer(deviceInternal, &cmd);
+    VEResult result = veAllocateCommandBuffer(deviceInternal, deviceInternal->graphicsCommandPool, &cmd);
     if (result != VE_SUCCESS) {
         return NULL;
     }
@@ -83,7 +31,7 @@ VECommandBuffer* veBeginCommandBuffer(VEDevice* device) {
     VkResult vkResult = vkBeginCommandBuffer(cmd->commandBuffer, &beginInfo);
     if (vkResult != VK_SUCCESS) {
         veSetError("Failed to begin command buffer (VkResult: %d)", vkResult);
-        veFreeCommandBuffer(deviceInternal, cmd);
+        veFreeCommandBuffer(cmd);
         return NULL;
     }
     
@@ -154,7 +102,7 @@ VEResult veSubmitCommandBuffer(VECommandBuffer* cmd, bool waitForCompletion) {
     }
     
     // Free the command buffer for reuse
-    veFreeCommandBuffer(internal->device, internal);
+    veFreeCommandBuffer(internal);
     
     return VE_SUCCESS;
 }

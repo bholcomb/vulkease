@@ -50,6 +50,7 @@ extern "C" {
 // =============================================================================
 
 typedef struct VEDeviceInternal VEDeviceInternal;
+typedef struct VECommandBufferInternal VECommandBufferInternal;
 
 // =============================================================================
 // Internal Structures
@@ -88,6 +89,16 @@ typedef struct VEDeviceFeatures {
     bool vertexInputDynamicState;
     bool shaderObject;
 } VEDeviceFeatures;
+
+// Command pool management
+typedef struct VECommandPool
+{
+    VkCommandPool commandPool;
+    VECommandBufferInternal* commandBuffers;
+    bool* commandBufferInUse;
+    uint32_t commandBufferCount;
+    uint32_t queueFamily;
+} VECommandPool;
 
 // Buffer internal structure
 typedef struct VEBufferInternal {
@@ -186,7 +197,7 @@ typedef struct VEShaderConfigInternal {
 // Command buffer internal structure
 typedef struct VECommandBufferInternal {
     VkCommandBuffer commandBuffer;
-    VkCommandPool commandPool;
+    VECommandPool* commandPool; // Reference to pool this came from
     VEDeviceInternal* device;  // Reference to device for submission
     bool isRecording;
     bool isOneTime;
@@ -263,11 +274,9 @@ typedef struct VEDeviceInternal {
     uint32_t shaderConfigCount;
     uint32_t maxShaderConfigs;
     
-    // Command buffer pool
-    VkCommandPool commandPool;
-    VECommandBufferInternal* commandBuffers;
-    bool* commandBufferInUse;
-    uint32_t commandBufferCount;
+    VECommandPool* graphicsCommandPool;
+    VECommandPool* computeCommandPool;
+    VECommandPool* transferCommandPool;
     
     // Bindless descriptor sets
     VkDescriptorPool descriptorPool;
@@ -298,6 +307,14 @@ VkShaderStageFlagBits veShaderStageToVk(VEShaderStage stage);
 // VMA management functions
 VEResult veInitializeVMA(VEDeviceInternal* device);
 void veCleanupVMA(VEDeviceInternal* device);
+
+// Command pool managment
+bool veInitCommandPool(VEDeviceInternal* device, uint32_t queueFamily, VECommandPool* pool);
+bool veDestroyCommandPool(VEDeviceInternal* device, VECommandPool* pool);
+
+VECommandBufferInternal* veGetCommandBufferInternal(VECommandBuffer* cmd);
+VEResult veAllocateCommandBuffer(VEDeviceInternal* device, VECommandPool* pool, VECommandBufferInternal** outCmd);
+void veFreeCommandBuffer(VECommandBufferInternal* cmd);
 
 // Resource index management functions
 uint32_t veAllocateBufferIndex(VEDeviceInternal* device);
@@ -330,11 +347,6 @@ VkSampleCountFlagBits veSampleCountToVk(VESampleCount sampleCount);
 // Utility functions
 void veSetObjectDebugName(VEDeviceInternal* device, uint64_t objectHandle, 
                          VkObjectType objectType, const char* name);
-
-// Command buffer management
-VECommandBufferInternal* veGetCommandBufferInternal(VECommandBuffer* cmd);
-VEResult veAllocateCommandBuffer(VEDeviceInternal* device, VECommandBufferInternal** outCmd);
-void veFreeCommandBuffer(VEDeviceInternal* device, VECommandBufferInternal* cmd);
 
 // Surface creation (platform-specific)
 VkResult veCreateSurface(VEContextInternal* context, void* windowHandle, VkSurfaceKHR* surface);
