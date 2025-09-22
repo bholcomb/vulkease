@@ -101,11 +101,7 @@ void veOverrideRasterState(VECommandBuffer* cmd, const VERasterConfig* raster) {
     }
     
     // Extended dynamic state 3
-    PFN_vkCmdSetPolygonModeEXT vkCmdSetPolygonModeEXT = (PFN_vkCmdSetPolygonModeEXT)
-        vkGetDeviceProcAddr(VK_NULL_HANDLE, "vkCmdSetPolygonModeEXT");
-    if (vkCmdSetPolygonModeEXT) {
-        vkCmdSetPolygonModeEXT(internal->commandBuffer, (VkPolygonMode)raster->polygonMode);
-    }
+    veFuncs.vkCmdSetPolygonModeEXT(internal->commandBuffer, (VkPolygonMode)raster->polygonMode);
 }
 
 void veOverrideDepthState(VECommandBuffer* cmd, const VEDepthConfig* depth) {
@@ -142,16 +138,12 @@ void veOverrideBlendState(VECommandBuffer* cmd, const VEBlendConfig* blend) {
     
     vkCmdSetBlendConstants(internal->commandBuffer, blend->blendConstants);
     
-    // Extended dynamic state 3
-    PFN_vkCmdSetColorBlendEnableEXT vkCmdSetColorBlendEnableEXT = (PFN_vkCmdSetColorBlendEnableEXT)
-        vkGetDeviceProcAddr(VK_NULL_HANDLE, "vkCmdSetColorBlendEnableEXT");
-    
-    if (vkCmdSetColorBlendEnableEXT && blend->attachmentCount > 0) {
+    if (blend->attachmentCount > 0) {
         VkBool32 colorBlendEnables[8];
         for (uint32_t i = 0; i < blend->attachmentCount && i < 8; i++) {
             colorBlendEnables[i] = blend->attachments[i].blendEnable;
         }
-        vkCmdSetColorBlendEnableEXT(internal->commandBuffer, 0, blend->attachmentCount, colorBlendEnables);
+        veFuncs.vkCmdSetColorBlendEnableEXT(internal->commandBuffer, 0, blend->attachmentCount, colorBlendEnables);
     }
 }
 
@@ -164,27 +156,17 @@ void veSetWireframe(VECommandBuffer* cmd, bool enabled) {
     
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
     
-    PFN_vkCmdSetPolygonModeEXT vkCmdSetPolygonModeEXT = (PFN_vkCmdSetPolygonModeEXT)
-        vkGetDeviceProcAddr(VK_NULL_HANDLE, "vkCmdSetPolygonModeEXT");
-    
-    if (vkCmdSetPolygonModeEXT) {
-        VkPolygonMode mode = enabled ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
-        vkCmdSetPolygonModeEXT(internal->commandBuffer, mode);
-    }
+    VkPolygonMode mode = enabled ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
+    veFuncs.vkCmdSetPolygonModeEXT(internal->commandBuffer, mode);
 }
 
 void veSetAlphaBlending(VECommandBuffer* cmd, bool enabled) {
     if (!cmd) return;
     
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
-    
-    PFN_vkCmdSetColorBlendEnableEXT vkCmdSetColorBlendEnableEXT = (PFN_vkCmdSetColorBlendEnableEXT)
-        vkGetDeviceProcAddr(VK_NULL_HANDLE, "vkCmdSetColorBlendEnableEXT");
-    
-    if (vkCmdSetColorBlendEnableEXT) {
-        VkBool32 blendEnable = enabled ? VK_TRUE : VK_FALSE;
-        vkCmdSetColorBlendEnableEXT(internal->commandBuffer, 0, 1, &blendEnable);
-    }
+
+    VkBool32 blendEnable = enabled ? VK_TRUE : VK_FALSE;
+    veFuncs.vkCmdSetColorBlendEnableEXT(internal->commandBuffer, 0, 1, &blendEnable);
 }
 
 void veSetDepthTesting(VECommandBuffer* cmd, bool testEnabled, bool writeEnabled) {

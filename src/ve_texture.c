@@ -443,14 +443,18 @@ VETextureIndex veCreateTexture(VEDevice* device, const VETextureDesc* desc) {
     imageInfo.samples = veSampleCountToVk(desc->sampleCount);
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     
-    // Always add transfer dst for potential data uploads
-    imageInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    
+    imageInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT; // Always add transfer dst for potential data uploads
+
     // Auto-generate mipmaps if requested
     if (desc->mipLevels == 0 && (desc->usage & VE_TEXTURE_USAGE_SAMPLED)) {
         texture->mipLevels = (uint32_t)floor(log2(fmax(desc->width, desc->height))) + 1;
         imageInfo.mipLevels = texture->mipLevels;
         imageInfo.usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    }
+    
+    if(desc->arrayLayers > 1)
+    {
+        imageInfo.flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
     }
     
     VmaAllocationCreateInfo allocInfo = {0};
