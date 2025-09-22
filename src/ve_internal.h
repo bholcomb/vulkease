@@ -44,6 +44,9 @@ extern "C" {
 #define VE_MAX_SHADER_CONFIGS 1024
 #define VE_MAX_SHADERS 4096
 #define VE_MAX_SWAPCHAIN_IMAGES 8
+#define VE_MAX_COLOR_ATTACHMENTS 4
+#define VE_MAX_VERTEX_BINDINGS 16
+#define VE_MAX_VERTEX_ATTRIBUTES 16
 
 // =============================================================================
 // Forward Declarations
@@ -155,6 +158,8 @@ typedef struct VEShaderInternal {
 
 // Render configuration internal structure
 typedef struct VERenderConfigInternal {
+    VEViewport viewport;
+    VERect2D scissor;
     VERasterConfig rasterConfig;
     VEDepthConfig depthConfig;
     VEBlendConfig blendConfig;
@@ -203,6 +208,7 @@ typedef struct VECommandBufferInternal {
     bool isRecording;
     bool isOneTime;
     uint32_t index;
+    VEShaderStage boundShaders;
 } VECommandBufferInternal;
 
 // Swapchain internal structure
@@ -287,6 +293,9 @@ typedef struct VEDeviceInternal {
     VkDescriptorSetLayout samplerDescriptorSetLayout;
     VkDescriptorSet textureDescriptorSet;
     VkDescriptorSet samplerDescriptorSet;
+
+    VkPipelineLayout globalGraphicsPushConstantLayout;
+    VkPipelineLayout globalComputePushConstantLayout;
     
     // Performance statistics
     VEPerformanceStats performanceStats;
@@ -365,8 +374,24 @@ typedef struct VEFuncs
 
     //VK_EXT_extended_dynamic_state3
     PFN_vkCmdSetPolygonModeEXT vkCmdSetPolygonModeEXT;
+    PFN_vkCmdSetDepthClampEnableEXT vkCmdSetDepthClampEnableEXT;
     PFN_vkCmdSetColorBlendEnableEXT vkCmdSetColorBlendEnableEXT;
+    PFN_vkCmdSetColorBlendEquationEXT vkCmdSetColorBlendEquationEXT;
+    PFN_vkCmdSetColorWriteMaskEXT vkCmdSetColorWriteMaskEXT;
     PFN_vkCmdSetVertexInputEXT vkCmdSetVertexInputEXT;
+    PFN_vkCmdSetRasterizationSamplesEXT vkCmdSetRasterizationSamplesEXT;
+    PFN_vkCmdSetSampleMaskEXT vkCmdSetSampleMaskEXT;
+    PFN_vkCmdSetAlphaToCoverageEnableEXT vkCmdSetAlphaToCoverageEnableEXT;
+    PFN_vkCmdSetAlphaToOneEnableEXT vkCmdSetAlphaToOneEnableEXT;
+    PFN_vkCmdSetPatchControlPointsEXT vkCmdSetPatchControlPointsEXT;
+
+    PFN_vkCmdSetConservativeRasterizationModeEXT vkCmdSetConservativeRasterizationModeEXT;
+    PFN_vkCmdSetLineRasterizationModeEXT vkCmdSetLineRasterizationModeEXT;
+    PFN_vkCmdSetProvokingVertexModeEXT vkCmdSetProvokingVertexModeEXT;
+
+    //extended dynamic state 2 logic op
+    PFN_vkCmdSetLogicOpEnableEXT vkCmdSetLogicOpEnableEXT;
+    PFN_vkCmdSetLogicOpEXT vkCmdSetLogicOpEXT;
 
     // Instance functions to initialize
     PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;

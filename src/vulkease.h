@@ -189,10 +189,11 @@ typedef enum VETextureUsage {
 // Shader stages
 typedef enum VEShaderStage {
     VE_SHADER_STAGE_VERTEX = 0x1,
-    VE_SHADER_STAGE_TESSELLATION_CONTROL = 0x2,
-    VE_SHADER_STAGE_TESSELLATION_EVALUATION = 0x4,
-    VE_SHADER_STAGE_GEOMETRY = 0x8,
+    VE_SHADER_STAGE_GEOMETRY = 0x2,
+    VE_SHADER_STAGE_TESSELLATION_CONTROL = 0x4,
+    VE_SHADER_STAGE_TESSELLATION_EVALUATION = 0x8,
     VE_SHADER_STAGE_FRAGMENT = 0x10,
+    VE_SHADER_STAGE_GRAPHICS = 0x1f,
     VE_SHADER_STAGE_COMPUTE = 0x20
 } VEShaderStage;
 
@@ -235,7 +236,9 @@ typedef enum VEConfigType {
     VE_CONFIG_TYPE_COLOR_BLEND = 0x8,       // Color blending and write masks
     VE_CONFIG_TYPE_MULTISAMPLE = 0x10,      // MSAA and coverage operations
     VE_CONFIG_TYPE_SHADERS = 0x20,          // Shader object bindings
-    VE_CONFIG_TYPE_COMPLETE = 0x3F          // All categories combined
+    VE_CONFIG_TYPE_VIEWPORT = 0x40,         // Viewport settings 
+    VE_CONFIG_TYPE_SCISSOR = 0x80,          // Scissor settings
+    VE_CONFIG_TYPE_COMPLETE = 0xFF          // All categories combined
 } VEConfigType;
 
 typedef uint32_t VEConfigTypeFlags;
@@ -562,6 +565,8 @@ typedef struct VEVertexInputConfig {
     
     VEPrimitiveTopology topology;          // VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY
     bool primitiveRestartEnable;           // VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE
+
+    uint32_t patchControlPoints;           // VK_DYNAMIC_STATE_PATCH_CONTROL_POINTS_EXT
 } VEVertexInputConfig;
 
 // Complete render configuration descriptor
@@ -569,6 +574,8 @@ typedef struct VERenderConfigDesc {
     VEConfigTypeFlags configTypes;        // Which config categories to include
     
     // Configuration components (NULL = use defaults)
+    const VEViewport* viewportConfig;
+    const VERect2D* scissorConfig;
     const VERasterConfig* rasterConfig;
     const VEDepthConfig* depthConfig;
     const VEBlendConfig* blendConfig;
@@ -962,10 +969,9 @@ VULKEASE_API void veBeginRendering(VECommandBuffer* cmd, const VERenderingInfo* 
 VULKEASE_API void veEndRendering(VECommandBuffer* cmd);
 
 /**
- * Apply render configuration - sets all associated dynamic state
+ * Apply render configuration - sets all associated rendering state
  */
 VULKEASE_API void veApplyRenderConfig(VECommandBuffer* cmd, VERenderConfig* config);
-VULKEASE_API void veApplyVertexConfig(VECommandBuffer* cmd, VEVertexConfig* config);
 
 /**
  * Bind shaders (can mix and match any combination)
@@ -981,10 +987,6 @@ VULKEASE_API void veUnbindShaderStage(VECommandBuffer* cmd, VEShaderStage stage)
 VULKEASE_API void veSetViewport(VECommandBuffer* cmd, float x, float y, float width, float height,
                                float minDepth, float maxDepth);
 VULKEASE_API void veSetScissor(VECommandBuffer* cmd, int32_t x, int32_t y, uint32_t width, uint32_t height);
-VULKEASE_API void veSetViewports(VECommandBuffer* cmd, uint32_t firstViewport, uint32_t viewportCount,
-                                const VEViewport* viewports);
-VULKEASE_API void veSetScissors(VECommandBuffer* cmd, uint32_t firstScissor, uint32_t scissorCount,
-                               const VERect2D* scissors);
 
 /**
  * Runtime state overrides (maximum flexibility)

@@ -144,6 +144,26 @@ VEVertexInputConfig veDefaultVertexInputConfig(void) {
     return config;
 }
 
+VEViewport veDefaultViewportConfig() {
+    VEViewport config = {0};
+    config.x = 0.0f;
+    config.y = 0.0f;
+    config.width = 800.0f;
+    config.height = 600.0f;
+    config.minDepth = 0.0f;
+    config.maxDepth = 1.0f;
+    return config;
+}
+
+VERect2D veDefaultScissorConfig() {
+    VERect2D config = {0};
+    config.x = 0; 
+    config.y = 0;
+    config.width = 800;
+    config.height = 600;
+    return config;
+}
+
 // =============================================================================
 // Render Configuration Management
 // =============================================================================
@@ -170,9 +190,8 @@ VERenderConfig* veCreateRenderConfig(VEDevice* device, const VERenderConfigDesc*
         return NULL;
     }
     
-    VERenderConfigInternal* config = &deviceInternal->renderConfigs[index];
-    memset(config, 0, sizeof(VERenderConfigInternal));
-    
+    //reset the render config
+    VERenderConfigInternal* config = &deviceInternal->renderConfigs[index]; 
     config->configTypes = desc->configTypes;
     
     // Copy configurations or use defaults
@@ -181,6 +200,8 @@ VERenderConfig* veCreateRenderConfig(VEDevice* device, const VERenderConfigDesc*
     config->blendConfig = desc->blendConfig ? *desc->blendConfig : veDefaultOpaqueBlendConfig();
     config->multisampleConfig = desc->multisampleConfig ? *desc->multisampleConfig : veDefaultMultisampleConfig();
     config->vertexInputConfig = desc->vertexInputConfig ? *desc->vertexInputConfig : veDefaultVertexInputConfig();
+    config->viewport = desc->viewportConfig ? *desc->viewportConfig : veDefaultViewportConfig();
+    config->scissor = desc->scissorConfig ? *desc->scissorConfig : veDefaultScissorConfig();
     
     // Copy shaders
     config->shaderCount = desc->shaderCount < 6 ? desc->shaderCount : 6;
@@ -283,7 +304,7 @@ VERenderConfig* veCreateOpaqueRenderConfig(VEDevice* device, const char* debugNa
     VEDepthConfig depth = veDefaultDepthConfig();
     VEBlendConfig blend = veDefaultOpaqueBlendConfig();
     VEMultisampleConfig multisample = veDefaultMultisampleConfig();
-    
+
     VERenderConfigDesc desc = {
         .configTypes = VE_CONFIG_TYPE_RASTERIZATION | VE_CONFIG_TYPE_DEPTH_STENCIL | 
                       VE_CONFIG_TYPE_COLOR_BLEND | VE_CONFIG_TYPE_MULTISAMPLE,

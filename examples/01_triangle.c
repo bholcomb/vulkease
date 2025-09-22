@@ -32,6 +32,7 @@ static VESwapchain* g_swapchain = NULL;
 static VEShader* g_vertexShader = NULL;
 static VEShader* g_fragmentShader = NULL;
 static VEBufferAddress g_vertexBuffer = VE_INVALID_ADDRESS;
+static VERenderConfig* g_renderConfig = NULL;
 
 // Animation state
 static double g_startTime = 0.0;
@@ -162,6 +163,9 @@ static bool createShaders() {
         fprintf(stderr, "Failed to load fragment shader: %s\n", veGetLastError());
         return false;
     }
+
+    //create a default render config
+    g_renderConfig = veCreateOpaqueRenderConfig(g_device, "opaque render config");
     
     printf("Shaders loaded successfully\n");
     return true;
@@ -252,18 +256,22 @@ static void render() {
         .colorAttachmentCount = 1,
         .colorAttachments = &colorAttachment,
         .depthAttachment = NULL,
-        .stencilAttachment = NULL
+        .stencilAttachment = NULL, 
     };
     
     // Begin rendering
     veBeginRendering(cmd, &renderingInfo);
     
-    // Set viewport
-    veSetViewport(cmd, 0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f);
-    
     // Bind shaders
     veBindShader(cmd, g_vertexShader);
     veBindShader(cmd, g_fragmentShader);
+    
+    //setup viewport and scissoring state
+    veSetViewport(cmd, 0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f);
+    veSetScissor(cmd, 0, 0, width, height);
+
+    //default render state
+    veApplyRenderConfig(cmd, g_renderConfig);
     
     // Set vertex input (using VulkEase's flexible vertex input)
     // VulkEase uses bindless buffers - vertex data is accessed via push constants!

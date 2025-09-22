@@ -539,7 +539,7 @@ extern "C" VEResult veUpdateBuffer(VEDevice* device, VEBufferAddress address,
         }
         else
         {
-            VE_ERROR_TRANSFER_FAILED;
+            return VE_ERROR_TRANSFER_FAILED;
         }
     }
     

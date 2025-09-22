@@ -23,7 +23,7 @@ void veSetViewport(VECommandBuffer* cmd, float x, float y, float width, float he
     viewport.minDepth = minDepth;
     viewport.maxDepth = maxDepth;
     
-    vkCmdSetViewport(internal->commandBuffer, 0, 1, &viewport);
+    vkCmdSetViewportWithCount(internal->commandBuffer, 1, &viewport);
 }
 
 void veSetScissor(VECommandBuffer* cmd, int32_t x, int32_t y, uint32_t width, uint32_t height) {
@@ -37,47 +37,7 @@ void veSetScissor(VECommandBuffer* cmd, int32_t x, int32_t y, uint32_t width, ui
     scissor.extent.width = width;
     scissor.extent.height = height;
     
-    vkCmdSetScissor(internal->commandBuffer, 0, 1, &scissor);
-}
-
-void veSetViewports(VECommandBuffer* cmd, uint32_t firstViewport, uint32_t viewportCount,
-                   const VEViewport* viewports) {
-    if (!cmd || !viewports || viewportCount == 0) return;
-    
-    VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
-    
-    VkViewport vkViewports[16];
-    uint32_t count = viewportCount < 16 ? viewportCount : 16;
-    
-    for (uint32_t i = 0; i < count; i++) {
-        vkViewports[i].x = viewports[i].x;
-        vkViewports[i].y = viewports[i].y;
-        vkViewports[i].width = viewports[i].width;
-        vkViewports[i].height = viewports[i].height;
-        vkViewports[i].minDepth = viewports[i].minDepth;
-        vkViewports[i].maxDepth = viewports[i].maxDepth;
-    }
-    
-    vkCmdSetViewport(internal->commandBuffer, firstViewport, count, vkViewports);
-}
-
-void veSetScissors(VECommandBuffer* cmd, uint32_t firstScissor, uint32_t scissorCount,
-                  const VERect2D* scissors) {
-    if (!cmd || !scissors || scissorCount == 0) return;
-    
-    VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
-    
-    VkRect2D vkScissors[16];
-    uint32_t count = scissorCount < 16 ? scissorCount : 16;
-    
-    for (uint32_t i = 0; i < count; i++) {
-        vkScissors[i].offset.x = scissors[i].x;
-        vkScissors[i].offset.y = scissors[i].y;
-        vkScissors[i].extent.width = scissors[i].width;
-        vkScissors[i].extent.height = scissors[i].height;
-    }
-    
-    vkCmdSetScissor(internal->commandBuffer, firstScissor, count, vkScissors);
+    vkCmdSetScissorWithCount(internal->commandBuffer, 1, &scissor);
 }
 
 // =============================================================================
@@ -189,33 +149,63 @@ void veSetCulling(VECommandBuffer* cmd, VECullMode cullMode) {
 // Push Constants
 // =============================================================================
 
+// Helper function to determine which shader stages are bound
+static VkShaderStageFlags veGetBoundShaderStages(VECommandBufferInternal* cmd) {
+    VkShaderStageFlags stages = 0;
+    
+    if(cmd->boundShaders & VE_SHADER_STAGE_COMPUTE) stages = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Check which shader objects are currently bound
+    // This would be tracked when veBindShaderConfig is called
+    if (cmd->boundShaders & VE_SHADER_STAGE_GRAPHICS) stages = VK_SHADER_STAGE_ALL_GRAPHICS;
+    
+    return stages;
+}
+
 void vePushConstants(VECommandBuffer* cmd, const void* data, size_t size, size_t offset) {
     if (!cmd || !data || size == 0) return;
     
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
-    
-    // With VK_EXT_shader_object, push constants are defined in the shader objects themselves
-    // when creating the shader with vkCreateShadersEXT
-    // 
-    // NOTE: Currently VulkEase shaders don't define push constant ranges in their creation.
-    // The shader creation in ve_shader.c needs to be updated to include:
-    // - pushConstantRangeCount = 1
-    // - pPushConstantRanges pointing to VulkEase's standard push constant layout
-    //
-    // Once shaders properly define their push constant interface, this function will work.
-    
-    // Simple bounds check for VulkEase's standard push constant structures (128 bytes each)
-    if (offset + size > 128) { // VulkEase standard structures are exactly 128 bytes
-        veSetError("Push constant size exceeds VulkEase standard limit (max 128 bytes, requested %zu+%zu)", offset, size);
-        return;
+
+    // Alignment and bounds checks required by spec
+    if ((offset & 3u) || (size & 3u)) {
+        veSetError("Push constants offset/size must be multiples of 4 (offset=%zu size=%zu)", offset, size);
+        return;  // 4-byte alignment is required [web:626]
     }
     
-    // TODO: This will work once shaders define push constant ranges in their creation
-    // For now, this is a placeholder that shows the correct approach for shader objects
-    veSetError("Push constants not yet implemented - shader creation needs push constant ranges");
+    // Simple bounds check for VulkEase's standard push constant limit
+    if (offset + size > 128) { // Standard guaranteed minimum
+        veSetError("Push constant size exceeds limit (max 128 bytes, requested %zu+%zu)", offset, size);
+        return;
+    }
+
+    VkShaderStageFlags stages = 0;
+    if(internal->boundShaders & VE_SHADER_STAGE_COMPUTE){
+        stages = VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+    else if (internal->boundShaders & VE_SHADER_STAGE_GRAPHICS)
+    {
+
+    }
+        
+    // With VK_EXT_shader_object: Push constants are specified per-shader, not per-pipeline
+    // We need to track which shader stages are currently bound and determine stage flags
+    VkShaderStageFlags stageFlags = veGetBoundShaderStages(internal);
     
-    // vkCmdPushConstants(internal->commandBuffer, ???, VK_SHADER_STAGE_ALL, 
-    //                   (uint32_t)offset, (uint32_t)size, data);
+    if (stageFlags == 0) {
+        veSetError("No shader objects bound - cannot push constants");
+        return;
+    }
+
+    // find the device's global push constant layout (created at device init)
+    VkPipelineLayout pushConstantLayout;
+    if(stageFlags == VK_SHADER_STAGE_ALL_GRAPHICS)
+        pushConstantLayout = internal->device->globalGraphicsPushConstantLayout; 
+    else
+        pushConstantLayout = internal->device->globalComputePushConstantLayout;
+    
+    vkCmdPushConstants(internal->commandBuffer, pushConstantLayout, stageFlags,
+                      (uint32_t)offset, (uint32_t)size, data);
 }
 
 // =============================================================================
