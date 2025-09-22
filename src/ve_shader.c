@@ -168,18 +168,8 @@ VEShader* veCreateShaderFromSPIRV(VEDevice* device, VEShaderStage stage,
     shaderCreateInfo.pSetLayouts = NULL;
     shaderCreateInfo.pushConstantRangeCount = 0;
     shaderCreateInfo.pPushConstantRanges = NULL;
-    
-    // Get the shader object creation function
-    PFN_vkCreateShadersEXT vkCreateShadersEXT = (PFN_vkCreateShadersEXT)
-        vkGetDeviceProcAddr(deviceInternal->device, "vkCreateShadersEXT");
-    
-    if (!vkCreateShadersEXT) {
-        veSetError("VK_EXT_shader_object extension not available");
-        free(shader);
-        return NULL;
-    }
-    
-    VkResult result = vkCreateShadersEXT(deviceInternal->device, 1, &shaderCreateInfo, NULL, &shader->shaderObject);
+        
+    VkResult result = veFuncs.vkCreateShadersEXT(deviceInternal->device, 1, &shaderCreateInfo, NULL, &shader->shaderObject);
     if (result != VK_SUCCESS) {
         veSetError("Failed to create shader object (VkResult: %d)", result);
         free(shader);

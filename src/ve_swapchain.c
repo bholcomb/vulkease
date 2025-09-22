@@ -203,6 +203,7 @@ VESwapchain* veCreateSwapchain(VEDevice* device, void* windowHandle,
     swapchain->format = format;
     swapchain->width = width;
     swapchain->height = height;
+    swapchain->device = device;
 
     // Create surface
     VkResult result = veCreateSurface(deviceInternal->context, windowHandle, &swapchain->surface);
@@ -255,17 +256,16 @@ VESwapchain* veCreateSwapchain(VEDevice* device, void* windowHandle,
     createInfo.imageColorSpace = surfaceFormat.colorSpace;
     createInfo.imageExtent = extent;
     createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 
     // Handle queue families
     uint32_t queueFamilyIndices[] = {
-        deviceInternal->queueFamilies.graphicsFamily,
         deviceInternal->queueFamilies.graphicsFamily  // Assume graphics queue can present
     };
 
     createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    createInfo.queueFamilyIndexCount = 0;
-    createInfo.pQueueFamilyIndices = NULL;
+    createInfo.queueFamilyIndexCount = 1;
+    createInfo.pQueueFamilyIndices = queueFamilyIndices;
 
     createInfo.preTransform = capabilities.currentTransform;
     createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -321,7 +321,7 @@ VESwapchain* veCreateSwapchain(VEDevice* device, void* windowHandle,
             texture->mipLevels = 1;
             texture->arrayLayers = 1;
             texture->format = swapchain->format;
-            texture->usage = VE_TEXTURE_USAGE_COLOR_ATTACHMENT;
+            texture->usage = VE_TEXTURE_USAGE_COLOR_ATTACHMENT | VE_TEXTURE_USAGE_SAMPLED;
             texture->sampleCount = VE_SAMPLE_COUNT_1;
             texture->index = textureIndex;
             texture->isValid = true;
@@ -429,7 +429,7 @@ VETextureIndex veAcquireNextImage(VESwapchain* swapchain) {
     VESwapchainInternal* internal = (VESwapchainInternal*)swapchain;
     
     // Get device from context (limitation of current design)
-    VEDeviceInternal* device = NULL; // Would need to store device reference
+    VEDeviceInternal* device = internal->device;
     if (!device) {
         veSetError("Cannot acquire image - device reference not available");
         return VE_INVALID_TEXTURE_INDEX;
@@ -471,7 +471,7 @@ VEResult vePresentImage(VESwapchain* swapchain, VECommandBuffer* cmd) {
     }
 
     // Get device from context (limitation of current design)
-    VEDeviceInternal* device = NULL; // Would need to store device reference
+    VEDeviceInternal* device = internal->device;
     if (!device) {
         veSetError("Cannot present image - device reference not available");
         return VE_ERROR_INVALID_PARAMETER;

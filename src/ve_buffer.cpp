@@ -525,15 +525,22 @@ extern "C" VEResult veUpdateBuffer(VEDevice* device, VEBufferAddress address,
         return VE_SUCCESS;
     }
 
-    // Try to map the buffer directly (for host-visible memory)
-    void* mappedData = nullptr;
-    VkResult result = vmaMapMemory(deviceInternal->allocator, buffer->allocation, &mappedData);
-    if (result == VK_SUCCESS) {
-        // Buffer can be mapped directly
-        memcpy(static_cast<char*>(mappedData) + offset, data, size);
-        vmaFlushAllocation(deviceInternal->allocator, buffer->allocation, offset, size);
-        vmaUnmapMemory(deviceInternal->allocator, buffer->allocation);
-        return VE_SUCCESS;
+    if( buffer->persistentlyMapped)
+    {
+        // Try to map the buffer directly (for host-visible memory)
+        void* mappedData = nullptr;
+        VkResult result = vmaMapMemory(deviceInternal->allocator, buffer->allocation, &mappedData);
+        if (result == VK_SUCCESS) {
+            // Buffer can be mapped directly
+            memcpy(static_cast<char*>(mappedData) + offset, data, size);
+            vmaFlushAllocation(deviceInternal->allocator, buffer->allocation, offset, size);
+            vmaUnmapMemory(deviceInternal->allocator, buffer->allocation);
+            return VE_SUCCESS;
+        }
+        else
+        {
+            VE_ERROR_TRANSFER_FAILED;
+        }
     }
     
     // Buffer cannot be mapped (GPU-only memory) - use staging buffer approach
@@ -660,19 +667,12 @@ extern "C" void veSetObjectDebugName(VEDeviceInternal* device, uint64_t objectHa
     if (!device->context->validationEnabled || !name) {
         return;
     }
-    
-    PFN_vkSetDebugUtilsObjectNameEXT setDebugName = (PFN_vkSetDebugUtilsObjectNameEXT)
-        vkGetInstanceProcAddr(device->context->instance, "vkSetDebugUtilsObjectNameEXT");
-    
-    if (!setDebugName) {
-        return;
-    }
-    
+        
     VkDebugUtilsObjectNameInfoEXT nameInfo = {};
     nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
     nameInfo.objectType = objectType;
     nameInfo.objectHandle = objectHandle;
     nameInfo.pObjectName = name;
     
-    setDebugName(device->device, &nameInfo);
+    veFuncs.vkSetDebugUtilsObjectNameEXT(device->device, &nameInfo);
 }

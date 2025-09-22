@@ -54,12 +54,7 @@ void veBindComputeShader(VECommandBuffer* cmd, VEShader* shader) {
     
     VkShaderStageFlagBits stage = VK_SHADER_STAGE_COMPUTE_BIT;
     
-    PFN_vkCmdBindShadersEXT vkCmdBindShadersEXT = (PFN_vkCmdBindShadersEXT)
-        vkGetDeviceProcAddr(VK_NULL_HANDLE, "vkCmdBindShadersEXT");
-    
-    if (vkCmdBindShadersEXT) {
-        vkCmdBindShadersEXT(internal->commandBuffer, 1, &stage, &shaderInternal->shaderObject);
-    }
+    veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, 1, &stage, &shaderInternal->shaderObject);
 }
 
 void veSetComputeConstants(VECommandBuffer* cmd, const void* data, size_t size, size_t offset) {

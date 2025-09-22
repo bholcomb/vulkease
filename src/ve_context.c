@@ -42,7 +42,7 @@ static const char* PLATFORM_SURFACE_EXTENSIONS[] = {
     VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
 #elif defined(__linux__)
     VK_KHR_XLIB_SURFACE_EXTENSION_NAME,
-    VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME,
+//    VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME,
 #elif defined(__APPLE__)
     VK_MVK_MACOS_SURFACE_EXTENSION_NAME,
 #endif
@@ -61,6 +61,9 @@ static const char* REQUIRED_DEVICE_EXTENSIONS[] = {
 static const char* VALIDATION_LAYERS[] = {
     "VK_LAYER_KHRONOS_validation"
 };
+
+// global external functions struct
+VEFuncs veFuncs;
 
 // =============================================================================
 // Error Handling
@@ -93,7 +96,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
         severity = "WARNING";
     }
     
-    printf("[VulkEase %s] %s\\n", severity, pCallbackData->pMessage);
+    printf("[VulkEase %s] %s\n", severity, pCallbackData->pMessage);
     return VK_FALSE;
 }
 
@@ -405,6 +408,7 @@ static void queryDeviceFeatures(VkPhysicalDevice physicalDevice, VEDeviceFeature
     VkPhysicalDeviceFeatures2 features2 = {0};
     features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     features2.pNext = &shaderObjectFeatures;
+
     
     vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
     
@@ -413,6 +417,10 @@ static void queryDeviceFeatures(VkPhysicalDevice physicalDevice, VEDeviceFeature
     features->dynamicRendering = vulkan13Features.dynamicRendering;
     features->extendedDynamicState3 = extDynState3Features.extendedDynamicState3PolygonMode && 
                                       extDynState3Features.extendedDynamicState3ColorBlendEnable;
+    features->updateAfterBind = vulkan12Features.descriptorBindingSampledImageUpdateAfterBind && 
+                                vulkan12Features.descriptorBindingVariableDescriptorCount &&
+                                vulkan12Features.descriptorBindingPartiallyBound;
+
     features->vertexInputDynamicState = vertexInputDynFeatures.vertexInputDynamicState;
     features->shaderObject = shaderObjectFeatures.shaderObject;
     
@@ -521,6 +529,8 @@ VEContext* veCreateContext(const char* applicationName) {
         free(context);
         return NULL;
     }
+
+    initializeInstanceFunctions(context->instance);
     
     if (validationEnabled) {
         VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo = {0};
@@ -532,13 +542,8 @@ VEContext* veCreateContext(const char* applicationName) {
                                      VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
         debugCreateInfo.pfnUserCallback = debugCallback;
         
-        PFN_vkCreateDebugUtilsMessengerEXT func = (PFN_vkCreateDebugUtilsMessengerEXT)
-            vkGetInstanceProcAddr(context->instance, "vkCreateDebugUtilsMessengerEXT");
-        
-        if (func) {
-            func(context->instance, &debugCreateInfo, NULL, &context->debugMessenger);
-        }
-        
+        veFuncs.vkCreateDebugUtilsMessengerEXT(context->instance, &debugCreateInfo, NULL, &context->debugMessenger);
+               
         context->validationEnabled = true;
     }
     
@@ -551,11 +556,7 @@ void veDestroyContext(VEContext* context) {
     VEContextInternal* internal = (VEContextInternal*)context;
     
     if (internal->debugMessenger) {
-        PFN_vkDestroyDebugUtilsMessengerEXT func = (PFN_vkDestroyDebugUtilsMessengerEXT)
-            vkGetInstanceProcAddr(internal->instance, "vkDestroyDebugUtilsMessengerEXT");
-        if (func) {
-            func(internal->instance, internal->debugMessenger, NULL);
-        }
+        veFuncs.vkDestroyDebugUtilsMessengerEXT(internal->instance, internal->debugMessenger, NULL);
     }
     
     if (internal->instance) {
@@ -628,6 +629,9 @@ VEDevice* veCreateDevice(VEContext* context) {
     vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
     vulkan12Features.bufferDeviceAddress = device->features.bufferDeviceAddress;
     vulkan12Features.descriptorIndexing = device->features.descriptorIndexing;
+    vulkan12Features.descriptorBindingSampledImageUpdateAfterBind = device->features.updateAfterBind;
+    vulkan12Features.descriptorBindingPartiallyBound = device->features.updateAfterBind;
+    vulkan12Features.descriptorBindingVariableDescriptorCount = device->features.updateAfterBind;
     
     VkPhysicalDeviceVulkan13Features vulkan13Features = {0};
     vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
@@ -659,6 +663,7 @@ VEDevice* veCreateDevice(VEContext* context) {
     deviceFeatures2.features.fillModeNonSolid = device->features.fillModeNonSolid;
     deviceFeatures2.features.wideLines = device->features.wideLines;
     deviceFeatures2.features.depthClamp = device->features.depthClamp;
+    deviceFeatures2.features.shaderInt64 = VK_TRUE;
     
     VkDeviceCreateInfo deviceCreateInfo = {0};
     deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -680,6 +685,8 @@ VEDevice* veCreateDevice(VEContext* context) {
         free(device);
         return NULL;
     }
+
+    initializeDeviceFunctions(device->device);
     
     vkGetDeviceQueue(device->device, device->queueFamilies.graphicsFamily, 0, &device->graphicsQueue);
     vkGetDeviceQueue(device->device, device->queueFamilies.computeFamily, 0, &device->computeQueue);
@@ -859,4 +866,39 @@ uint32_t veGetVulkanVersion(VEDevice* device) {
     if (!device) return 0;
     VEDeviceInternal* internal = (VEDeviceInternal*)device;
     return internal->deviceProperties.apiVersion;
+}
+
+#define GET_INSTANCE_FUNC(extName) \
+    veFuncs.extName = (PFN_##extName)vkGetInstanceProcAddr(instance, #extName);\
+    if(veFuncs.extName == NULL) { printf("Failed to find instance function: %s\n", #extName); return false; }
+
+#define GET_DEVICE_FUNC(extName) \
+    veFuncs.extName = (PFN_##extName)vkGetDeviceProcAddr(device, #extName); \
+    if(veFuncs.extName == NULL) { printf("Failed to find device function: %s\n", #extName); return false; }
+
+bool initializeInstanceFunctions(VkInstance instance)
+{
+    GET_INSTANCE_FUNC(vkSetDebugUtilsObjectNameEXT);
+    GET_INSTANCE_FUNC(vkCmdBeginDebugUtilsLabelEXT);
+    GET_INSTANCE_FUNC(vkSubmitDebugUtilsMessageEXT);
+    GET_INSTANCE_FUNC(vkCmdInsertDebugUtilsLabelEXT);
+    GET_INSTANCE_FUNC(vkCmdEndDebugUtilsLabelEXT);
+    GET_INSTANCE_FUNC(vkCreateDebugUtilsMessengerEXT);
+    GET_INSTANCE_FUNC(vkDestroyDebugUtilsMessengerEXT);
+
+    return true;
+}
+
+bool initializeDeviceFunctions(VkDevice device)
+{
+    GET_DEVICE_FUNC(vkCreateShadersEXT);
+    GET_DEVICE_FUNC(vkCmdBindShadersEXT);
+    GET_DEVICE_FUNC(vkGetShaderBinaryDataEXT);
+    GET_DEVICE_FUNC(vkDestroyShaderEXT);
+
+    GET_DEVICE_FUNC(vkCmdSetPolygonModeEXT);
+    GET_DEVICE_FUNC(vkCmdSetColorBlendEnableEXT);
+    GET_DEVICE_FUNC(vkCmdSetVertexInputEXT);
+
+    return true;
 }

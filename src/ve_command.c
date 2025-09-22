@@ -256,11 +256,7 @@ void veApplyRenderConfig(VECommandBuffer* cmd, VERenderConfig* config) {
         vkCmdSetFrontFace(internal->commandBuffer, (VkFrontFace)configInternal->rasterConfig.frontFace);
         
         // Extended dynamic state 3
-        PFN_vkCmdSetPolygonModeEXT vkCmdSetPolygonModeEXT = (PFN_vkCmdSetPolygonModeEXT)
-            vkGetDeviceProcAddr(VK_NULL_HANDLE, "vkCmdSetPolygonModeEXT");
-        if (vkCmdSetPolygonModeEXT) {
-            vkCmdSetPolygonModeEXT(internal->commandBuffer, (VkPolygonMode)configInternal->rasterConfig.polygonMode);
-        }
+        veFuncs.vkCmdSetPolygonModeEXT(internal->commandBuffer, (VkPolygonMode)configInternal->rasterConfig.polygonMode);
         
         vkCmdSetLineWidth(internal->commandBuffer, configInternal->rasterConfig.lineWidth);
         
@@ -308,16 +304,13 @@ void veApplyRenderConfig(VECommandBuffer* cmd, VERenderConfig* config) {
     if (configInternal->configTypes & VE_CONFIG_TYPE_COLOR_BLEND) {
         vkCmdSetBlendConstants(internal->commandBuffer, configInternal->blendConfig.blendConstants);
         
-        // Extended dynamic state 3 for per-attachment blending
-        PFN_vkCmdSetColorBlendEnableEXT vkCmdSetColorBlendEnableEXT = (PFN_vkCmdSetColorBlendEnableEXT)
-            vkGetDeviceProcAddr(VK_NULL_HANDLE, "vkCmdSetColorBlendEnableEXT");
-        
-        if (vkCmdSetColorBlendEnableEXT && configInternal->blendConfig.attachmentCount > 0) {
+        // Extended dynamic state 3 for per-attachment blending        
+        if (configInternal->blendConfig.attachmentCount > 0) {
             VkBool32 colorBlendEnables[8];
             for (uint32_t i = 0; i < configInternal->blendConfig.attachmentCount && i < 8; i++) {
                 colorBlendEnables[i] = configInternal->blendConfig.attachments[i].blendEnable;
             }
-            vkCmdSetColorBlendEnableEXT(internal->commandBuffer, 0, 
+            veFuncs.vkCmdSetColorBlendEnableEXT(internal->commandBuffer, 0, 
                                       configInternal->blendConfig.attachmentCount, colorBlendEnables);
         }
     }
@@ -338,12 +331,7 @@ void veApplyRenderConfig(VECommandBuffer* cmd, VERenderConfig* config) {
         }
         
         if (validShaderCount > 0) {
-            PFN_vkCmdBindShadersEXT vkCmdBindShadersEXT = (PFN_vkCmdBindShadersEXT)
-                vkGetDeviceProcAddr(VK_NULL_HANDLE, "vkCmdBindShadersEXT");
-            
-            if (vkCmdBindShadersEXT) {
-                vkCmdBindShadersEXT(internal->commandBuffer, validShaderCount, stages, shaders);
-            }
+            veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, validShaderCount, stages, shaders);
         }
     }
 }
@@ -359,10 +347,7 @@ void veApplyVertexConfig(VECommandBuffer* cmd, VEVertexConfig* config) {
     vkCmdSetPrimitiveRestartEnable(internal->commandBuffer, configInternal->primitiveRestartEnable);
     
     // Set vertex input dynamic state
-    PFN_vkCmdSetVertexInputEXT vkCmdSetVertexInputEXT = (PFN_vkCmdSetVertexInputEXT)
-        vkGetDeviceProcAddr(VK_NULL_HANDLE, "vkCmdSetVertexInputEXT");
-    
-    if (vkCmdSetVertexInputEXT && configInternal->bindingCount > 0) {
+    if (configInternal->bindingCount > 0) {
         VkVertexInputBindingDescription2EXT bindings[16];
         VkVertexInputAttributeDescription2EXT attributes[32];
         
@@ -384,7 +369,7 @@ void veApplyVertexConfig(VECommandBuffer* cmd, VEVertexConfig* config) {
             attributes[i].offset = configInternal->attributes[i].offset;
         }
         
-        vkCmdSetVertexInputEXT(internal->commandBuffer, 
+        veFuncs.vkCmdSetVertexInputEXT(internal->commandBuffer, 
                              configInternal->bindingCount, bindings,
                              configInternal->attributeCount, attributes);
     }
@@ -402,12 +387,7 @@ void veBindShader(VECommandBuffer* cmd, VEShader* shader) {
     
     VkShaderStageFlagBits stage = veShaderStageToVk(shaderInternal->stage);
     
-    PFN_vkCmdBindShadersEXT vkCmdBindShadersEXT = (PFN_vkCmdBindShadersEXT)
-        vkGetDeviceProcAddr(VK_NULL_HANDLE, "vkCmdBindShadersEXT");
-    
-    if (vkCmdBindShadersEXT) {
-        vkCmdBindShadersEXT(internal->commandBuffer, 1, &stage, &shaderInternal->shaderObject);
-    }
+    veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, 1, &stage, &shaderInternal->shaderObject);
 }
 
 void veBindShaders(VECommandBuffer* cmd, uint32_t shaderCount, VEShader* const* shaders) {
@@ -428,13 +408,7 @@ void veBindShaders(VECommandBuffer* cmd, uint32_t shaderCount, VEShader* const* 
     
     if (validCount > 0) {
         VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
-        
-        PFN_vkCmdBindShadersEXT vkCmdBindShadersEXT = (PFN_vkCmdBindShadersEXT)
-            vkGetDeviceProcAddr(VK_NULL_HANDLE, "vkCmdBindShadersEXT");
-        
-        if (vkCmdBindShadersEXT) {
-            vkCmdBindShadersEXT(internal->commandBuffer, validCount, stages, shaderObjects);
-        }
+        veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, validCount, stages, shaderObjects);
     }
 }
 
@@ -465,10 +439,5 @@ void veUnbindShaderStage(VECommandBuffer* cmd, VEShaderStage stage) {
     VkShaderStageFlagBits vkStage = veShaderStageToVk(stage);
     VkShaderEXT nullShader = VK_NULL_HANDLE;
     
-    PFN_vkCmdBindShadersEXT vkCmdBindShadersEXT = (PFN_vkCmdBindShadersEXT)
-        vkGetDeviceProcAddr(VK_NULL_HANDLE, "vkCmdBindShadersEXT");
-    
-    if (vkCmdBindShadersEXT) {
-        vkCmdBindShadersEXT(internal->commandBuffer, 1, &vkStage, &nullShader);
-    }
+    veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, 1, &vkStage, &nullShader);
 }

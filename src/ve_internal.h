@@ -83,6 +83,7 @@ typedef struct VEDeviceFeatures {
     bool bufferDeviceAddress;
     bool descriptorIndexing;
     bool dynamicRendering;
+    bool updateAfterBind;
     
     // Extension features
     bool extendedDynamicState3;
@@ -219,7 +220,9 @@ typedef struct VESwapchainInternal {
     VkSemaphore renderFinishedSemaphore;
     VkFence inFlightFence;
     bool needsRecreation;
+    VEDeviceInternal* device;
 } VESwapchainInternal;
+
 
 // Device internal structure
 typedef struct VEDeviceInternal {
@@ -289,7 +292,6 @@ typedef struct VEDeviceInternal {
     VEPerformanceStats performanceStats;
     VEMemoryStats memoryStats;
     VERenderConfigStats renderConfigStats;
-    
 } VEDeviceInternal;
 
 // =============================================================================
@@ -350,6 +352,38 @@ void veSetObjectDebugName(VEDeviceInternal* device, uint64_t objectHandle,
 
 // Surface creation (platform-specific)
 VkResult veCreateSurface(VEContextInternal* context, void* windowHandle, VkSurfaceKHR* surface);
+
+
+typedef struct VEFuncs
+{
+    // Device Functions to initialize
+    //VK_EXT_shader_object
+    PFN_vkCreateShadersEXT vkCreateShadersEXT;
+    PFN_vkCmdBindShadersEXT vkCmdBindShadersEXT;
+    PFN_vkGetShaderBinaryDataEXT vkGetShaderBinaryDataEXT;
+    PFN_vkDestroyShaderEXT vkDestroyShaderEXT;
+
+    //VK_EXT_extended_dynamic_state3
+    PFN_vkCmdSetPolygonModeEXT vkCmdSetPolygonModeEXT;
+    PFN_vkCmdSetColorBlendEnableEXT vkCmdSetColorBlendEnableEXT;
+    PFN_vkCmdSetVertexInputEXT vkCmdSetVertexInputEXT;
+
+    // Instance functions to initialize
+    PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;
+    PFN_vkSubmitDebugUtilsMessageEXT vkSubmitDebugUtilsMessageEXT;
+    PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessengerEXT;
+    PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectNameEXT;
+    PFN_vkCmdBeginDebugUtilsLabelEXT vkCmdBeginDebugUtilsLabelEXT;
+    PFN_vkCmdInsertDebugUtilsLabelEXT vkCmdInsertDebugUtilsLabelEXT;
+    PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabelEXT;
+
+} VEFuncs;
+
+extern VEFuncs veFuncs;
+
+bool initializeInstanceFunctions(VkInstance instance);
+bool initializeDeviceFunctions(VkDevice device);
+
 
 #ifdef __cplusplus
 }

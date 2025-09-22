@@ -113,11 +113,6 @@ void veInsertDebugLabelLegacy(VECommandBuffer* cmd, const char* labelName, float
     
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
     
-    PFN_vkCmdInsertDebugUtilsLabelEXT vkCmdInsertDebugUtilsLabelEXT = 
-        (PFN_vkCmdInsertDebugUtilsLabelEXT)vkGetDeviceProcAddr(internal->device->device, "vkCmdInsertDebugUtilsLabelEXT");
-    
-    if (!vkCmdInsertDebugUtilsLabelEXT) return;
-    
     VkDebugUtilsLabelEXT labelInfo = {0};
     labelInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
     labelInfo.pLabelName = labelName;
@@ -134,7 +129,7 @@ void veInsertDebugLabelLegacy(VECommandBuffer* cmd, const char* labelName, float
         labelInfo.color[3] = 1.0f;
     }
     
-    vkCmdInsertDebugUtilsLabelEXT(internal->commandBuffer, &labelInfo);
+    veFuncs.vkCmdInsertDebugUtilsLabelEXT(internal->commandBuffer, &labelInfo);
 }
 
 // Modern debug label functions with VEColor support
@@ -143,11 +138,6 @@ void veBeginDebugLabel(VECommandBuffer* cmd, const char* label, VEColor color) {
     
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
     
-    PFN_vkCmdBeginDebugUtilsLabelEXT vkCmdBeginDebugUtilsLabelEXT = 
-        (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(internal->device->device, "vkCmdBeginDebugUtilsLabelEXT");
-    
-    if (!vkCmdBeginDebugUtilsLabelEXT) return;
-    
     VkDebugUtilsLabelEXT labelInfo = {0};
     labelInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
     labelInfo.pLabelName = label;
@@ -156,32 +146,21 @@ void veBeginDebugLabel(VECommandBuffer* cmd, const char* label, VEColor color) {
     labelInfo.color[2] = color.b;
     labelInfo.color[3] = color.a;
     
-    vkCmdBeginDebugUtilsLabelEXT(internal->commandBuffer, &labelInfo);
+    veFuncs.vkCmdBeginDebugUtilsLabelEXT(internal->commandBuffer, &labelInfo);
 }
 
 void veEndDebugLabel(VECommandBuffer* cmd) {
     if (!cmd) return;
     
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
-    
-    PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabelEXT = 
-        (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(internal->device->device, "vkCmdEndDebugUtilsLabelEXT");
-    
-    if (!vkCmdEndDebugUtilsLabelEXT) return;
-    
-    vkCmdEndDebugUtilsLabelEXT(internal->commandBuffer);
+    veFuncs.vkCmdEndDebugUtilsLabelEXT(internal->commandBuffer);
 }
 
 void veInsertDebugLabel(VECommandBuffer* cmd, const char* label, VEColor color) {
     if (!cmd || !label) return;
     
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
-    
-    PFN_vkCmdInsertDebugUtilsLabelEXT vkCmdInsertDebugUtilsLabelEXT = 
-        (PFN_vkCmdInsertDebugUtilsLabelEXT)vkGetDeviceProcAddr(internal->device->device, "vkCmdInsertDebugUtilsLabelEXT");
-    
-    if (!vkCmdInsertDebugUtilsLabelEXT) return;
-    
+
     VkDebugUtilsLabelEXT labelInfo = {0};
     labelInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
     labelInfo.pLabelName = label;
@@ -190,19 +169,14 @@ void veInsertDebugLabel(VECommandBuffer* cmd, const char* label, VEColor color) 
     labelInfo.color[2] = color.b;
     labelInfo.color[3] = color.a;
     
-    vkCmdInsertDebugUtilsLabelEXT(internal->commandBuffer, &labelInfo);
+    veFuncs.vkCmdInsertDebugUtilsLabelEXT(internal->commandBuffer, &labelInfo);
 }
 
 void veBeginDebugRegion(VECommandBuffer* cmd, const char* regionName, float color[4]) {
     if (!cmd || !regionName) return;
     
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
-    
-    PFN_vkCmdBeginDebugUtilsLabelEXT vkCmdBeginDebugUtilsLabelEXT = 
-        (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(VK_NULL_HANDLE, "vkCmdBeginDebugUtilsLabelEXT");
-    
-    if (!vkCmdBeginDebugUtilsLabelEXT) return;
-    
+
     VkDebugUtilsLabelEXT labelInfo = {0};
     labelInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
     labelInfo.pLabelName = regionName;
@@ -219,20 +193,15 @@ void veBeginDebugRegion(VECommandBuffer* cmd, const char* regionName, float colo
         labelInfo.color[3] = 1.0f;
     }
     
-    vkCmdBeginDebugUtilsLabelEXT(internal->commandBuffer, &labelInfo);
+    veFuncs.vkCmdBeginDebugUtilsLabelEXT(internal->commandBuffer, &labelInfo);
 }
 
 void veEndDebugRegion(VECommandBuffer* cmd) {
     if (!cmd) return;
     
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
-    
-    PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabelEXT = 
-        (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(VK_NULL_HANDLE, "vkCmdEndDebugUtilsLabelEXT");
-    
-    if (!vkCmdEndDebugUtilsLabelEXT) return;
-    
-    vkCmdEndDebugUtilsLabelEXT(internal->commandBuffer);
+
+    veFuncs.vkCmdEndDebugUtilsLabelEXT(internal->commandBuffer);
 }
 
 void veLogMessage(VEDevice* device, VEMessageSeverity severity, const char* message) {
@@ -252,15 +221,7 @@ void veLogMessage(VEDevice* device, VEMessageSeverity severity, const char* mess
         printf("[VulkEase %s] %s\\n", severityStr, message);
         return;
     }
-    
-    PFN_vkSubmitDebugUtilsMessageEXT vkSubmitDebugUtilsMessageEXT = 
-        (PFN_vkSubmitDebugUtilsMessageEXT)vkGetInstanceProcAddr(deviceInternal->context->instance, "vkSubmitDebugUtilsMessageEXT");
-    
-    if (!vkSubmitDebugUtilsMessageEXT) {
-        printf("[VulkEase] %s\\n", message);
-        return;
-    }
-    
+       
     VkDebugUtilsMessageSeverityFlagBitsEXT vkSeverity;
     switch (severity) {
         case VE_MESSAGE_SEVERITY_VERBOSE: vkSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT; break;
@@ -276,7 +237,7 @@ void veLogMessage(VEDevice* device, VEMessageSeverity severity, const char* mess
     callbackData.messageIdNumber = 0;
     callbackData.pMessageIdName = "VulkEase User Message";
     
-    vkSubmitDebugUtilsMessageEXT(deviceInternal->context->instance, vkSeverity, 
+    veFuncs.vkSubmitDebugUtilsMessageEXT(deviceInternal->context->instance, vkSeverity, 
                                 VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT, &callbackData);
 }
 
