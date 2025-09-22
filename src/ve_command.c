@@ -247,132 +247,302 @@ void veEndRendering(VECommandBuffer* cmd) {
 void veApplyRenderConfig(VECommandBuffer* cmd, VERenderConfig* config) {
     if (!cmd || !config) return;
     
-    VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
     VERenderConfigInternal* configInternal = (VERenderConfigInternal*)config;
-    
-    // Apply rasterization state
-    if (configInternal->configTypes & VE_CONFIG_TYPE_RASTERIZATION) {
-        vkCmdSetCullMode(internal->commandBuffer, (VkCullModeFlags)configInternal->rasterConfig.cullMode);
-        vkCmdSetFrontFace(internal->commandBuffer, (VkFrontFace)configInternal->rasterConfig.frontFace);
-        
-        // Extended dynamic state 3
-        veFuncs.vkCmdSetPolygonModeEXT(internal->commandBuffer, (VkPolygonMode)configInternal->rasterConfig.polygonMode);
-        
-        vkCmdSetLineWidth(internal->commandBuffer, configInternal->rasterConfig.lineWidth);
-        
-        if (configInternal->rasterConfig.depthBiasEnable) {
-            vkCmdSetDepthBias(internal->commandBuffer, 
-                            configInternal->rasterConfig.depthBiasConstantFactor,
-                            configInternal->rasterConfig.depthBiasClamp,
-                            configInternal->rasterConfig.depthBiasSlopeFactor);
-        }
-    }
-    
-    // Apply depth/stencil state
-    if (configInternal->configTypes & VE_CONFIG_TYPE_DEPTH_STENCIL) {
-        vkCmdSetDepthTestEnable(internal->commandBuffer, configInternal->depthConfig.depthTestEnable);
-        vkCmdSetDepthWriteEnable(internal->commandBuffer, configInternal->depthConfig.depthWriteEnable);
-        vkCmdSetDepthCompareOp(internal->commandBuffer, (VkCompareOp)configInternal->depthConfig.depthCompareOp);
-        
-        if (configInternal->depthConfig.depthBoundsTestEnable) {
-            vkCmdSetDepthBounds(internal->commandBuffer, 
-                              configInternal->depthConfig.minDepthBounds,
-                              configInternal->depthConfig.maxDepthBounds);
-        }
-        
-        vkCmdSetStencilTestEnable(internal->commandBuffer, configInternal->depthConfig.stencilTestEnable);
-        
-        if (configInternal->depthConfig.stencilTestEnable) {
-            vkCmdSetStencilCompareMask(internal->commandBuffer, VK_STENCIL_FACE_FRONT_BIT, 
-                                     configInternal->depthConfig.frontCompareMask);
-            vkCmdSetStencilCompareMask(internal->commandBuffer, VK_STENCIL_FACE_BACK_BIT, 
-                                     configInternal->depthConfig.backCompareMask);
-            
-            vkCmdSetStencilWriteMask(internal->commandBuffer, VK_STENCIL_FACE_FRONT_BIT, 
-                                   configInternal->depthConfig.frontWriteMask);
-            vkCmdSetStencilWriteMask(internal->commandBuffer, VK_STENCIL_FACE_BACK_BIT, 
-                                   configInternal->depthConfig.backWriteMask);
-            
-            vkCmdSetStencilReference(internal->commandBuffer, VK_STENCIL_FACE_FRONT_BIT, 
-                                   configInternal->depthConfig.frontReference);
-            vkCmdSetStencilReference(internal->commandBuffer, VK_STENCIL_FACE_BACK_BIT, 
-                                   configInternal->depthConfig.backReference);
-        }
-    }
-    
-    // Apply color blend state  
-    if (configInternal->configTypes & VE_CONFIG_TYPE_COLOR_BLEND) {
-        vkCmdSetBlendConstants(internal->commandBuffer, configInternal->blendConfig.blendConstants);
-        
-        // Extended dynamic state 3 for per-attachment blending        
-        if (configInternal->blendConfig.attachmentCount > 0) {
-            VkBool32 colorBlendEnables[8];
-            for (uint32_t i = 0; i < configInternal->blendConfig.attachmentCount && i < 8; i++) {
-                colorBlendEnables[i] = configInternal->blendConfig.attachments[i].blendEnable;
-            }
-            veFuncs.vkCmdSetColorBlendEnableEXT(internal->commandBuffer, 0, 
-                                      configInternal->blendConfig.attachmentCount, colorBlendEnables);
-        }
-    }
-    
-    // Bind shaders
-    if (configInternal->shaderCount > 0) {
-        VkShaderStageFlagBits stages[6];
-        VkShaderEXT shaders[6];
-        uint32_t validShaderCount = 0;
-        
-        for (uint32_t i = 0; i < configInternal->shaderCount; i++) {
-            if (configInternal->shaders[i]) {
-                VEShaderInternal* shaderInternal = (VEShaderInternal*)configInternal->shaders[i];
-                stages[validShaderCount] = veShaderStageToVk(shaderInternal->stage);
-                shaders[validShaderCount] = shaderInternal->shaderObject;
-                validShaderCount++;
-            }
-        }
-        
-        if (validShaderCount > 0) {
-            veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, validShaderCount, stages, shaders);
-        }
-    }
-}
-
-void veApplyVertexConfig(VECommandBuffer* cmd, VEVertexConfig* config) {
-    if (!cmd || !config) return;
-    
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
-    VEVertexConfigInternal* configInternal = (VEVertexConfigInternal*)config;
+    VkCommandBuffer vkCmd = internal->commandBuffer;
     
-    // Set primitive topology
-    vkCmdSetPrimitiveTopology(internal->commandBuffer, (VkPrimitiveTopology)configInternal->topology);
-    vkCmdSetPrimitiveRestartEnable(internal->commandBuffer, configInternal->primitiveRestartEnable);
+    // ==========================================================================
+    // REQUIRED DYNAMIC STATE FOR SHADER OBJECTS (Vulkan 1.3 Core)
+    // ==========================================================================
     
-    // Set vertex input dynamic state
-    if (configInternal->bindingCount > 0) {
-        VkVertexInputBindingDescription2EXT bindings[16];
-        VkVertexInputAttributeDescription2EXT attributes[32];
-        
-        for (uint32_t i = 0; i < configInternal->bindingCount; i++) {
-            bindings[i].sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT;
-            bindings[i].pNext = NULL;
-            bindings[i].binding = configInternal->bindings[i].binding;
-            bindings[i].stride = configInternal->bindings[i].stride;
-            bindings[i].inputRate = (VkVertexInputRate)configInternal->bindings[i].inputRate;
-            bindings[i].divisor = configInternal->bindings[i].divisor;
-        }
-        
-        for (uint32_t i = 0; i < configInternal->attributeCount; i++) {
-            attributes[i].sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT;
-            attributes[i].pNext = NULL;
-            attributes[i].location = configInternal->attributes[i].location;
-            attributes[i].binding = configInternal->attributes[i].binding;
-            attributes[i].format = veFormatToVk(configInternal->attributes[i].format);
-            attributes[i].offset = configInternal->attributes[i].offset;
-        }
-        
-        veFuncs.vkCmdSetVertexInputEXT(internal->commandBuffer, 
-                             configInternal->bindingCount, bindings,
-                             configInternal->attributeCount, attributes);
+    // 1. VIEWPORT AND SCISSOR (REQUIRED - must use WithCount variants)
+    // This is MANDATORY when shader objects are bound
+    if (configInternal->configTypes & VE_CONFIG_TYPE_VIEWPORT){
+        VkViewport viewport = {
+            .x = configInternal->viewport.x,
+            .y = configInternal->viewport.y, 
+            .width = configInternal->viewport.width,
+            .height = configInternal->viewport.height,
+            .minDepth = configInternal->viewport.minDepth,
+            .maxDepth = configInternal->viewport.maxDepth
+        };
+       vkCmdSetViewportWithCount(vkCmd, 1, &viewport);
     }
+    
+    if(configInternal->configTypes & VE_CONFIG_TYPE_SCISSOR){
+        VkRect2D scissor = {
+            .offset = {configInternal->scissor.x, configInternal->scissor.y},
+            .extent = {configInternal->scissor.width, configInternal->scissor.height}
+        };
+
+    
+        vkCmdSetScissorWithCount(vkCmd, 1, &scissor);
+    }
+    
+    // 2. PRIMITIVE TOPOLOGY (REQUIRED)
+    VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    if (configInternal->configTypes & VE_CONFIG_TYPE_VERTEX_INPUT) {
+        topology = veConvertPrimitiveTopology(configInternal->vertexInputConfig.topology);
+    }
+    vkCmdSetPrimitiveTopology(vkCmd, topology);
+    
+    // 3. PRIMITIVE RESTART (REQUIRED)
+    VkBool32 primitiveRestart = VK_FALSE;
+    if (configInternal->configTypes & VE_CONFIG_TYPE_VERTEX_INPUT) {
+        primitiveRestart = configInternal->vertexInputConfig.primitiveRestartEnable ? VK_TRUE : VK_FALSE;
+    }
+    vkCmdSetPrimitiveRestartEnable(vkCmd, primitiveRestart);
+
+    // ==========================================================================
+    // RASTERIZATION STATE (Core + VK_EXT_extended_dynamic_state3)
+    // ==========================================================================
+    
+    if (configInternal->configTypes & VE_CONFIG_TYPE_RASTERIZATION) {
+        const VERasterConfig* raster = &configInternal->rasterConfig;
+        
+        // CORE DYNAMIC STATE (Vulkan 1.3)
+        vkCmdSetCullMode(vkCmd, veConvertCullMode(raster->cullMode));
+        vkCmdSetFrontFace(vkCmd, veConvertFrontFace(raster->frontFace));
+        vkCmdSetLineWidth(vkCmd, raster->lineWidth);
+        vkCmdSetRasterizerDiscardEnable(vkCmd, raster->rasterizerDiscardEnable ? VK_TRUE : VK_FALSE);
+        vkCmdSetDepthBiasEnable(vkCmd, raster->depthBiasEnable ? VK_TRUE : VK_FALSE);
+        
+        if (raster->depthBiasEnable) {
+            vkCmdSetDepthBias(vkCmd, 
+                raster->depthBiasConstantFactor,
+                raster->depthBiasClamp,
+                raster->depthBiasSlopeFactor);
+        }
+        
+        // EXTENDED DYNAMIC STATE 3 (when available)
+        // Polygon mode (VK_EXT_extended_dynamic_state3)
+        veFuncs.vkCmdSetPolygonModeEXT(vkCmd, veConvertPolygonMode(raster->polygonMode));
+            
+        // Depth clamp (VK_EXT_extended_dynamic_state3)
+        veFuncs.vkCmdSetDepthClampEnableEXT(vkCmd, raster->depthClampEnable ? VK_TRUE : VK_FALSE);
+
+    } else {
+        // Set safe defaults when raster config not provided
+        vkCmdSetCullMode(vkCmd, VK_CULL_MODE_BACK_BIT);
+        vkCmdSetFrontFace(vkCmd, VK_FRONT_FACE_COUNTER_CLOCKWISE);
+        vkCmdSetLineWidth(vkCmd, 1.0f);
+        vkCmdSetRasterizerDiscardEnable(vkCmd, VK_FALSE);
+        vkCmdSetDepthBiasEnable(vkCmd, VK_FALSE);
+        
+        veFuncs.vkCmdSetPolygonModeEXT(vkCmd, VK_POLYGON_MODE_FILL);
+        veFuncs.vkCmdSetDepthClampEnableEXT(vkCmd, VK_FALSE);
+    }
+    
+    // ==========================================================================
+    // DEPTH/STENCIL STATE (Vulkan 1.3 Core)
+    // ==========================================================================   
+    if (configInternal->configTypes & VE_CONFIG_TYPE_DEPTH_STENCIL) {
+        const VEDepthConfig* depth = &configInternal->depthConfig;
+        // Depth test state
+        vkCmdSetDepthTestEnable(internal->commandBuffer, depth->depthTestEnable);
+        vkCmdSetDepthWriteEnable(internal->commandBuffer, depth->depthWriteEnable);
+        vkCmdSetDepthCompareOp(internal->commandBuffer, (VkCompareOp)depth->depthCompareOp);
+        
+        // Depth bounds test
+        vkCmdSetDepthBoundsTestEnable(vkCmd, depth->depthBoundsTestEnable ? VK_TRUE : VK_FALSE);
+        if (depth->depthBoundsTestEnable) {
+            vkCmdSetDepthBounds(internal->commandBuffer, 
+                              depth->minDepthBounds,
+                              depth->maxDepthBounds);
+        }
+        
+        // Stencil test state
+        vkCmdSetStencilTestEnable(vkCmd, depth->stencilTestEnable ? VK_TRUE : VK_FALSE);
+        
+        if (depth->stencilTestEnable) {
+            // Front face stencil operations
+            vkCmdSetStencilOp(vkCmd, VK_STENCIL_FACE_FRONT_BIT,
+                veConvertStencilOp(depth->frontFailOp),
+                veConvertStencilOp(depth->frontPassOp), 
+                veConvertStencilOp(depth->frontDepthFailOp),
+                veConvertCompareOp(depth->frontCompareOp));
+                
+            vkCmdSetStencilCompareMask(vkCmd, VK_STENCIL_FACE_FRONT_BIT, depth->frontCompareMask);
+            vkCmdSetStencilWriteMask(vkCmd, VK_STENCIL_FACE_FRONT_BIT, depth->frontWriteMask);
+            vkCmdSetStencilReference(vkCmd, VK_STENCIL_FACE_FRONT_BIT, depth->frontReference);
+            
+            // Back face stencil operations  
+            vkCmdSetStencilOp(vkCmd, VK_STENCIL_FACE_BACK_BIT,
+                veConvertStencilOp(depth->backFailOp),
+                veConvertStencilOp(depth->backPassOp),
+                veConvertStencilOp(depth->backDepthFailOp), 
+                veConvertCompareOp(depth->backCompareOp));
+                
+            vkCmdSetStencilCompareMask(vkCmd, VK_STENCIL_FACE_BACK_BIT, depth->backCompareMask);
+            vkCmdSetStencilWriteMask(vkCmd, VK_STENCIL_FACE_BACK_BIT, depth->backWriteMask);
+            vkCmdSetStencilReference(vkCmd, VK_STENCIL_FACE_BACK_BIT, depth->backReference);
+        }
+    } else {
+        // Set safe defaults when depth config not provided
+        vkCmdSetDepthTestEnable(vkCmd, VK_TRUE);
+        vkCmdSetDepthWriteEnable(vkCmd, VK_TRUE);
+        vkCmdSetDepthCompareOp(vkCmd, VK_COMPARE_OP_LESS);
+        vkCmdSetDepthBoundsTestEnable(vkCmd, VK_FALSE);
+        vkCmdSetStencilTestEnable(vkCmd, VK_FALSE);
+    }
+    
+    // ==========================================================================
+    // COLOR BLENDING STATE (VK_EXT_extended_dynamic_state3)
+    // ==========================================================================
+    
+    uint32_t colorAttachmentCount = 1; // Default assumption
+    if (configInternal->configTypes & VE_CONFIG_TYPE_COLOR_BLEND) {
+        const VEBlendConfig* blend = &configInternal->blendConfig;
+        colorAttachmentCount = blend->attachmentCount;
+        
+        // Set blend equations for ALL attachments at once
+        // Per-attachment blend enables and color write masks
+        VkBool32 blendEnables[VE_MAX_COLOR_ATTACHMENTS];
+        VkColorComponentFlags colorWriteMasks[VE_MAX_COLOR_ATTACHMENTS];
+        VkColorBlendEquationEXT blendEquations[VE_MAX_COLOR_ATTACHMENTS];
+        
+        for (uint32_t i = 0; i < colorAttachmentCount; i++) {
+            blendEnables[i] = blend->attachments[i].blendEnable ? VK_TRUE : VK_FALSE;
+            colorWriteMasks[i] = veConvertColorComponentFlags(blend->attachments[i].colorWriteMask);
+            
+            // Set blend equation for this attachment (even if blending is disabled)
+            blendEquations[i] = (VkColorBlendEquationEXT){
+                .srcColorBlendFactor = veConvertBlendFactor(blend->attachments[i].srcColorBlendFactor),
+                .dstColorBlendFactor = veConvertBlendFactor(blend->attachments[i].dstColorBlendFactor),
+                .colorBlendOp = veConvertBlendOp(blend->attachments[i].colorBlendOp),
+                .srcAlphaBlendFactor = veConvertBlendFactor(blend->attachments[i].srcAlphaBlendFactor),
+                .dstAlphaBlendFactor = veConvertBlendFactor(blend->attachments[i].dstAlphaBlendFactor),
+                .alphaBlendOp = veConvertBlendOp(blend->attachments[i].alphaBlendOp)
+            };
+        }
+        
+        // Set all blend state at once
+        veFuncs.vkCmdSetColorBlendEnableEXT(vkCmd, 0, colorAttachmentCount, blendEnables);
+        veFuncs.vkCmdSetColorWriteMaskEXT(vkCmd, 0, colorAttachmentCount, colorWriteMasks);
+        veFuncs.vkCmdSetColorBlendEquationEXT(vkCmd, 0, colorAttachmentCount, blendEquations);
+        
+        // Logic operations (if supported)
+        veFuncs.vkCmdSetLogicOpEnableEXT(vkCmd, blend->logicOpEnable ? VK_TRUE : VK_FALSE);
+        if (blend->logicOpEnable) {
+            veFuncs.vkCmdSetLogicOpEXT(vkCmd, veConvertLogicOp(blend->logicOp));
+        }
+
+        // Blend constants (always available in core)
+        vkCmdSetBlendConstants(vkCmd, blend->blendConstants);
+        
+    } else {
+        // Set safe defaults for color blending
+        VkBool32 blendEnable = VK_FALSE;
+        VkColorComponentFlags colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                                VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        
+        veFuncs.vkCmdSetColorBlendEnableEXT(vkCmd, 0, 1, &blendEnable);
+        veFuncs.vkCmdSetColorWriteMaskEXT(vkCmd, 0, 1, &colorWriteMask);
+        veFuncs.vkCmdSetLogicOpEnableEXT(vkCmd, VK_FALSE);
+        
+        // Default blend constants
+        float blendConstants[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        vkCmdSetBlendConstants(vkCmd, blendConstants);
+    }
+    
+    // ==========================================================================
+    // VERTEX INPUT STATE (VK_EXT_shader_object)
+    // ==========================================================================
+    
+    if (configInternal->configTypes & VE_CONFIG_TYPE_VERTEX_INPUT) {
+        const VEVertexInputConfig* vertexInput = &configInternal->vertexInputConfig;
+        
+        // Convert VulkEase vertex input to Vulkan EXT format
+        VkVertexInputBindingDescription2EXT bindings[VE_MAX_VERTEX_BINDINGS];
+        VkVertexInputAttributeDescription2EXT attributes[VE_MAX_VERTEX_ATTRIBUTES];
+        
+        // Convert bindings
+        for (uint32_t i = 0; i < vertexInput->bindingCount; i++) {
+            bindings[i] = (VkVertexInputBindingDescription2EXT){
+                .sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT,
+                .binding = vertexInput->bindings[i].binding,
+                .stride = vertexInput->bindings[i].stride,
+                .inputRate = veConvertVertexInputRate(vertexInput->bindings[i].inputRate),
+                .divisor = vertexInput->bindings[i].divisor
+            };
+        }
+        
+        // Convert attributes  
+        for (uint32_t i = 0; i < vertexInput->attributeCount; i++) {
+            attributes[i] = (VkVertexInputAttributeDescription2EXT){
+                .sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT,
+                .location = vertexInput->attributes[i].location,
+                .binding = vertexInput->attributes[i].binding,
+                .format = veConvertFormat(vertexInput->attributes[i].format),
+                .offset = vertexInput->attributes[i].offset
+            };
+        }
+        
+        // Set vertex input layout dynamically
+        veFuncs.vkCmdSetVertexInputEXT(vkCmd, 
+                              vertexInput->bindingCount, bindings,
+                              vertexInput->attributeCount, attributes);
+    } else {
+        // No vertex input when not specified (e.g., fullscreen triangle)
+        veFuncs.vkCmdSetVertexInputEXT(vkCmd, 0, NULL, 0, NULL);
+    }
+    
+    // ==========================================================================
+    // MULTISAMPLE STATE (VK_EXT_extended_dynamic_state3)
+    // ==========================================================================
+    
+    if (configInternal->configTypes & VE_CONFIG_TYPE_MULTISAMPLE) {
+        const VEMultisampleConfig* msaa = &configInternal->multisampleConfig;
+        
+        veFuncs.vkCmdSetRasterizationSamplesEXT(vkCmd, veConvertSampleCount(msaa->rasterizationSamples));
+        veFuncs.vkCmdSetAlphaToCoverageEnableEXT(vkCmd, msaa->alphaToCoverageEnable ? VK_TRUE : VK_FALSE);
+        veFuncs.vkCmdSetAlphaToOneEnableEXT(vkCmd, msaa->alphaToOneEnable ? VK_TRUE : VK_FALSE);
+
+        // Generate default sample mask (all samples enabled)
+        VkSampleCountFlagBits sampleCount = veConvertSampleCount(msaa->rasterizationSamples);
+        uint32_t maskWords = (sampleCount + 31) / 32; // Calculate number of 32-bit words needed
+        uint32_t sampleMask[16]; // Maximum reasonable sample count (512 samples = 16 words)
+        
+        for (uint32_t i = 0; i < maskWords; i++) {
+            sampleMask[i] = 0xFFFFFFFF; // All bits set = all samples enabled
+        }
+
+        veFuncs.vkCmdSetSampleMaskEXT(vkCmd, sampleCount, sampleMask);
+
+    } else {
+        // Default MSAA settings
+        veFuncs.vkCmdSetRasterizationSamplesEXT(vkCmd, VK_SAMPLE_COUNT_1_BIT);
+        veFuncs.vkCmdSetAlphaToCoverageEnableEXT(vkCmd, VK_FALSE);
+        veFuncs.vkCmdSetAlphaToOneEnableEXT(vkCmd, VK_FALSE);
+
+        uint32_t sampleMask = 0xFFFFFFFF;
+        veFuncs.vkCmdSetSampleMaskEXT(vkCmd, VK_SAMPLE_COUNT_1_BIT, &sampleMask);
+    }
+    
+    // ==========================================================================
+    // TESSELLATION STATE (VK_EXT_extended_dynamic_state2/3)
+    // ==========================================================================
+    
+    if (topology == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST) {
+        uint32_t patchControlPoints = 3; // Default
+        if (configInternal->configTypes & VE_CONFIG_TYPE_VERTEX_INPUT) {
+            patchControlPoints = configInternal->vertexInputConfig.patchControlPoints;
+        }
+        
+        veFuncs.vkCmdSetPatchControlPointsEXT(vkCmd, patchControlPoints);
+    }
+    
+    // ==========================================================================
+    // ADDITIONAL REQUIRED STATE
+    // ==========================================================================
+    
+    // Conservative rasterization (VK_EXT_extended_dynamic_state3)
+    veFuncs.vkCmdSetConservativeRasterizationModeEXT(vkCmd, VK_CONSERVATIVE_RASTERIZATION_MODE_DISABLED_EXT);
+
+    // Line rasterization (VK_EXT_extended_dynamic_state3) 
+    veFuncs.vkCmdSetLineRasterizationModeEXT(vkCmd, VK_LINE_RASTERIZATION_MODE_DEFAULT_EXT);
+
+    veFuncs.vkCmdSetProvokingVertexModeEXT(vkCmd, VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT);
 }
 
 // =============================================================================
@@ -384,6 +554,8 @@ void veBindShader(VECommandBuffer* cmd, VEShader* shader) {
     
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
     VEShaderInternal* shaderInternal = (VEShaderInternal*)shader;
+
+    internal->boundShaders = internal->boundShaders | shaderInternal->stage;
     
     VkShaderStageFlagBits stage = veShaderStageToVk(shaderInternal->stage);
     
@@ -416,16 +588,17 @@ void veBindShaderConfig(VECommandBuffer* cmd, VEShaderConfig* config) {
     if (!cmd || !config) return;
     
     VEShaderConfigInternal* configInternal = (VEShaderConfigInternal*)config;
-    
+    VECommandBufferInternal* cmdInternal = (VECommandBufferInternal*)cmd;
+
     VEShader* shaders[6];
     uint32_t shaderCount = 0;
-    
-    if (configInternal->vertexShader) shaders[shaderCount++] = configInternal->vertexShader;
-    if (configInternal->fragmentShader) shaders[shaderCount++] = configInternal->fragmentShader;
-    if (configInternal->geometryShader) shaders[shaderCount++] = configInternal->geometryShader;
-    if (configInternal->tessControlShader) shaders[shaderCount++] = configInternal->tessControlShader;
-    if (configInternal->tessEvalShader) shaders[shaderCount++] = configInternal->tessEvalShader;
-    if (configInternal->computeShader) shaders[shaderCount++] = configInternal->computeShader;
+
+    if (configInternal->vertexShader) { shaders[shaderCount++] = configInternal->vertexShader; cmdInternal->boundShaders |= VE_SHADER_STAGE_VERTEX;}
+    if (configInternal->fragmentShader) { shaders[shaderCount++] = configInternal->fragmentShader; cmdInternal->boundShaders |= VE_SHADER_STAGE_FRAGMENT;}
+    if (configInternal->geometryShader) { shaders[shaderCount++] = configInternal->geometryShader; cmdInternal->boundShaders |= VE_SHADER_STAGE_GEOMETRY;}
+    if (configInternal->tessControlShader) { shaders[shaderCount++] = configInternal->tessControlShader; cmdInternal->boundShaders |= VE_SHADER_STAGE_TESSELLATION_CONTROL;}
+    if (configInternal->tessEvalShader) { shaders[shaderCount++] = configInternal->tessEvalShader; cmdInternal->boundShaders |= VE_SHADER_STAGE_TESSELLATION_EVALUATION;}
+    if (configInternal->computeShader) { shaders[shaderCount++] = configInternal->computeShader; cmdInternal->boundShaders |= VE_SHADER_STAGE_COMPUTE;}
     
     if (shaderCount > 0) {
         veBindShaders(cmd, shaderCount, shaders);

@@ -699,6 +699,7 @@ VEDevice* veCreateDevice(VEContext* context) {
         return NULL;
     }
 
+    // Initialize command pools
     device->graphicsCommandPool = calloc(1, sizeof(VECommandPool));
     if(veInitCommandPool(device, device->queueFamilies.graphicsFamily, device->graphicsCommandPool) == false)
     {
@@ -744,7 +745,49 @@ VEDevice* veCreateDevice(VEContext* context) {
         free(device);
         return NULL;
     }
+
+    //initialize render configs
+    device->maxRenderConfigs = VE_MAX_RENDER_CONFIGS;
+    device->renderConfigs = calloc(VE_MAX_RENDER_CONFIGS, sizeof(VERenderConfigInternal));
+    device->renderConfigCount = 0;
     
+
+    //create a global push constant layout
+    VkPushConstantRange gfxPushConstantRange = {
+        .stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS,  // All stages can access
+        .offset = 0,
+        .size = 128  // VulkEase standard: 128 bytes  TODO:  investigate if 256 is better and more supported
+    };
+
+    VkPipelineLayoutCreateInfo gfxLayoutInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 0,        // No descriptor sets needed for push constants
+        .pSetLayouts = NULL,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &gfxPushConstantRange
+    };
+
+    vkCreatePipelineLayout(device->device, &gfxLayoutInfo, NULL, &device->globalGraphicsPushConstantLayout);
+
+    VkPushConstantRange computePushConstantRange = {
+        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,  // Compute only
+        .offset = 0,
+        .size = 128  // VulkEase standard: 128 bytes  TODO:  investigate if 256 is better and more supported
+    };
+
+    VkPipelineLayoutCreateInfo computeLayoutInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 0,        // No descriptor sets needed for push constants
+        .pSetLayouts = NULL,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &computePushConstantRange
+    };
+    vkCreatePipelineLayout(device->device, &computeLayoutInfo, NULL, &device->globalComputePushConstantLayout);
+
+
+
+
+
     return (VEDevice*)device;
 }
 
@@ -897,8 +940,24 @@ bool initializeDeviceFunctions(VkDevice device)
     GET_DEVICE_FUNC(vkDestroyShaderEXT);
 
     GET_DEVICE_FUNC(vkCmdSetPolygonModeEXT);
+    GET_DEVICE_FUNC(vkCmdSetDepthClampEnableEXT);
     GET_DEVICE_FUNC(vkCmdSetColorBlendEnableEXT);
+    GET_DEVICE_FUNC(vkCmdSetColorWriteMaskEXT);
+    GET_DEVICE_FUNC(vkCmdSetColorBlendEquationEXT);
     GET_DEVICE_FUNC(vkCmdSetVertexInputEXT);
+    GET_DEVICE_FUNC(vkCmdSetRasterizationSamplesEXT);
+    GET_DEVICE_FUNC(vkCmdSetSampleMaskEXT);
+    GET_DEVICE_FUNC(vkCmdSetAlphaToCoverageEnableEXT);
+    GET_DEVICE_FUNC(vkCmdSetAlphaToOneEnableEXT);
+    GET_DEVICE_FUNC(vkCmdSetPatchControlPointsEXT);
+
+    GET_DEVICE_FUNC(vkCmdSetConservativeRasterizationModeEXT);
+    GET_DEVICE_FUNC(vkCmdSetLineRasterizationModeEXT);
+    GET_DEVICE_FUNC(vkCmdSetProvokingVertexModeEXT);
+
+    GET_DEVICE_FUNC(vkCmdSetLogicOpEnableEXT);
+    GET_DEVICE_FUNC(vkCmdSetLogicOpEXT);
+
 
     return true;
 }
