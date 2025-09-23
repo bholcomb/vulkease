@@ -226,6 +226,8 @@ static void render() {
         fprintf(stderr, "Failed to begin command buffer\n");
         return;
     }
+
+    veTransitionTextureForColorAttachment(cmd, backbuffer); //TODO:  Find a way to remove this from the user's workload
     
     // Calculate animation
     double currentTime = glfwGetTime();
@@ -295,6 +297,8 @@ static void render() {
     veEndRendering(cmd);
     
     // Present
+    veTransitionTextureForPresent(cmd, backbuffer);  //TODO:  Find a way to remove this from the user's work load
+
     VEResult result = vePresentImage(g_swapchain, cmd);
     if (result == VE_ERROR_SWAPCHAIN_OUT_OF_DATE) {
         // Handle swapchain recreation

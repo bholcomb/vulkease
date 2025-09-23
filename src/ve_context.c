@@ -76,6 +76,9 @@ void veSetError(const char* format, ...) {
     va_start(args, format);
     vsnprintf(g_lastError, sizeof(g_lastError), format, args);
     va_end(args);
+
+
+    printf("VULKEASE ERROR: %s", g_lastError);
 }
 
 const char* veGetLastError(void) {
@@ -637,6 +640,7 @@ VEDevice* veCreateDevice(VEContext* context) {
     vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
     vulkan13Features.pNext = &vulkan12Features;
     vulkan13Features.dynamicRendering = device->features.dynamicRendering;
+    vulkan13Features.synchronization2 = VK_TRUE;
     
     VkPhysicalDeviceExtendedDynamicState3FeaturesEXT extDynState3Features = {0};
     extDynState3Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT;

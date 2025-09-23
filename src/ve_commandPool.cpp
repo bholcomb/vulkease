@@ -93,6 +93,8 @@ extern "C" VEResult veAllocateCommandBuffer(VEDeviceInternal* device, VECommandP
             pool->commandBuffers[i].isOneTime = false;
             
             *outCmd = &pool->commandBuffers[i];
+
+            pool->commandBufferCount++;
             return VE_SUCCESS;
         }
     }
@@ -102,10 +104,12 @@ extern "C" VEResult veAllocateCommandBuffer(VEDeviceInternal* device, VECommandP
 }
 
 extern "C" void veFreeCommandBuffer(VECommandBufferInternal* cmd) {
-    if (!cmd || cmd->index >= VE_MAX_COMMAND_BUFFERS) return;
+    if (!cmd || cmd->index >= VE_MAX_COMMAND_BUFFERS)
+        return;
     
     VECommandPool* pool = cmd->commandPool;
     pool->commandBufferInUse[cmd->index] = false;
+    pool->commandBufferCount--;
     cmd->isRecording = false;
     cmd->isOneTime = false;
 }
