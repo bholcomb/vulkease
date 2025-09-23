@@ -436,7 +436,16 @@ VETextureIndex veAcquireNextImage(VESwapchain* swapchain) {
     }
 
     // Wait for previous frame
-    vkWaitForFences(device->device, 1, &internal->inFlightFence, VK_TRUE, UINT64_MAX);
+    VkResult status = vkGetFenceStatus(device->device, internal->inFlightFence);
+    if(status != VK_SUCCESS && status != VK_NOT_READY)
+    {
+        veSetError("Failed to get swapchain fence status (VkResult: %d)", status);
+        exit(-1);
+    }
+    if(status == VK_NOT_READY)
+    {
+        vkWaitForFences(device->device, 1, &internal->inFlightFence, VK_TRUE, UINT64_MAX);
+    }
 
     uint32_t imageIndex;
     VkResult result = vkAcquireNextImageKHR(device->device, internal->swapchain, UINT64_MAX,
@@ -486,6 +495,10 @@ VEResult vePresentImage(VESwapchain* swapchain, VECommandBuffer* cmd) {
         }
         cmdInternal->isRecording = false;
     }
+    else
+    {
+        printf("Could not transition the image because the command buffer was not recording\n");
+    }
 
     // Submit command buffer
     VkSubmitInfo submitInfo = {0};
@@ -532,6 +545,9 @@ VEResult vePresentImage(VESwapchain* swapchain, VECommandBuffer* cmd) {
     }
 
     internal->currentImageIndex = UINT32_MAX;
+
+    veFreeCommandBuffer(cmdInternal);
+
     return VE_SUCCESS;
 }
 
