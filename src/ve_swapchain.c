@@ -146,24 +146,34 @@ static VkSurfaceFormatKHR chooseSwapSurfaceFormat(VkPhysicalDevice device, VkSur
     return result;
 }
 
-static VkPresentModeKHR chooseSwapPresentMode(VkPhysicalDevice device, VkSurfaceKHR surface) {
+static VkPresentModeKHR chooseSwapPresentMode(VkPhysicalDevice device, VkSurfaceKHR surface, bool vsync) {
+    if(!vsync)
+    {
+        return VK_PRESENT_MODE_IMMEDIATE_KHR;
+    }
+    
     uint32_t presentModeCount;
     vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, NULL);
 
     VkPresentModeKHR* availablePresentModes = malloc(presentModeCount * sizeof(VkPresentModeKHR));
     vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, availablePresentModes);
 
+    VkPresentModeKHR ret = 0;
     // Prefer mailbox mode for low latency
     for (uint32_t i = 0; i < presentModeCount; i++) {
         if (availablePresentModes[i] == VK_PRESENT_MODE_MAILBOX_KHR) {
-            free(availablePresentModes);
-            return VK_PRESENT_MODE_MAILBOX_KHR;
+            ret = VK_PRESENT_MODE_MAILBOX_KHR;
         }
     }
 
-    // Fallback to FIFO (always supported)
+    if(ret == 0)
+    {
+        // Fallback to FIFO (always supported)
+        ret = VK_PRESENT_MODE_FIFO_KHR;
+    }
+
     free(availablePresentModes);
-    return VK_PRESENT_MODE_FIFO_KHR;
+    return ret;
 }
 
 static VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR* capabilities, uint32_t width, uint32_t height) {
@@ -186,7 +196,7 @@ static VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR* capabilities,
 // =============================================================================
 
 VESwapchain* veCreateSwapchain(VEDevice* device, void* windowHandle,
-                              uint32_t width, uint32_t height, VEFormat format) {
+                              uint32_t width, uint32_t height, VEFormat format, bool vsync) {
     if (!device || !windowHandle || width == 0 || height == 0) {
         veSetError("Invalid parameters for swapchain creation");
         return NULL;
@@ -230,7 +240,7 @@ VESwapchain* veCreateSwapchain(VEDevice* device, void* windowHandle,
     swapchain->format = veFormatFromVk(surfaceFormat.format);
 
     // Choose present mode
-    VkPresentModeKHR presentMode = chooseSwapPresentMode(deviceInternal->physicalDevice, swapchain->surface);
+    VkPresentModeKHR presentMode = chooseSwapPresentMode(deviceInternal->physicalDevice, swapchain->surface, vsync);
 
     // Choose extent
     VkExtent2D extent = chooseSwapExtent(&capabilities, width, height);
