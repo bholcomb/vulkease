@@ -120,7 +120,7 @@ static bool initVulkEase(GLFWwindow* window) {
         return false;
     }
     
-    g_swapchain = veCreateSwapchain(g_device, windowHandle, width, height, VE_FORMAT_BGRA8_SRGB);
+    g_swapchain = veCreateSwapchain(g_device, windowHandle, width, height, VE_FORMAT_BGRA8_SRGB, false);
     if (!g_swapchain) {
         fprintf(stderr, "Failed to create swapchain: %s\n", veGetLastError());
         return false;

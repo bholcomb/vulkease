@@ -123,7 +123,7 @@ static bool initVulkEase(GLFWwindow* window) {
     void* windowData[] = {displayHandle, windowHandle};
 
     // Create swapchain using VulkEase's simple window handle approach
-    g_swapchain = veCreateSwapchain(g_device, windowData, width, height, VE_FORMAT_BGRA8_SRGB);
+    g_swapchain = veCreateSwapchain(g_device, windowData, width, height, VE_FORMAT_BGRA8_SRGB, true);
 
 #elif defined(__APPLE__)
     windowHandle = glfwGetCocoaWindow(window);
@@ -357,10 +357,27 @@ int main() {
     }
     
     printf("Starting render loop...\n");
-    
-    while (!glfwWindowShouldClose(window)) {
+
+    uint64_t frameCount = 0;
+    bool shouldQuit = false;
+    double frameTime = 0.0;
+    while (!glfwWindowShouldClose(window) || shouldQuit) {
+        double start = glfwGetTime();
+        
         glfwPollEvents();
         render();
+
+        frameCount++;
+        if(frameCount % 100 == 0) printf("Average Framerate: %f:4.2ms\n", (frameTime / (double)frameCount) * 1000.0);
+        if(frameCount % 1000 == 0) vePrintDebugInfo(g_device);
+
+        if(glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+        {
+            shouldQuit = true;
+        }
+
+        double end = glfwGetTime();
+        frameTime += (end - start);
     }
     
     printf("Shutting down...\n");

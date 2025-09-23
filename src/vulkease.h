@@ -1091,7 +1091,7 @@ VULKEASE_API void veTransitionTextureToLayout(VECommandBuffer* cmd, VETextureInd
  * Create swapchain for window
  */
 VULKEASE_API VESwapchain* veCreateSwapchain(VEDevice* device, void* windowHandle,
-                                           uint32_t width, uint32_t height, VEFormat format);
+                                           uint32_t width, uint32_t height, VEFormat forma, bool vsync);
 VULKEASE_API void veDestroySwapchain(VESwapchain* swapchain);
 
 /**
