@@ -200,9 +200,9 @@ void vePushConstants(VECommandBuffer* cmd, const void* data, size_t size, size_t
     // find the device's global push constant layout (created at device init)
     VkPipelineLayout pushConstantLayout;
     if(stageFlags == VK_SHADER_STAGE_ALL_GRAPHICS)
-        pushConstantLayout = internal->device->globalGraphicsPushConstantLayout; 
+        pushConstantLayout = internal->device->globalGraphicsPipelineLayout; 
     else
-        pushConstantLayout = internal->device->globalComputePushConstantLayout;
+        pushConstantLayout = internal->device->globalComputePipelineLayout;
     
     vkCmdPushConstants(internal->commandBuffer, pushConstantLayout, stageFlags,
                       (uint32_t)offset, (uint32_t)size, data);
@@ -218,6 +218,21 @@ void veDraw(VECommandBuffer* cmd, uint32_t vertexCount, uint32_t instanceCount,
     
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
     vkCmdDraw(internal->commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
+}
+
+void veBindIndexBuffer(VECommandBuffer* cmd, VEBufferAddress indexBuffer, uint32_t offset, VEIndexFormat format)
+{
+    if(!cmd || indexBuffer == 0) return;
+
+    VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
+    VkBuffer buffer = veGetVkBufferFromAddress(internal->device, indexBuffer);
+
+     if (buffer == VK_NULL_HANDLE) {
+        veSetError("Invalid index buffer address");
+        return;
+    }
+
+    vkCmdBindIndexBuffer(internal->commandBuffer, buffer, offset, veIndexFormatToVk(format));
 }
 
 void veDrawIndexed(VECommandBuffer* cmd, uint32_t indexCount, uint32_t instanceCount,

@@ -282,3 +282,14 @@ VkImageUsageFlags veConvertTextureUsage(VETextureUsage usage) {
     
     return vkUsage;
 }
+
+VkIndexType veIndexFormatToVk(VEIndexFormat format)
+{
+    switch(format)
+    {
+        case VE_INDEX_UINT16: return VK_INDEX_TYPE_UINT16;
+        case VE_INDEX_UINT32: return VK_INDEX_TYPE_UINT32;
+    }
+
+    return VK_INDEX_TYPE_NONE_KHR;
+}

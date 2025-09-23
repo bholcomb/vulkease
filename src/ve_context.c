@@ -635,6 +635,8 @@ VEDevice* veCreateDevice(VEContext* context) {
     vulkan12Features.descriptorBindingSampledImageUpdateAfterBind = device->features.updateAfterBind;
     vulkan12Features.descriptorBindingPartiallyBound = device->features.updateAfterBind;
     vulkan12Features.descriptorBindingVariableDescriptorCount = device->features.updateAfterBind;
+    vulkan12Features.runtimeDescriptorArray = VK_TRUE;
+    vulkan12Features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
     
     VkPhysicalDeviceVulkan13Features vulkan13Features = {0};
     vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
@@ -754,7 +756,22 @@ VEDevice* veCreateDevice(VEContext* context) {
     device->maxRenderConfigs = VE_MAX_RENDER_CONFIGS;
     device->renderConfigs = calloc(VE_MAX_RENDER_CONFIGS, sizeof(VERenderConfigInternal));
     device->renderConfigCount = 0;
+
+    //initialize vertex configs
+    device->maxVertexConfigs = VE_MAX_VERTEX_CONFIGS;
+    device->vertexConfigs = calloc(VE_MAX_VERTEX_CONFIGS, sizeof(VEVertexConfigInternal));
+    device->vertexConfigCount = 0;
+
+    //initialize shader configs
+    device->maxShaderConfigs = VE_MAX_SHADER_CONFIGS;
+    device->shaderConfigs = calloc(VE_MAX_SHADER_CONFIGS, sizeof(VEShaderConfigInternal));
+    device->shaderConfigCount = 0;
     
+    //descriptor set layouts
+    VkDescriptorSetLayout setLayouts[2] = {
+        device->textureDescriptorSetLayout,  // will be set = 0 in shaders
+        device->samplerDescriptorSetLayout   // will be set = 1 in shaders
+    };
 
     //create a global push constant layout
     VkPushConstantRange gfxPushConstantRange = {
@@ -765,13 +782,13 @@ VEDevice* veCreateDevice(VEContext* context) {
 
     VkPipelineLayoutCreateInfo gfxLayoutInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 0,        // No descriptor sets needed for push constants
-        .pSetLayouts = NULL,
+        .setLayoutCount = 2,
+        .pSetLayouts = setLayouts,
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &gfxPushConstantRange
     };
 
-    result = vkCreatePipelineLayout(device->device, &gfxLayoutInfo, NULL, &device->globalGraphicsPushConstantLayout);
+    result = vkCreatePipelineLayout(device->device, &gfxLayoutInfo, NULL, &device->globalGraphicsPipelineLayout);
     if(result != VK_SUCCESS)
     {
         veSetError("Failed to create graphics pipeline layout (VkResult: %d)", result);
@@ -787,13 +804,13 @@ VEDevice* veCreateDevice(VEContext* context) {
 
     VkPipelineLayoutCreateInfo computeLayoutInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 0,        // No descriptor sets needed for push constants
-        .pSetLayouts = NULL,
+        .setLayoutCount = 2,
+        .pSetLayouts = setLayouts,
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &computePushConstantRange
     };
 
-    result = vkCreatePipelineLayout(device->device, &computeLayoutInfo, NULL, &device->globalComputePushConstantLayout);
+    result = vkCreatePipelineLayout(device->device, &computeLayoutInfo, NULL, &device->globalComputePipelineLayout);
     if(result != VK_SUCCESS)
     {
         veSetError("Failed to create compute pipeline layout (VkResult: %d)", result);
@@ -813,9 +830,14 @@ void veDestroyDevice(VEDevice* device) {
         vkDeviceWaitIdle(internal->device);
     }
 
+    // free internal config buffers
+    free(internal->shaderConfigs);
+    free(internal->vertexConfigs);
+    free(internal->renderConfigs);
+
     //cleanup the pipeline layouts
-    vkDestroyPipelineLayout(internal->device, internal->globalGraphicsPushConstantLayout, NULL);
-    vkDestroyPipelineLayout(internal->device, internal->globalComputePushConstantLayout, NULL);
+    vkDestroyPipelineLayout(internal->device, internal->globalGraphicsPipelineLayout, NULL);
+    vkDestroyPipelineLayout(internal->device, internal->globalComputePipelineLayout, NULL);
 
     if(internal->transferCommandPool && internal->transferCommandPool != internal->graphicsCommandPool)
     {
