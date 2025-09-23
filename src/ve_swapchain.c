@@ -385,7 +385,7 @@ void veDestroySwapchain(VESwapchain* swapchain) {
     VESwapchainInternal* internal = (VESwapchainInternal*)swapchain;
     
     // Get device from context (limitation of current design)
-    VEDeviceInternal* device = NULL; // Would need to store device reference
+    VEDeviceInternal* device = internal->device;
     
     if (device && device->device) {
         vkDeviceWaitIdle(device->device);

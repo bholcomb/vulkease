@@ -34,6 +34,9 @@ static VEShader* g_fragmentShader = NULL;
 static VEBufferAddress g_vertexBuffer = VE_INVALID_ADDRESS;
 static VERenderConfig* g_renderConfig = NULL;
 
+int win_width = 800;
+int win_height = 600;
+
 // Animation state
 static double g_startTime = 0.0;
 
@@ -92,16 +95,10 @@ static bool initVulkEase(GLFWwindow* window) {
     }
     
     printf("VulkEase device created successfully\n");
-    
-    // Get window size for swapchain
-    int width, height;
-    glfwGetFramebufferSize(window, &width, &height);
-    
-    // Get native window handle for VulkEase's simple approach
-    void* displayHandle = NULL;
-    void* windowHandle = NULL;
-    
+        
 #if defined(_WIN32)
+    void* windowHandle = NULL;    
+    
     windowHandle = glfwGetWin32Window(window);
     if (!windowHandle) {
         fprintf(stderr, "Failed to get native window data\n");
@@ -110,6 +107,10 @@ static bool initVulkEase(GLFWwindow* window) {
 
     g_swapchain = veCreateSwapchain(g_device, windowHandle, width, height, VE_FORMAT_BGRA8_SRGB);
 #elif defined(__linux__)
+    // Get native window handle for VulkEase's simple approach
+    void* displayHandle = NULL;
+    void* windowHandle = NULL;
+    
     // For simplicity, assume X11 for now
     // In production, you'd detect the platform properly
     displayHandle = (void*)glfwGetX11Display();
@@ -123,9 +124,11 @@ static bool initVulkEase(GLFWwindow* window) {
     void* windowData[] = {displayHandle, windowHandle};
 
     // Create swapchain using VulkEase's simple window handle approach
-    g_swapchain = veCreateSwapchain(g_device, windowData, width, height, VE_FORMAT_BGRA8_SRGB, true);
+    g_swapchain = veCreateSwapchain(g_device, windowData, win_width, win_height, VE_FORMAT_BGRA8_SRGB, true);
 
 #elif defined(__APPLE__)
+    void* windowHandle = NULL;    
+    
     windowHandle = glfwGetCocoaWindow(window);
     if (!windowHandle) {
         fprintf(stderr, "Failed to get native window data\n");
@@ -139,7 +142,7 @@ static bool initVulkEase(GLFWwindow* window) {
         return false;
     }
     
-    printf("Swapchain created: %dx%d\n", width, height);
+    printf("Swapchain created: %dx%d\n", win_width, win_height);
     
     // Initialize animation timer
     g_startTime = glfwGetTime();
@@ -341,7 +344,7 @@ int main() {
         return -1;
     }
     
-    GLFWwindow* window = glfwCreateWindow(800, 600, "VulkEase Spinning Triangle", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(win_width, win_height, "VulkEase Spinning Triangle", NULL, NULL);
     if (!window) {
         fprintf(stderr, "Failed to create GLFW window\n");
         glfwTerminate();
@@ -361,7 +364,7 @@ int main() {
     uint64_t frameCount = 0;
     bool shouldQuit = false;
     double frameTime = 0.0;
-    while (!glfwWindowShouldClose(window) || shouldQuit) {
+    while (!glfwWindowShouldClose(window) && !shouldQuit) {
         double start = glfwGetTime();
         
         glfwPollEvents();

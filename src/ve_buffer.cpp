@@ -493,6 +493,8 @@ static VEResult veUpdateBufferWithStaging(VEDeviceInternal* device, VEBufferInte
     
     // Submit transfer command and wait for completion
     VEResult submitResult = veSubmitTransferCommandBuffer(transferCmd, true);
+
+    vmaDestroyBuffer(device->allocator, stagingBuffer, stagingAllocation);
     
     return submitResult;
 }
