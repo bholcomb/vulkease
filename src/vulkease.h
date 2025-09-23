@@ -224,6 +224,11 @@ typedef enum VEStoreOp {
     VE_STORE_OP_DONT_CARE = 1
 } VEStoreOp;
 
+typedef enum VEIndexFormat {
+    VE_INDEX_UINT16 = 0,
+    VE_INDEX_UINT32 = 1
+} VEIndexFormat;
+
 // =============================================================================
 // Render Configuration Types (Modern State Management)
 // =============================================================================
@@ -558,10 +563,10 @@ typedef struct VEVertexAttribute {
 
 typedef struct VEVertexInputConfig {
     uint32_t bindingCount;
-    const VEVertexBinding* bindings;       // VK_DYNAMIC_STATE_VERTEX_INPUT_EXT
+    VEVertexBinding* bindings;             // VK_DYNAMIC_STATE_VERTEX_INPUT_EXT
     
     uint32_t attributeCount;
-    const VEVertexAttribute* attributes;   // VK_DYNAMIC_STATE_VERTEX_INPUT_EXT
+    VEVertexAttribute* attributes;         // VK_DYNAMIC_STATE_VERTEX_INPUT_EXT
     
     VEPrimitiveTopology topology;          // VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY
     bool primitiveRestartEnable;           // VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE
@@ -999,6 +1004,11 @@ VULKEASE_API void veSetCulling(VECommandBuffer* cmd, VECullMode cullMode);
  * Contains buffer addresses and texture/sampler indices
  */
 VULKEASE_API void vePushConstants(VECommandBuffer* cmd, const void* data, size_t size, size_t offset);
+
+/**
+ * Bind an index buffer fro indexed calls
+ */
+VULKEASE_API void veBindIndexBuffer(VECommandBuffer* cmd, VEBufferAddress indexBuffer, uint32_t offset, VEIndexFormat format);
 
 /**
  * Direct drawing (buffer addresses in push constants - no binding operations!)

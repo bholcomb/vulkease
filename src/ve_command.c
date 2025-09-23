@@ -231,6 +231,21 @@ void veBeginRendering(VECommandBuffer* cmd, const VERenderingInfo* renderingInfo
     }
     
     vkCmdBeginRendering(internal->commandBuffer, &vkRenderingInfo);
+
+    //Bind the descriptors once per begin rendering call
+    VkDescriptorSet descriptorSets[2] = {
+        internal->device->textureDescriptorSet, 
+        internal->device->samplerDescriptorSet
+    };
+
+    vkCmdBindDescriptorSets(
+        internal->commandBuffer, 
+        VK_PIPELINE_BIND_POINT_GRAPHICS, 
+        internal->device->globalGraphicsPipelineLayout, 
+        0,                  //first set
+        2,                  // set count
+        descriptorSets,     //sets
+        0, NULL);           //dynamic offsset
 }
 
 void veEndRendering(VECommandBuffer* cmd) {

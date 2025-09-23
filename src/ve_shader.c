@@ -155,6 +155,18 @@ VEShader* veCreateShaderFromSPIRV(VEDevice* device, VEShaderStage stage,
     } else {
         snprintf(shader->debugName, sizeof(shader->debugName), "Shader_%p", shader);
     }
+
+    //create descriptor set
+    VkDescriptorSetLayout setLayouts[2] = {
+        deviceInternal->textureDescriptorSetLayout,  // will be set = 0 in shaders
+        deviceInternal->samplerDescriptorSetLayout   // will be set = 1 in shaders
+    };
+    
+    VkPushConstantRange shaderPushRange = {
+        .stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS,
+        .offset = 0,
+        .size = 128
+    };
     
     // Create shader object using VK_EXT_shader_object
     VkShaderCreateInfoEXT shaderCreateInfo = {0};
@@ -164,10 +176,10 @@ VEShader* veCreateShaderFromSPIRV(VEDevice* device, VEShaderStage stage,
     shaderCreateInfo.codeSize = codeSize;
     shaderCreateInfo.pCode = code;
     shaderCreateInfo.pName = entryPoint;
-    shaderCreateInfo.setLayoutCount = 0;
-    shaderCreateInfo.pSetLayouts = NULL;
-    shaderCreateInfo.pushConstantRangeCount = 0;
-    shaderCreateInfo.pPushConstantRanges = NULL;
+    shaderCreateInfo.setLayoutCount = 2;
+    shaderCreateInfo.pSetLayouts = setLayouts;
+    shaderCreateInfo.pushConstantRangeCount = 1;
+    shaderCreateInfo.pPushConstantRanges = &shaderPushRange;
         
     VkResult result = veFuncs.vkCreateShadersEXT(deviceInternal->device, 1, &shaderCreateInfo, NULL, &shader->shaderObject);
     if (result != VK_SUCCESS) {
@@ -347,6 +359,7 @@ VEShaderConfig* veCreateShaderConfig(VEDevice* device, const VEShaderConfigDesc*
         snprintf(config->debugName, sizeof(config->debugName), "ShaderConfig_%u", index);
     }
     
+    config->device = device;
     config->isValid = true;
     deviceInternal->shaderConfigCount++;
     
@@ -358,8 +371,10 @@ void veDestroyShaderConfig(VEShaderConfig* config) {
     
     VEShaderConfigInternal* internal = (VEShaderConfigInternal*)config;
     
+    internal->device->shaderConfigCount--;
     // Note: We don't destroy the individual shaders here as they might be used elsewhere
     // The user is responsible for managing shader lifetimes
     
     memset(internal, 0, sizeof(VEShaderConfigInternal));
+
 }

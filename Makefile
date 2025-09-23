@@ -13,11 +13,15 @@ EXAMPLES_DIR = examples
 BUILD_DIR = build
 BIN_DIR = bin
 SHADERS_DIR = $(EXAMPLES_DIR)/shaders
+DATA_DIR = $(EXAMPLES_DIR)/data
+DATA_DEST_DIR = $(BIN_DIR)/$(DATA_DIR)
+
 
 # Output library and examples
 LIBRARY = libvulkease.so
 EXAMPLE_TRIANGLE = 01_triangle
 EXAMPLE_PARTICLES = 02_compute_particles
+EXAMPLE_CUBE = 03_cube
 
 # Compilers and flags
 CC = gcc
@@ -34,7 +38,7 @@ LIBS = -lvulkan -lm -ldl -lpthread -lstdc++
 EXAMPLE_LIBS = -L$(BIN_DIR) -lvulkease -lglfw -lm
 
 # Source files (exclude stub debug file, use full implementation)
-C_SOURCES = $(filter-out $(SRC_DIR)/ve_debug_stub.c, $(wildcard $(SRC_DIR)/*.c))
+C_SOURCES = $(wildcard $(SRC_DIR)/*.c)
 CXX_SOURCES = $(wildcard $(SRC_DIR)/*.cpp)
 
 # Object files
@@ -46,6 +50,11 @@ OBJECTS = $(C_OBJECTS) $(CXX_OBJECTS)
 SHADER_SOURCES = $(wildcard $(SHADERS_DIR)/*.vert $(SHADERS_DIR)/*.frag $(SHADERS_DIR)/*.comp)
 SHADER_SPIRV = $(SHADER_SOURCES:%=$(BIN_DIR)/%.spv)
 
+#Data files
+PNG_FILES  := $(wildcard $(DATA_DIR)/*.png)
+GLTF_FILES := $(wildcard $(DATA_DIR)/*.gltf)
+ASSET_FILES := $(PNG_FILES) $(GLTF_FILES)
+
 # Default target
 all: library examples
 
@@ -53,10 +62,26 @@ all: library examples
 library: $(BIN_DIR)/$(LIBRARY)
 
 # Build examples
-examples: shaders $(BIN_DIR)/$(EXAMPLE_TRIANGLE) $(BIN_DIR)/$(EXAMPLE_PARTICLES)
+examples: shaders assets $(BIN_DIR)/$(EXAMPLE_TRIANGLE) $(BIN_DIR)/$(EXAMPLE_PARTICLES) $(BIN_DIR)/$(EXAMPLE_CUBE)
 
 # Build shaders
 shaders: $(SHADER_SPIRV)
+
+#copy data
+# Map source files to destination paths
+DEST_ASSETS := $(patsubst $(DATA_DIR)/%,$(DATA_DEST_DIR)/%,$(ASSET_FILES))
+
+# Copy all assets to DEST_DIR
+assets: $(DATA_DEST_DIR) $(DEST_ASSETS)
+	@echo "Assets copied to $(DATA_DEST_DIR)"
+
+# Pattern rule: copy each file, ensuring the directory exists
+$(DATA_DEST_DIR)/%: $(DATA_DIR)/% | $(DATA_DEST_DIR)
+	@cp $< $@
+
+# Ensure destination directory exists
+$(DATA_DEST_DIR):
+	@mkdir -p $(DATA_DEST_DIR)
 
 # Create build and bin directories
 $(BUILD_DIR):
@@ -96,6 +121,10 @@ $(BIN_DIR)/%.comp.spv: %.comp | $(BIN_DIR)
 	@mkdir -p $(dir $@)
 	glslangValidator -V --target-env vulkan1.3 -o $@ $<
 
+$(DATA_BIN): $(DATA_SRC_DIR)/$(TEXTURE_FILE) | $(DATA_BIN_DIR)
+	@echo "Copying data: $< -> $@"
+	@cp $< $@
+
 # Build triangle example
 $(BIN_DIR)/$(EXAMPLE_TRIANGLE): $(EXAMPLES_DIR)/$(EXAMPLE_TRIANGLE).c $(BIN_DIR)/$(LIBRARY) | $(BIN_DIR)
 	@echo "Building example: $(EXAMPLE_TRIANGLE)"
@@ -104,6 +133,11 @@ $(BIN_DIR)/$(EXAMPLE_TRIANGLE): $(EXAMPLES_DIR)/$(EXAMPLE_TRIANGLE).c $(BIN_DIR)
 # Build compute particles example
 $(BIN_DIR)/$(EXAMPLE_PARTICLES): $(EXAMPLES_DIR)/$(EXAMPLE_PARTICLES).c $(BIN_DIR)/$(LIBRARY) | $(BIN_DIR)
 	@echo "Building example: $(EXAMPLE_PARTICLES)"
+	$(CC) $(EXAMPLE_CFLAGS) $(INCLUDES) -Wl,-rpath,'$$ORIGIN' $< $(EXAMPLE_LIBS) -o $@
+
+# Build cube example
+$(BIN_DIR)/$(EXAMPLE_CUBE): $(EXAMPLES_DIR)/$(EXAMPLE_CUBE).c $(BIN_DIR)/$(LIBRARY) | $(BIN_DIR)
+	@echo "Building example: $(EXAMPLE_CUBE)"
 	$(CC) $(EXAMPLE_CFLAGS) $(INCLUDES) -Wl,-rpath,'$$ORIGIN' $< $(EXAMPLE_LIBS) -o $@
 
 # Install system dependencies (requires sudo)

@@ -173,6 +173,7 @@ typedef struct VERenderConfigInternal {
     
     char debugName[VE_MAX_DEBUG_NAME_LENGTH];
     bool isValid;
+    VEDeviceInternal* device;
 } VERenderConfigInternal;
 
 // Vertex configuration internal structure
@@ -186,6 +187,7 @@ typedef struct VEVertexConfigInternal {
     
     char debugName[VE_MAX_DEBUG_NAME_LENGTH];
     bool isValid;
+    VEDeviceInternal* device;
 } VEVertexConfigInternal;
 
 // Shader configuration internal structure  
@@ -199,6 +201,7 @@ typedef struct VEShaderConfigInternal {
     
     char debugName[VE_MAX_DEBUG_NAME_LENGTH];
     bool isValid;
+    VEDeviceInternal* device;
 } VEShaderConfigInternal;
 
 // Command buffer internal structure
@@ -295,8 +298,8 @@ typedef struct VEDeviceInternal {
     VkDescriptorSet textureDescriptorSet;
     VkDescriptorSet samplerDescriptorSet;
 
-    VkPipelineLayout globalGraphicsPushConstantLayout;
-    VkPipelineLayout globalComputePushConstantLayout;
+    VkPipelineLayout globalGraphicsPipelineLayout;
+    VkPipelineLayout globalComputePipelineLayout;
     
     // Performance statistics
     VEPerformanceStats performanceStats;
@@ -355,6 +358,7 @@ VkFormat veFormatToVk(VEFormat format);
 VEFormat veFormatFromVk(VkFormat format);
 VkImageUsageFlags veTextureUsageToVk(VETextureUsage usage);
 VkSampleCountFlagBits veSampleCountToVk(VESampleCount sampleCount);
+VkIndexType veIndexFormatToVk(VEIndexFormat format);
 
 // Utility functions
 void veSetObjectDebugName(VEDeviceInternal* device, uint64_t objectHandle, 

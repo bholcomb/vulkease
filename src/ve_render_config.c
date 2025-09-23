@@ -168,6 +168,34 @@ VERect2D veDefaultScissorConfig() {
 // Render Configuration Management
 // =============================================================================
 
+VEVertexInputConfig copyVertexInputConfig(VEVertexInputConfig* orig)
+{
+    VEVertexInputConfig config = {0};
+    config.bindingCount = orig->bindingCount;
+    config.bindings = calloc(orig->bindingCount, sizeof(VEVertexBinding));
+    for (int i=0; i< orig->bindingCount; i++)
+    {
+        config.bindings[i].binding = orig->bindings[i].binding;
+        config.bindings[i].stride = orig->bindings[i].stride;
+        config.bindings[i].inputRate = orig->bindings[i].inputRate;
+        config.bindings[i].divisor = orig->bindings[i].divisor;
+    }
+    config.attributeCount = orig->attributeCount;
+    config.attributes = calloc(orig->attributeCount, sizeof(VEVertexAttribute));
+    for (int i=0; i < orig->attributeCount; i++)
+    {
+        config.attributes[i].binding = orig->attributes[i].binding;
+        config.attributes[i].format = orig->attributes[i].format;
+        config.attributes[i].location = orig->attributes[i].location;
+        config.attributes[i].offset = orig->attributes[i].offset;
+    }
+    config.topology = orig->topology;
+    config.primitiveRestartEnable = orig->primitiveRestartEnable;
+    config.patchControlPoints = orig->patchControlPoints;
+    return config;
+
+}
+
 VERenderConfig* veCreateRenderConfig(VEDevice* device, const VERenderConfigDesc* desc) {
     if (!device || !desc) {
         veSetError("Invalid parameters for render config creation");
@@ -199,7 +227,8 @@ VERenderConfig* veCreateRenderConfig(VEDevice* device, const VERenderConfigDesc*
     config->depthConfig = desc->depthConfig ? *desc->depthConfig : veDefaultDepthConfig();
     config->blendConfig = desc->blendConfig ? *desc->blendConfig : veDefaultOpaqueBlendConfig();
     config->multisampleConfig = desc->multisampleConfig ? *desc->multisampleConfig : veDefaultMultisampleConfig();
-    config->vertexInputConfig = desc->vertexInputConfig ? *desc->vertexInputConfig : veDefaultVertexInputConfig();
+    // TODO: this is going to leak a little
+    config->vertexInputConfig = desc->vertexInputConfig ? copyVertexInputConfig(desc->vertexInputConfig) : veDefaultVertexInputConfig();
     config->viewport = desc->viewportConfig ? *desc->viewportConfig : veDefaultViewportConfig();
     config->scissor = desc->scissorConfig ? *desc->scissorConfig : veDefaultScissorConfig();
     
@@ -214,7 +243,8 @@ VERenderConfig* veCreateRenderConfig(VEDevice* device, const VERenderConfigDesc*
     } else {
         snprintf(config->debugName, sizeof(config->debugName), "RenderConfig_%u", index);
     }
-    
+
+    config->device = device; 
     config->isValid = true;
     deviceInternal->renderConfigCount++;
     
@@ -225,6 +255,8 @@ void veDestroyRenderConfig(VERenderConfig* config) {
     if (!config) return;
     
     VERenderConfigInternal* internal = (VERenderConfigInternal*)config;
+    internal->device->renderConfigCount--;
+
     memset(internal, 0, sizeof(VERenderConfigInternal));
 }
 
@@ -282,6 +314,7 @@ VEVertexConfig* veCreateVertexConfig(VEDevice* device, uint32_t bindingCount,
     
     snprintf(config->debugName, sizeof(config->debugName), "VertexConfig_%u", index);
     
+    config->device = device;
     config->isValid = true;
     deviceInternal->vertexConfigCount++;
     
@@ -292,6 +325,7 @@ void veDestroyVertexConfig(VEVertexConfig* config) {
     if (!config) return;
     
     VEVertexConfigInternal* internal = (VEVertexConfigInternal*)config;
+    internal->device->vertexConfigCount--;
     memset(internal, 0, sizeof(VEVertexConfigInternal));
 }
 
