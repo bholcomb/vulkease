@@ -250,6 +250,7 @@ VEShader* veLoadShader(VEDevice* device, const char* filename, VEShaderStage sta
     if (shader) {
         VEShaderInternal* internal = (VEShaderInternal*)shader;
         strncpy(internal->sourceFile, filename, sizeof(internal->sourceFile) - 1);
+        internal->device = (VEDeviceInternal*)device;
     }
     
     free(code);
@@ -260,14 +261,9 @@ void veDestroyShader(VEShader* shader) {
     if (!shader) return;
     
     VEShaderInternal* internal = (VEShaderInternal*)shader;
-    
+
     if (internal->shaderObject) {
-        // Get the device from somewhere - this is a limitation of the current API design
-        // In a real implementation, we'd need to store the device pointer in the shader
-        // For now, we'll have to rely on the calling code to clean up properly
-        
-        // TODO: Need device handle to destroy shader object
-        // vkDestroyShadersEXT(device, 1, &internal->shaderObject, NULL);
+        veFuncs.vkDestroyShaderEXT(internal->device->device, internal->shaderObject, NULL);
     }
     
     free(internal);

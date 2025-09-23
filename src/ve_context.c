@@ -771,7 +771,13 @@ VEDevice* veCreateDevice(VEContext* context) {
         .pPushConstantRanges = &gfxPushConstantRange
     };
 
-    vkCreatePipelineLayout(device->device, &gfxLayoutInfo, NULL, &device->globalGraphicsPushConstantLayout);
+    result = vkCreatePipelineLayout(device->device, &gfxLayoutInfo, NULL, &device->globalGraphicsPushConstantLayout);
+    if(result != VK_SUCCESS)
+    {
+        veSetError("Failed to create graphics pipeline layout (VkResult: %d)", result);
+        free(device);
+        return NULL;
+    }
 
     VkPushConstantRange computePushConstantRange = {
         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,  // Compute only
@@ -786,11 +792,14 @@ VEDevice* veCreateDevice(VEContext* context) {
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &computePushConstantRange
     };
-    vkCreatePipelineLayout(device->device, &computeLayoutInfo, NULL, &device->globalComputePushConstantLayout);
 
-
-
-
+    result = vkCreatePipelineLayout(device->device, &computeLayoutInfo, NULL, &device->globalComputePushConstantLayout);
+    if(result != VK_SUCCESS)
+    {
+        veSetError("Failed to create compute pipeline layout (VkResult: %d)", result);
+        free(device);
+        return NULL;
+    }
 
     return (VEDevice*)device;
 }
@@ -803,6 +812,10 @@ void veDestroyDevice(VEDevice* device) {
     if (internal->device) {
         vkDeviceWaitIdle(internal->device);
     }
+
+    //cleanup the pipeline layouts
+    vkDestroyPipelineLayout(internal->device, internal->globalGraphicsPushConstantLayout, NULL);
+    vkDestroyPipelineLayout(internal->device, internal->globalComputePushConstantLayout, NULL);
 
     if(internal->transferCommandPool && internal->transferCommandPool != internal->graphicsCommandPool)
     {

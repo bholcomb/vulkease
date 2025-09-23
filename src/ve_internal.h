@@ -154,6 +154,7 @@ typedef struct VEShaderInternal {
     char sourceFile[512]; // For hot-reload
     bool hotReloadEnabled;
     bool isValid;
+    VEDeviceInternal* device;
 } VEShaderInternal;
 
 // Render configuration internal structure

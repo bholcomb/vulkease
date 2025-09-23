@@ -700,15 +700,6 @@ VULKEASE_API void veDestroyDevice(VEDevice* device);
 VULKEASE_API VEResult veDeviceWaitIdle(VEDevice* device);
 
 /**
- * Check feature support
- */
-VULKEASE_API bool veSupportsBufferDeviceAddress(VEDevice* device);
-VULKEASE_API bool veSupportsDescriptorIndexing(VEDevice* device);
-VULKEASE_API bool veSupportsShaderObjects(VEDevice* device);
-VULKEASE_API bool veSupportsExtendedDynamicState3(VEDevice* device);
-VULKEASE_API bool veSupportsVertexInputDynamicState(VEDevice* device);
-
-/**
  * Get device information
  */
 VULKEASE_API const char* veGetDeviceName(VEDevice* device);
@@ -716,7 +707,7 @@ VULKEASE_API const char* veGetDriverVersion(VEDevice* device);
 VULKEASE_API uint32_t veGetVulkanVersion(VEDevice* device);
 
 /**
- * Get last error message (thread-local)
+ * Get last error message
  */
 VULKEASE_API const char* veGetLastError(void);
 
