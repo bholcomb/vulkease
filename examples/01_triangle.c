@@ -95,6 +95,7 @@ static bool initVulkEase(GLFWwindow* window) {
     }
     
     printf("VulkEase device created successfully\n");
+    printf("Device: %s\n", veGetDeviceName(g_device));
         
 #if defined(_WIN32)
     void* windowHandle = NULL;    

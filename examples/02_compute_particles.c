@@ -62,6 +62,9 @@ static VERenderConfig* g_renderConfig = NULL;
 static VEBufferAddress g_particleBuffer = VE_INVALID_ADDRESS;
 static VEBufferAddress g_vertexBuffer = VE_INVALID_ADDRESS;
 
+int win_width = 800;
+int win_height = 600;
+
 // Simple quad vertices for instanced particle rendering
 static const float quadVertices[] = {
     -0.5f, -0.5f,
@@ -69,6 +72,10 @@ static const float quadVertices[] = {
      0.5f,  0.5f,
     -0.5f,  0.5f
 };
+
+static void errorCallback(int error, const char* description) {
+    fprintf(stderr, "GLFW Error %d: %s\n", error, description);
+}
 
 static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
     if(!window)
@@ -81,12 +88,29 @@ static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
     }
 }
 
+static bool initGLFW() {
+    glfwSetErrorCallback(errorCallback);
+    
+    if (!glfwInit()) {
+        fprintf(stderr, "Failed to initialize GLFW\n");
+        return false;
+    }
+    
+    // Don't create OpenGL context
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+    
+    return true;
+}
+
 static bool initVulkEase(GLFWwindow* window) {
     g_context = veCreateContext("VulkEase Compute Particle System");
     if (!g_context) {
         fprintf(stderr, "Failed to create context: %s\n", veGetLastError());
         return false;
     }
+
+    printf("VulkEase initialized successfully\n");
     
     g_device = veCreateDevice(g_context);
     if (!g_device) {
@@ -94,38 +118,60 @@ static bool initVulkEase(GLFWwindow* window) {
         return false;
     }
     
+    printf("VulkEase device created successfully\n");
     printf("Device: %s\n", veGetDeviceName(g_device));
     
     // Note: Compute capabilities check not implemented yet
     printf("Compute workgroup size: %d (assumed optimal)\n", WORKGROUP_SIZE);
-    
-    int width, height;
-    glfwGetFramebufferSize(window, &width, &height);
-    
-    // Get native window handle for VulkEase's simple approach
-    void* windowHandle = NULL;
-    
+           
 #if defined(_WIN32)
-    windowHandle = glfwGetWin32Window(window);
-#elif defined(__linux__)
-    // For simplicity, assume X11 for now
-    // In production, you'd detect the platform properly
-    windowHandle = (void*)(uintptr_t)glfwGetX11Window(window);
-#elif defined(__APPLE__)
-    windowHandle = glfwGetCocoaWindow(window);
-#endif
+    void* windowHandle = NULL;    
     
+    windowHandle = glfwGetWin32Window(window);
     if (!windowHandle) {
-        fprintf(stderr, "Failed to get native window handle\n");
+        fprintf(stderr, "Failed to get native window data\n");
         return false;
     }
+
+    g_swapchain = veCreateSwapchain(g_device, windowHandle, width, height, VE_FORMAT_BGRA8_SRGB);
+#elif defined(__linux__)
+    // Get native window handle for VulkEase's simple approach
+    void* displayHandle = NULL;
+    void* windowHandle = NULL;
     
-    g_swapchain = veCreateSwapchain(g_device, windowHandle, width, height, VE_FORMAT_BGRA8_SRGB, false);
+    // For simplicity, assume X11 for now
+    // In production, you'd detect the platform properly
+    displayHandle = (void*)glfwGetX11Display();
+    windowHandle = (void*)glfwGetX11Window(window);
+    
+    if (!displayHandle || !windowHandle) {
+        fprintf(stderr, "Failed to get native window data\n");
+        return false;
+    }
+
+    void* windowData[] = {displayHandle, windowHandle};
+
+    // Create swapchain using VulkEase's simple window handle approach
+    g_swapchain = veCreateSwapchain(g_device, windowData, win_width, win_height, VE_FORMAT_BGRA8_SRGB, true);
+
+#elif defined(__APPLE__)
+    void* windowHandle = NULL;    
+    
+    windowHandle = glfwGetCocoaWindow(window);
+    if (!windowHandle) {
+        fprintf(stderr, "Failed to get native window data\n");
+        return false;
+    }
+    g_swapchain = veCreateSwapchain(g_device, windowHandle, width, height, VE_FORMAT_BGRA8_SRGB);
+#endif    
+    
     if (!g_swapchain) {
         fprintf(stderr, "Failed to create swapchain: %s\n", veGetLastError());
         return false;
     }
-    
+
+    printf("Swapchain created: %dx%d\n", win_width, win_height);
+
     return true;
 }
 
@@ -311,9 +357,10 @@ static void renderParticles(VECommandBuffer* cmd, VETextureIndex backbuffer) {
     // Begin rendering
     veBeginRendering(cmd, &renderingInfo);
     
-    // Set viewport
+    //setup viewport and scissoring state
     veSetViewport(cmd, 0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f);
-    
+    veSetScissor(cmd, 0, 0, width, height);
+
     // Apply render configuration (with alpha blending)
     veApplyRenderConfig(cmd, g_renderConfig);
     
@@ -341,15 +388,9 @@ static void renderParticles(VECommandBuffer* cmd, VETextureIndex backbuffer) {
 }
 
 static void render(float deltaTime, float time) {
-    // Get mouse position for attractor
-    double mouseX, mouseY;
-    int width, height;
-    glfwGetFramebufferSize(glfwGetCurrentContext(), &width, &height);
-    glfwGetCursorPos(glfwGetCurrentContext(), &mouseX, &mouseY);
-    
     // Convert to normalized coordinates [-1, 1]
-    float normalizedMouseX = (float)(mouseX / width) * 2.0f - 1.0f;
-    float normalizedMouseY = 1.0f - (float)(mouseY / height) * 2.0f;
+    float normalizedMouseX = sin(time); //(float)(mouseX / win_width) * 2.0f - 1.0f;
+    float normalizedMouseY = cos(time); //1.0f - (float)(mouseY / win_height) * 2.0f;
     
     // Acquire next swapchain image
     VETextureIndex backbuffer = veAcquireNextImage(g_swapchain);
@@ -363,6 +404,8 @@ static void render(float deltaTime, float time) {
         fprintf(stderr, "Failed to begin command buffer\n");
         return;
     }
+
+    veTransitionTextureForColorAttachment(cmd, backbuffer); //TODO:  Find a way to remove this from the user's workload
     
     // Run compute shader to simulate particles
     runComputeShader(cmd, deltaTime, time, normalizedMouseX, normalizedMouseY);
@@ -371,6 +414,8 @@ static void render(float deltaTime, float time) {
     renderParticles(cmd, backbuffer);
     
     // Present
+    veTransitionTextureForPresent(cmd, backbuffer);  //TODO:  Find a way to remove this from the user's work load
+
     VEResult result = vePresentImage(g_swapchain, cmd);
     if (result == VE_ERROR_SWAPCHAIN_OUT_OF_DATE) {
         uint32_t swWidth, swHeight;
@@ -434,12 +479,9 @@ static void cleanup() {
 }
 
 int main() {
-    if (!glfwInit()) {
+    if (!initGLFW()) {
         return -1;
     }
-    
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
     
     GLFWwindow* window = glfwCreateWindow(1024, 768, "VulkEase Compute Particles", NULL, NULL);
     if (!window) {
@@ -448,7 +490,6 @@ int main() {
     }
     
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
-    glfwMakeContextCurrent(window);
     
     if (!initVulkEase(window) || !createShaders() || !createBuffers() || !createRenderConfig()) {
         cleanup();
