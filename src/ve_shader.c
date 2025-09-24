@@ -6,26 +6,10 @@
 #include "ve_internal.h"
 
 // =============================================================================
-// Shader Stage Conversion
-// =============================================================================
-
-VkShaderStageFlagBits veShaderStageToVk(VEShaderStage stage) {
-    switch (stage) {
-        case VE_SHADER_STAGE_VERTEX: return VK_SHADER_STAGE_VERTEX_BIT;
-        case VE_SHADER_STAGE_TESSELLATION_CONTROL: return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-        case VE_SHADER_STAGE_TESSELLATION_EVALUATION: return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-        case VE_SHADER_STAGE_GEOMETRY: return VK_SHADER_STAGE_GEOMETRY_BIT;
-        case VE_SHADER_STAGE_FRAGMENT: return VK_SHADER_STAGE_FRAGMENT_BIT;
-        case VE_SHADER_STAGE_COMPUTE: return VK_SHADER_STAGE_COMPUTE_BIT;
-        default: return VK_SHADER_STAGE_VERTEX_BIT;
-    }
-}
-
-// =============================================================================
 // Shader Compilation (Stub - would need glslang integration)
 // =============================================================================
 
-static bool compileGLSLToSPIRV(const char* glslSource, VEShaderStage stage, 
+static bool compileGLSLToSPIRV(const char* glslSource, VkShaderStageFlags stage, 
                                uint32_t** spirvCode, size_t* spirvSize) {
     if (!glslSource || !spirvCode || !spirvSize) {
         veSetError("Invalid parameters for GLSL compilation");
@@ -56,12 +40,12 @@ static bool compileGLSLToSPIRV(const char* glslSource, VEShaderStage stage,
     // Determine stage flag for glslangValidator
     const char* stageFlag;
     switch (stage) {
-        case VE_SHADER_STAGE_VERTEX: stageFlag = "-S vert"; break;
-        case VE_SHADER_STAGE_FRAGMENT: stageFlag = "-S frag"; break;
-        case VE_SHADER_STAGE_COMPUTE: stageFlag = "-S comp"; break;
-        case VE_SHADER_STAGE_GEOMETRY: stageFlag = "-S geom"; break;
-        case VE_SHADER_STAGE_TESSELLATION_CONTROL: stageFlag = "-S tesc"; break;
-        case VE_SHADER_STAGE_TESSELLATION_EVALUATION: stageFlag = "-S tese"; break;
+        case VK_SHADER_STAGE_VERTEX_BIT: stageFlag = "-S vert"; break;
+        case VK_SHADER_STAGE_FRAGMENT_BIT: stageFlag = "-S frag"; break;
+        case VK_SHADER_STAGE_COMPUTE_BIT: stageFlag = "-S comp"; break;
+        case VK_SHADER_STAGE_GEOMETRY_BIT: stageFlag = "-S geom"; break;
+        case VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT: stageFlag = "-S tesc"; break;
+        case VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT: stageFlag = "-S tese"; break;
         default:
             veSetError("Unsupported shader stage for compilation");
             remove(tempGLSL);
@@ -130,7 +114,7 @@ static bool compileGLSLToSPIRV(const char* glslSource, VEShaderStage stage,
 // Shader Creation
 // =============================================================================
 
-VEShader* veCreateShaderFromSPIRV(VEDevice* device, VEShaderStage stage,
+VEShader* veCreateShaderFromSPIRV(VEDevice* device, VkShaderStageFlags stage,
                                  const uint32_t* code, size_t codeSize,
                                  const char* entryPoint, const char* debugName) {
     if (!device || !code || codeSize == 0 || !entryPoint) {
@@ -171,7 +155,7 @@ VEShader* veCreateShaderFromSPIRV(VEDevice* device, VEShaderStage stage,
     // Create shader object using VK_EXT_shader_object
     VkShaderCreateInfoEXT shaderCreateInfo = {0};
     shaderCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT;
-    shaderCreateInfo.stage = veShaderStageToVk(stage);
+    shaderCreateInfo.stage = stage;
     shaderCreateInfo.codeType = VK_SHADER_CODE_TYPE_SPIRV_EXT;
     shaderCreateInfo.codeSize = codeSize;
     shaderCreateInfo.pCode = code;
@@ -197,7 +181,7 @@ VEShader* veCreateShaderFromSPIRV(VEDevice* device, VEShaderStage stage,
     return (VEShader*)shader;
 }
 
-VEShader* veCreateShaderFromGLSL(VEDevice* device, VEShaderStage stage,
+VEShader* veCreateShaderFromGLSL(VEDevice* device, VkShaderStageFlags stage,
                                 const char* source, const char* entryPoint,
                                 const char* debugName) {
     if (!device || !source || !entryPoint) {
@@ -218,7 +202,7 @@ VEShader* veCreateShaderFromGLSL(VEDevice* device, VEShaderStage stage,
     return shader;
 }
 
-VEShader* veLoadShader(VEDevice* device, const char* filename, VEShaderStage stage,
+VEShader* veLoadShader(VEDevice* device, const char* filename, VkShaderStageFlags stage,
                       const char* entryPoint, const char* debugName) {
     if (!device || !filename || !entryPoint) {
         veSetError("Invalid parameters for shader loading");

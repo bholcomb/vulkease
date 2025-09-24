@@ -316,8 +316,8 @@ void veApplyRenderConfig(VECommandBuffer* cmd, VERenderConfig* config) {
         const VERasterConfig* raster = &configInternal->rasterConfig;
         
         // CORE DYNAMIC STATE (Vulkan 1.3)
-        vkCmdSetCullMode(vkCmd, veConvertCullMode(raster->cullMode));
-        vkCmdSetFrontFace(vkCmd, veConvertFrontFace(raster->frontFace));
+        vkCmdSetCullMode(vkCmd, raster->cullMode);
+        vkCmdSetFrontFace(vkCmd, raster->frontFace);
         vkCmdSetLineWidth(vkCmd, raster->lineWidth);
         vkCmdSetRasterizerDiscardEnable(vkCmd, raster->rasterizerDiscardEnable ? VK_TRUE : VK_FALSE);
         vkCmdSetDepthBiasEnable(vkCmd, raster->depthBiasEnable ? VK_TRUE : VK_FALSE);
@@ -331,7 +331,7 @@ void veApplyRenderConfig(VECommandBuffer* cmd, VERenderConfig* config) {
         
         // EXTENDED DYNAMIC STATE 3 (when available)
         // Polygon mode (VK_EXT_extended_dynamic_state3)
-        veFuncs.vkCmdSetPolygonModeEXT(vkCmd, veConvertPolygonMode(raster->polygonMode));
+        veFuncs.vkCmdSetPolygonModeEXT(vkCmd, raster->polygonMode);
             
         // Depth clamp (VK_EXT_extended_dynamic_state3)
         veFuncs.vkCmdSetDepthClampEnableEXT(vkCmd, raster->depthClampEnable ? VK_TRUE : VK_FALSE);
@@ -422,12 +422,12 @@ void veApplyRenderConfig(VECommandBuffer* cmd, VERenderConfig* config) {
             
             // Set blend equation for this attachment (even if blending is disabled)
             blendEquations[i] = (VkColorBlendEquationEXT){
-                .srcColorBlendFactor = veConvertBlendFactor(blend->attachments[i].srcColorBlendFactor),
-                .dstColorBlendFactor = veConvertBlendFactor(blend->attachments[i].dstColorBlendFactor),
-                .colorBlendOp = veConvertBlendOp(blend->attachments[i].colorBlendOp),
-                .srcAlphaBlendFactor = veConvertBlendFactor(blend->attachments[i].srcAlphaBlendFactor),
-                .dstAlphaBlendFactor = veConvertBlendFactor(blend->attachments[i].dstAlphaBlendFactor),
-                .alphaBlendOp = veConvertBlendOp(blend->attachments[i].alphaBlendOp)
+                .srcColorBlendFactor = blend->attachments[i].srcColorBlendFactor,
+                .dstColorBlendFactor = blend->attachments[i].dstColorBlendFactor,
+                .colorBlendOp = blend->attachments[i].colorBlendOp,
+                .srcAlphaBlendFactor = blend->attachments[i].srcAlphaBlendFactor,
+                .dstAlphaBlendFactor = blend->attachments[i].dstAlphaBlendFactor,
+                .alphaBlendOp = blend->attachments[i].alphaBlendOp
             };
         }
         
@@ -439,7 +439,7 @@ void veApplyRenderConfig(VECommandBuffer* cmd, VERenderConfig* config) {
         // Logic operations (if supported)
         veFuncs.vkCmdSetLogicOpEnableEXT(vkCmd, blend->logicOpEnable ? VK_TRUE : VK_FALSE);
         if (blend->logicOpEnable) {
-            veFuncs.vkCmdSetLogicOpEXT(vkCmd, veConvertLogicOp(blend->logicOp));
+            veFuncs.vkCmdSetLogicOpEXT(vkCmd, blend->logicOp);
         }
 
         // Blend constants (always available in core)
@@ -572,7 +572,7 @@ void veBindShader(VECommandBuffer* cmd, VEShader* shader) {
 
     internal->boundShaders = internal->boundShaders | shaderInternal->stage;
     
-    VkSampleCountFlags stage = veShaderStageToVk(shaderInternal->stage);
+    VkSampleCountFlags stage = shaderInternal->stage;
     
     veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, 1, &stage, &shaderInternal->shaderObject);
 }
@@ -587,7 +587,7 @@ void veBindShaders(VECommandBuffer* cmd, uint32_t shaderCount, VEShader* const* 
     for (uint32_t i = 0; i < shaderCount && i < 16; i++) {
         if (shaders[i]) {
             VEShaderInternal* shaderInternal = (VEShaderInternal*)shaders[i];
-            stages[validCount] = veShaderStageToVk(shaderInternal->stage);
+            stages[validCount] = shaderInternal->stage;
             shaderObjects[validCount] = shaderInternal->shaderObject;
             validCount++;
         }
@@ -608,23 +608,23 @@ void veBindShaderConfig(VECommandBuffer* cmd, VEShaderConfig* config) {
     VEShader* shaders[6];
     uint32_t shaderCount = 0;
 
-    if (configInternal->vertexShader) { shaders[shaderCount++] = configInternal->vertexShader; cmdInternal->boundShaders |= VE_SHADER_STAGE_VERTEX;}
-    if (configInternal->fragmentShader) { shaders[shaderCount++] = configInternal->fragmentShader; cmdInternal->boundShaders |= VE_SHADER_STAGE_FRAGMENT;}
-    if (configInternal->geometryShader) { shaders[shaderCount++] = configInternal->geometryShader; cmdInternal->boundShaders |= VE_SHADER_STAGE_GEOMETRY;}
-    if (configInternal->tessControlShader) { shaders[shaderCount++] = configInternal->tessControlShader; cmdInternal->boundShaders |= VE_SHADER_STAGE_TESSELLATION_CONTROL;}
-    if (configInternal->tessEvalShader) { shaders[shaderCount++] = configInternal->tessEvalShader; cmdInternal->boundShaders |= VE_SHADER_STAGE_TESSELLATION_EVALUATION;}
-    if (configInternal->computeShader) { shaders[shaderCount++] = configInternal->computeShader; cmdInternal->boundShaders |= VE_SHADER_STAGE_COMPUTE;}
+    if (configInternal->vertexShader) { shaders[shaderCount++] = configInternal->vertexShader; cmdInternal->boundShaders |= VK_SHADER_STAGE_VERTEX_BIT;}
+    if (configInternal->fragmentShader) { shaders[shaderCount++] = configInternal->fragmentShader; cmdInternal->boundShaders |= VK_SHADER_STAGE_FRAGMENT_BIT;}
+    if (configInternal->geometryShader) { shaders[shaderCount++] = configInternal->geometryShader; cmdInternal->boundShaders |= VK_SHADER_STAGE_GEOMETRY_BIT;}
+    if (configInternal->tessControlShader) { shaders[shaderCount++] = configInternal->tessControlShader; cmdInternal->boundShaders |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;}
+    if (configInternal->tessEvalShader) { shaders[shaderCount++] = configInternal->tessEvalShader; cmdInternal->boundShaders |= VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;}
+    if (configInternal->computeShader) { shaders[shaderCount++] = configInternal->computeShader; cmdInternal->boundShaders |= VK_SHADER_STAGE_COMPUTE_BIT;}
     
     if (shaderCount > 0) {
         veBindShaders(cmd, shaderCount, shaders);
     }
 }
 
-void veUnbindShaderStage(VECommandBuffer* cmd, VEShaderStage stage) {
+void veUnbindShaderStage(VECommandBuffer* cmd, VkShaderStageFlags stage) {
     if (!cmd) return;
     
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
-    VkSampleCountFlags vkStage = veShaderStageToVk(stage);
+    VkSampleCountFlags vkStage = stage;
     VkShaderEXT nullShader = VK_NULL_HANDLE;
     
     veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, 1, &vkStage, &nullShader);

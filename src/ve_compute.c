@@ -47,7 +47,7 @@ void veBindComputeShader(VECommandBuffer* cmd, VEShader* shader) {
     VEShaderInternal* shaderInternal = (VEShaderInternal*)shader;
     
     // Verify this is a compute shader
-    if (shaderInternal->stage != VE_SHADER_STAGE_COMPUTE) {
+    if (shaderInternal->stage != VK_SHADER_STAGE_COMPUTE_BIT) {
         veSetError("Shader is not a compute shader");
         return;
     }
@@ -69,7 +69,7 @@ VEResult veGetComputeWorkgroupSize(VEShader* shader, uint32_t* x, uint32_t* y, u
     
     VEShaderInternal* shaderInternal = (VEShaderInternal*)shader;
     
-    if (shaderInternal->stage != VE_SHADER_STAGE_COMPUTE) {
+    if (shaderInternal->stage != VK_SHADER_STAGE_COMPUTE_BIT) {
         veSetError("Shader is not a compute shader");
         return VE_ERROR_INVALID_PARAMETER;
     }

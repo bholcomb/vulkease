@@ -102,38 +102,6 @@ typedef enum VEResult {
 } VEResult;
 
 // =============================================================================
-// Enums and Constants
-// =============================================================================
-
-// Shader stages
-typedef enum VEShaderStage {
-    VE_SHADER_STAGE_VERTEX = 0x1,
-    VE_SHADER_STAGE_GEOMETRY = 0x2,
-    VE_SHADER_STAGE_TESSELLATION_CONTROL = 0x4,
-    VE_SHADER_STAGE_TESSELLATION_EVALUATION = 0x8,
-    VE_SHADER_STAGE_FRAGMENT = 0x10,
-    VE_SHADER_STAGE_GRAPHICS = 0x1f,
-    VE_SHADER_STAGE_COMPUTE = 0x20
-} VEShaderStage;
-
-// Dynamic rendering load/store operations
-typedef enum VELoadOp {
-    VE_LOAD_OP_LOAD = 0,
-    VE_LOAD_OP_CLEAR = 1,
-    VE_LOAD_OP_DONT_CARE = 2
-} VELoadOp;
-
-typedef enum VEStoreOp {
-    VE_STORE_OP_STORE = 0,
-    VE_STORE_OP_DONT_CARE = 1
-} VEStoreOp;
-
-typedef enum VEIndexFormat {
-    VE_INDEX_UINT16 = 0,
-    VE_INDEX_UINT32 = 1
-} VEIndexFormat;
-
-// =============================================================================
 // Render Configuration Types (Modern State Management)
 // =============================================================================
 
@@ -191,51 +159,6 @@ typedef enum VEMessageSeverity {
     VE_MESSAGE_SEVERITY_WARNING,
     VE_MESSAGE_SEVERITY_ERROR
 } VEMessageSeverity;
-
-// Color blending enums
-typedef enum VEBlendFactor {
-    VE_BLEND_FACTOR_ZERO = 0,
-    VE_BLEND_FACTOR_ONE = 1,
-    VE_BLEND_FACTOR_SRC_COLOR = 2,
-    VE_BLEND_FACTOR_ONE_MINUS_SRC_COLOR = 3,
-    VE_BLEND_FACTOR_DST_COLOR = 4,
-    VE_BLEND_FACTOR_ONE_MINUS_DST_COLOR = 5,
-    VE_BLEND_FACTOR_SRC_ALPHA = 6,
-    VE_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA = 7,
-    VE_BLEND_FACTOR_DST_ALPHA = 8,
-    VE_BLEND_FACTOR_ONE_MINUS_DST_ALPHA = 9,
-    VE_BLEND_FACTOR_CONSTANT_COLOR = 10,
-    VE_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR = 11,
-    VE_BLEND_FACTOR_CONSTANT_ALPHA = 12,
-    VE_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA = 13
-} VEBlendFactor;
-
-typedef enum VEBlendOp {
-    VE_BLEND_OP_ADD = 0,
-    VE_BLEND_OP_SUBTRACT = 1,
-    VE_BLEND_OP_REVERSE_SUBTRACT = 2,
-    VE_BLEND_OP_MIN = 3,
-    VE_BLEND_OP_MAX = 4
-} VEBlendOp;
-
-typedef enum VELogicOp {
-    VE_LOGIC_OP_CLEAR = 0,
-    VE_LOGIC_OP_AND = 1,
-    VE_LOGIC_OP_AND_REVERSE = 2,
-    VE_LOGIC_OP_COPY = 3,
-    VE_LOGIC_OP_AND_INVERTED = 4,
-    VE_LOGIC_OP_NO_OP = 5,
-    VE_LOGIC_OP_XOR = 6,
-    VE_LOGIC_OP_OR = 7,
-    VE_LOGIC_OP_NOR = 8,
-    VE_LOGIC_OP_EQUIVALENT = 9,
-    VE_LOGIC_OP_INVERT = 10,
-    VE_LOGIC_OP_OR_REVERSE = 11,
-    VE_LOGIC_OP_COPY_INVERTED = 12,
-    VE_LOGIC_OP_OR_INVERTED = 13,
-    VE_LOGIC_OP_NAND = 14,
-    VE_LOGIC_OP_SET = 15
-} VELogicOp;
 
 // =============================================================================
 // Structure Types
@@ -360,18 +283,18 @@ typedef struct VEDepthConfig {
 // Color blending configuration (VK_EXT_extended_dynamic_state3)
 typedef struct VEBlendAttachment {
     bool blendEnable;                      // VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT
-    VEBlendFactor srcColorBlendFactor;     // VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT
-    VEBlendFactor dstColorBlendFactor;
-    VEBlendOp colorBlendOp;
-    VEBlendFactor srcAlphaBlendFactor;
-    VEBlendFactor dstAlphaBlendFactor;
-    VEBlendOp alphaBlendOp;
+    VkBlendFactor srcColorBlendFactor;     // VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT
+    VkBlendFactor dstColorBlendFactor;
+    VkBlendOp colorBlendOp;
+    VkBlendFactor srcAlphaBlendFactor;
+    VkBlendFactor dstAlphaBlendFactor;
+    VkBlendOp alphaBlendOp;
     VkColorComponentFlags colorWriteMask;  // VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT
 } VEBlendAttachment;
 
 typedef struct VEBlendConfig {
     bool logicOpEnable;                    // VK_DYNAMIC_STATE_LOGIC_OP_ENABLE_EXT
-    VELogicOp logicOp;                     // VK_DYNAMIC_STATE_LOGIC_OP_EXT
+    VkLogicOp logicOp;                     // VK_DYNAMIC_STATE_LOGIC_OP_EXT
     
     uint32_t attachmentCount;              // Up to 8 attachments
     VEBlendAttachment attachments[8];
@@ -455,8 +378,8 @@ typedef struct VEShaderConfigDesc {
 // Rendering attachment (for dynamic rendering)
 typedef struct VERenderingAttachment {
     VETextureIndex texture;                // Texture to render to
-    VELoadOp loadOp;
-    VEStoreOp storeOp;
+    VkAttachmentLoadOp loadOp;
+    VkAttachmentStoreOp storeOp;
     VEColor clearValue;                    // Used if loadOp == VE_LOAD_OP_CLEAR
     VETextureIndex resolveTexture;         // For MSAA resolve (optional)
 } VERenderingAttachment;
@@ -699,21 +622,21 @@ VULKEASE_API VESamplerIndex veCreateShadowSampler(VEDevice* device);
 /**
  * Create shader object from SPIR-V code
  */
-VULKEASE_API VEShader* veCreateShaderFromSPIRV(VEDevice* device, VEShaderStage stage,
+VULKEASE_API VEShader* veCreateShaderFromSPIRV(VEDevice* device, VkShaderStageFlags stage,
                                               const uint32_t* code, size_t codeSize,
                                               const char* entryPoint, const char* debugName);
 
 /**
  * Create shader object from GLSL source (compile to SPIR-V automatically)
  */
-VULKEASE_API VEShader* veCreateShaderFromGLSL(VEDevice* device, VEShaderStage stage,
+VULKEASE_API VEShader* veCreateShaderFromGLSL(VEDevice* device, VkShaderStageFlags stage,
                                              const char* source, const char* entryPoint,
                                              const char* debugName);
 
 /**
  * Load shader from file (.spv for SPIR-V, .glsl/.vert/.frag/.comp etc. for GLSL)
  */
-VULKEASE_API VEShader* veLoadShader(VEDevice* device, const char* filename, VEShaderStage stage,
+VULKEASE_API VEShader* veLoadShader(VEDevice* device, const char* filename, VkShaderStageFlags stage,
                                    const char* entryPoint, const char* debugName);
 
 /**
@@ -817,7 +740,7 @@ VULKEASE_API void veApplyRenderConfig(VECommandBuffer* cmd, VERenderConfig* conf
 VULKEASE_API void veBindShader(VECommandBuffer* cmd, VEShader* shader);
 VULKEASE_API void veBindShaders(VECommandBuffer* cmd, uint32_t shaderCount, VEShader* const* shaders);
 VULKEASE_API void veBindShaderConfig(VECommandBuffer* cmd, VEShaderConfig* config);
-VULKEASE_API void veUnbindShaderStage(VECommandBuffer* cmd, VEShaderStage stage);
+VULKEASE_API void veUnbindShaderStage(VECommandBuffer* cmd, VkShaderStageFlags stage);
 
 /**
  * Set dynamic viewport and scissor (always dynamic)
@@ -850,7 +773,7 @@ VULKEASE_API void vePushConstants(VECommandBuffer* cmd, const void* data, size_t
 /**
  * Bind an index buffer fro indexed calls
  */
-VULKEASE_API void veBindIndexBuffer(VECommandBuffer* cmd, VEBufferAddress indexBuffer, uint32_t offset, VEIndexFormat format);
+VULKEASE_API void veBindIndexBuffer(VECommandBuffer* cmd, VEBufferAddress indexBuffer, uint32_t offset, VkIndexType format);
 
 /**
  * Direct drawing (buffer addresses in push constants - no binding operations!)

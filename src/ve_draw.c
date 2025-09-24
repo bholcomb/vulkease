@@ -153,11 +153,11 @@ void veSetCulling(VECommandBuffer* cmd, VECullMode cullMode) {
 static VkShaderStageFlags veGetBoundShaderStages(VECommandBufferInternal* cmd) {
     VkShaderStageFlags stages = 0;
     
-    if(cmd->boundShaders & VE_SHADER_STAGE_COMPUTE) stages = VK_SHADER_STAGE_COMPUTE_BIT;
+    if(cmd->boundShaders & VK_SHADER_STAGE_COMPUTE_BIT) stages = VK_SHADER_STAGE_COMPUTE_BIT;
 
     // Check which shader objects are currently bound
     // This would be tracked when veBindShaderConfig is called
-    if (cmd->boundShaders & VE_SHADER_STAGE_GRAPHICS) stages = VK_SHADER_STAGE_ALL_GRAPHICS;
+    if (cmd->boundShaders & VK_SHADER_STAGE_ALL_GRAPHICS) stages = VK_SHADER_STAGE_ALL_GRAPHICS;
     
     return stages;
 }
@@ -180,10 +180,10 @@ void vePushConstants(VECommandBuffer* cmd, const void* data, size_t size, size_t
     }
 
     VkShaderStageFlags stages = 0;
-    if(internal->boundShaders & VE_SHADER_STAGE_COMPUTE){
+    if(internal->boundShaders & VK_SHADER_STAGE_COMPUTE_BIT){
         stages = VK_SHADER_STAGE_COMPUTE_BIT;
     }
-    else if (internal->boundShaders & VE_SHADER_STAGE_GRAPHICS)
+    else if (internal->boundShaders & VK_SHADER_STAGE_ALL_GRAPHICS)
     {
 
     }
@@ -220,7 +220,7 @@ void veDraw(VECommandBuffer* cmd, uint32_t vertexCount, uint32_t instanceCount,
     vkCmdDraw(internal->commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
 }
 
-void veBindIndexBuffer(VECommandBuffer* cmd, VEBufferAddress indexBuffer, uint32_t offset, VEIndexFormat format)
+void veBindIndexBuffer(VECommandBuffer* cmd, VEBufferAddress indexBuffer, uint32_t offset, VkIndexType format)
 {
     if(!cmd || indexBuffer == 0) return;
 
@@ -232,7 +232,7 @@ void veBindIndexBuffer(VECommandBuffer* cmd, VEBufferAddress indexBuffer, uint32
         return;
     }
 
-    vkCmdBindIndexBuffer(internal->commandBuffer, buffer, offset, veIndexFormatToVk(format));
+    vkCmdBindIndexBuffer(internal->commandBuffer, buffer, offset, format);
 }
 
 void veDrawIndexed(VECommandBuffer* cmd, uint32_t indexCount, uint32_t instanceCount,

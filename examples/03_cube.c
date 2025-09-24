@@ -271,7 +271,7 @@ static bool initVulkEase(CubeApp* app) {
 static bool loadShaders(CubeApp* app) {
     // Load vertex shader
     app->vertexShader = veLoadShader(app->device, "examples/shaders/cube.vert.spv", 
-                                     VE_SHADER_STAGE_VERTEX, "main", "CubeVertexShader");
+                                     VK_SHADER_STAGE_VERTEX_BIT, "main", "CubeVertexShader");
     if (!app->vertexShader) {
         fprintf(stderr, "Failed to load vertex shader: %s\n", veGetLastError());
         return false;
@@ -279,7 +279,7 @@ static bool loadShaders(CubeApp* app) {
     
     // Load fragment shader
     app->fragmentShader = veLoadShader(app->device, "examples/shaders/cube.frag.spv",
-                                       VE_SHADER_STAGE_FRAGMENT, "main", "CubeFragmentShader");
+                                       VK_SHADER_STAGE_FRAGMENT_BIT, "main", "CubeFragmentShader");
     if (!app->fragmentShader) {
         fprintf(stderr, "Failed to load fragment shader: %s\n", veGetLastError());
         return false;
@@ -476,8 +476,8 @@ static void renderFrame(CubeApp* app) {
     
     VERenderingAttachment colorAttachment = {
         .texture = backbuffer,
-        .loadOp = VE_LOAD_OP_CLEAR,
-        .storeOp = VE_STORE_OP_STORE,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
         .clearValue = {0.1f, 0.2f, 0.3f, 1.0f}, // Dark blue background
         .resolveTexture = VE_INVALID_TEXTURE_INDEX
     };
@@ -519,7 +519,7 @@ static void renderFrame(CubeApp* app) {
     
     // Draw the cube
     const uint32_t indexCount = sizeof(cubeIndices) / sizeof(cubeIndices[0]);
-    veBindIndexBuffer(cmd, app->indexBuffer, 0, VE_INDEX_UINT16);
+    veBindIndexBuffer(cmd, app->indexBuffer, 0, VK_INDEX_TYPE_UINT16);
     veDrawIndexed(cmd, indexCount, 1, 0, 0, 0);
     
     // End rendering
