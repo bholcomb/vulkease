@@ -1,9 +1,9 @@
 /**
  * @file ve_internal.h
  * @brief VulkEase 2.0 Internal Headers and Definitions
- * 
- * Internal structures and function declarations for VulkEase 2.0 implementation.
- * This header is not exposed to users of the library.
+ *
+ * Internal structures and function declarations for VulkEase 2.0
+ * implementation. This header is not exposed to users of the library.
  */
 
 #ifndef VE_INTERNAL_H
@@ -19,19 +19,20 @@
 // STB Image integration - declare interface only
 #include "../external/stb_image.h"
 
+#include <assert.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-// =============================================================================
-// Internal Constants
-// =============================================================================
+   // =============================================================================
+   // Internal Constants
+   // =============================================================================
 
 #define VE_MAX_BUFFERS 65536
 #define VE_MAX_TEXTURES 65536
@@ -46,363 +47,375 @@ extern "C" {
 #define VE_MAX_COLOR_ATTACHMENTS 4
 #define VE_MAX_VERTEX_BINDINGS 16
 #define VE_MAX_VERTEX_ATTRIBUTES 16
+#define VE_MAX_PUSH_CONSTANT_BYTES 128 // TODO: bump this up to 256 once moved to vulkan 1.4
 
-// =============================================================================
-// Forward Declarations
-// =============================================================================
+   // =============================================================================
+   // Forward Declarations
+   // =============================================================================
 
-typedef struct VEDeviceInternal VEDeviceInternal;
-typedef struct VECommandBufferInternal VECommandBufferInternal;
+   typedef struct VEDeviceInternal VEDeviceInternal;
+   typedef struct VECommandBufferInternal VECommandBufferInternal;
 
-// =============================================================================
-// Internal Structures
-// =============================================================================
+   // =============================================================================
+   // Internal Structures
+   // =============================================================================
 
-// Context internal structure
-typedef struct VEContextInternal {
-    VkInstance instance;
-    VkDebugUtilsMessengerEXT debugMessenger;
-    bool validationEnabled;
-    char applicationName[256];
-} VEContextInternal;
+   // Context internal structure
+   typedef struct VEContextInternal
+   {
+      VkInstance instance;
+      VkDebugUtilsMessengerEXT debugMessenger;
+      bool validationEnabled;
+      char applicationName[256];
+   } VEContextInternal;
 
-// Queue families
-typedef struct VEQueueFamilies {
-    uint32_t graphicsFamily;
-    uint32_t computeFamily;
-    uint32_t transferFamily;
-} VEQueueFamilies;
+   // Queue families
+   typedef struct VEQueueFamilies
+   {
+      uint32_t graphicsFamily;
+      uint32_t computeFamily;
+      uint32_t transferFamily;
+   } VEQueueFamilies;
 
-// Device features
-typedef struct VEDeviceFeatures {
-    // Core features
-    bool samplerAnisotropy;
-    bool fillModeNonSolid;
-    bool wideLines;
-    bool depthClamp;
-    
-    // Modern features (Vulkan 1.2+)
-    bool bufferDeviceAddress;
-    bool descriptorIndexing;
-    bool dynamicRendering;
-    bool updateAfterBind;
-    
-    // Extension features
-    bool extendedDynamicState3;
-    bool vertexInputDynamicState;
-    bool shaderObject;
-} VEDeviceFeatures;
+   // Device features
+   typedef struct VEDeviceFeatures
+   {
+      // Core features
+      bool samplerAnisotropy;
+      bool fillModeNonSolid;
+      bool wideLines;
+      bool depthClamp;
 
-// Command pool management
-typedef struct VECommandPool
-{
-    VkCommandPool commandPool;
-    VECommandBufferInternal* commandBuffers;
-    bool* commandBufferInUse;
-    uint32_t commandBufferCount;
-    uint32_t queueFamily;
-} VECommandPool;
+      // Modern features (Vulkan 1.2+)
+      bool bufferDeviceAddress;
+      bool descriptorIndexing;
+      bool dynamicRendering;
+      bool updateAfterBind;
 
-// Buffer internal structure
-typedef struct VEBufferInternal {
-    VkBuffer buffer;
-    VmaAllocation allocation;
-    VmaAllocationInfo allocationInfo;
-    VkDeviceAddress deviceAddress;
-    size_t size;
-    VkBufferUsageFlags usage;
-    bool persistentlyMapped;
-    void* mappedData;
-    char debugName[VE_MAX_DEBUG_NAME_LENGTH];
-    bool isValid;
-} VEBufferInternal;
+      // Extension features
+      bool extendedDynamicState3;
+      bool vertexInputDynamicState;
+      bool shaderObject;
+   } VEDeviceFeatures;
 
-// Texture internal structure
-typedef struct VETextureInternal {
-    VkImage image;
-    VkImageView imageView;
-    VmaAllocation allocation;
-    VmaAllocationInfo allocationInfo;
-    uint32_t width, height, depth;
-    uint32_t mipLevels;
-    uint32_t arrayLayers;
-    VkFormat format;
-    VkImageUsageFlags usage;
-    VkSampleCountFlags sampleCount;
-    VkImageLayout currentLayout;  // Track current layout for optimized transitions
-    char debugName[VE_MAX_DEBUG_NAME_LENGTH];
-    bool isValid;
-    uint32_t index;
-} VETextureInternal;
+   // Command pool management
+   typedef struct VECommandPool
+   {
+      VkCommandPool commandPool;
+      VECommandBufferInternal *commandBuffers;
+      bool *commandBufferInUse;
+      uint32_t commandBufferCount;
+      uint32_t queueFamily;
+   } VECommandPool;
 
-// Sampler internal structure
-typedef struct VESamplerInternal {
-    VkSampler sampler;
-    VESamplerDesc desc;
-    char debugName[VE_MAX_DEBUG_NAME_LENGTH];
-    bool isValid;
-    uint32_t index;
-} VESamplerInternal;
+   // Buffer internal structure
+   typedef struct VEBufferInternal
+   {
+      VkBuffer buffer;
+      VmaAllocation allocation;
+      VmaAllocationInfo allocationInfo;
+      VkDeviceAddress deviceAddress;
+      size_t size;
+      VkBufferUsageFlags usage;
+      bool persistentlyMapped;
+      void *mappedData;
+      char debugName[VE_MAX_DEBUG_NAME_LENGTH];
+      bool isValid;
+   } VEBufferInternal;
 
-// Shader internal structure
-typedef struct VEShaderInternal {
-    VkShaderEXT shaderObject;
-    VkShaderStageFlags stage;
-    char entryPoint[64];
-    char debugName[VE_MAX_DEBUG_NAME_LENGTH];
-    char sourceFile[512]; // For hot-reload
-    bool hotReloadEnabled;
-    bool isValid;
-    VEDeviceInternal* device;
-} VEShaderInternal;
+   // Texture internal structure
+   typedef struct VETextureInternal
+   {
+      VkImage image;
+      VkImageView imageView;
+      VmaAllocation allocation;
+      VmaAllocationInfo allocationInfo;
+      uint32_t width, height, depth;
+      uint32_t mipLevels;
+      uint32_t arrayLayers;
+      VkFormat format;
+      VkImageUsageFlags usage;
+      VkSampleCountFlags sampleCount;
+      VkImageLayout currentLayout; // Track current layout for optimized transitions
+      char debugName[VE_MAX_DEBUG_NAME_LENGTH];
+      bool isValid;
+      uint32_t index;
+   } VETextureInternal;
 
-// Render configuration internal structure
-typedef struct VERenderConfigInternal {
-    VEViewport viewport;
-    VERect2D scissor;
-    VERasterConfig rasterConfig;
-    VEDepthConfig depthConfig;
-    VEBlendConfig blendConfig;
-    VEMultisampleConfig multisampleConfig;
-    VEVertexInputConfig vertexInputConfig;
-    
-    VEConfigTypeFlags configTypes;
-    uint32_t shaderCount;
-    VEShader* shaders[6]; // Max 6 shader stages
-    
-    char debugName[VE_MAX_DEBUG_NAME_LENGTH];
-    bool isValid;
-    VEDeviceInternal* device;
-} VERenderConfigInternal;
+   // Sampler internal structure
+   typedef struct VESamplerInternal
+   {
+      VkSampler sampler;
+      VESamplerDesc desc;
+      char debugName[VE_MAX_DEBUG_NAME_LENGTH];
+      bool isValid;
+      uint32_t index;
+   } VESamplerInternal;
 
-// Vertex configuration internal structure
-typedef struct VEVertexConfigInternal {
-    uint32_t bindingCount;
-    VEVertexBinding bindings[16];
-    uint32_t attributeCount;
-    VEVertexAttribute attributes[32];
-    VkPrimitiveTopology topology;
-    bool primitiveRestartEnable;
-    
-    char debugName[VE_MAX_DEBUG_NAME_LENGTH];
-    bool isValid;
-    VEDeviceInternal* device;
-} VEVertexConfigInternal;
+   // Shader internal structure
+   typedef struct VEShaderInternal
+   {
+      VkShaderEXT shaderObject;
+      VkShaderStageFlags stage;
+      char entryPoint[64];
+      char debugName[VE_MAX_DEBUG_NAME_LENGTH];
+      char sourceFile[512]; // For hot-reload
+      bool hotReloadEnabled;
+      bool isValid;
+      VEDeviceInternal *device;
+   } VEShaderInternal;
 
-// Shader configuration internal structure  
-typedef struct VEShaderConfigInternal {
-    VEShader* vertexShader;
-    VEShader* fragmentShader;
-    VEShader* geometryShader;
-    VEShader* tessControlShader;
-    VEShader* tessEvalShader;
-    VEShader* computeShader;
-    
-    char debugName[VE_MAX_DEBUG_NAME_LENGTH];
-    bool isValid;
-    VEDeviceInternal* device;
-} VEShaderConfigInternal;
+   // Render configuration internal structure
+   typedef struct VERenderConfigInternal
+   {
+      VEViewport viewport;
+      VERect2D scissor;
+      VERasterConfig rasterConfig;
+      VEDepthConfig depthConfig;
+      VEBlendConfig blendConfig;
+      VEMultisampleConfig multisampleConfig;
+      VEVertexInputConfig vertexInputConfig;
 
-// Command buffer internal structure
-typedef struct VECommandBufferInternal {
-    VkCommandBuffer commandBuffer;
-    VECommandPool* commandPool; // Reference to pool this came from
-    VEDeviceInternal* device;  // Reference to device for submission
-    bool isRecording;
-    bool isOneTime;
-    uint32_t index;
-    VkShaderStageFlags boundShaders;
-} VECommandBufferInternal;
+      VEConfigTypeFlags configTypes;
+      uint32_t shaderCount;
+      VEShader *shaders[6]; // Max 6 shader stages
 
-// Swapchain internal structure
-typedef struct VESwapchainInternal {
-    VkSwapchainKHR swapchain;
-    VkSurfaceKHR surface;
-    VkFormat format;
-    uint32_t width, height;
-    uint32_t imageCount;
-    VkImage images[VE_MAX_SWAPCHAIN_IMAGES];
-    VkImageView imageViews[VE_MAX_SWAPCHAIN_IMAGES];
-    VETextureIndex textureIndices[VE_MAX_SWAPCHAIN_IMAGES];
-    uint32_t currentImageIndex;
-    VkSemaphore imageAvailableSemaphore;
-    VkSemaphore renderFinishedSemaphore;
-    VkFence inFlightFence;
-    bool needsRecreation;
-    VEDeviceInternal* device;
-} VESwapchainInternal;
+      char debugName[VE_MAX_DEBUG_NAME_LENGTH];
+      bool isValid;
+      VEDeviceInternal *device;
+   } VERenderConfigInternal;
 
+   // Vertex configuration internal structure
+   typedef struct VEVertexConfigInternal
+   {
+      uint32_t bindingCount;
+      VEVertexBinding bindings[16];
+      uint32_t attributeCount;
+      VEVertexAttribute attributes[32];
+      VkPrimitiveTopology topology;
+      bool primitiveRestartEnable;
 
-// Device internal structure
-typedef struct VEDeviceInternal {
-    VEContextInternal* context;
-    
-    // Vulkan objects
-    VkPhysicalDevice physicalDevice;
-    VkDevice device;
-    
-    // Device properties
-    VkPhysicalDeviceProperties deviceProperties;
-    VkPhysicalDeviceMemoryProperties memoryProperties;
-    VEDeviceFeatures features;
-    VEQueueFamilies queueFamilies;
-    
-    // Queues
-    VkQueue graphicsQueue;
-    VkQueue computeQueue;
-    VkQueue transferQueue;
-    
-    // VMA allocator
-    VmaAllocator allocator;
-    
-    // Resource management - simplified for address-only API
-    void* bufferMap; // std::unordered_map<VEBufferAddress, VEBufferInternal*>* (C++ container)
-    
-    VETextureInternal* textures;
-    uint32_t* freeTextureIndices;
-    uint32_t freeTextureCount;
-    uint32_t textureCount;
-    uint32_t maxTextures;
-    
-    VESamplerInternal* samplers;
-    uint32_t* freeSamplerIndices;
-    uint32_t freeSamplerCount;
-    uint32_t samplerCount;
-    uint32_t maxSamplers;
-    
-    VEShaderInternal* shaders;
-    uint32_t shaderCount;
-    uint32_t maxShaders;
-    
-    VERenderConfigInternal* renderConfigs;
-    uint32_t renderConfigCount;
-    uint32_t maxRenderConfigs;
-    
-    VEVertexConfigInternal* vertexConfigs;
-    uint32_t vertexConfigCount;
-    uint32_t maxVertexConfigs;
-    
-    VEShaderConfigInternal* shaderConfigs;
-    uint32_t shaderConfigCount;
-    uint32_t maxShaderConfigs;
-    
-    VECommandPool* graphicsCommandPool;
-    VECommandPool* computeCommandPool;
-    VECommandPool* transferCommandPool;
-    
-    // Bindless descriptor sets
-    VkDescriptorPool descriptorPool;
-    VkDescriptorSetLayout textureDescriptorSetLayout;
-    VkDescriptorSetLayout samplerDescriptorSetLayout;
-    VkDescriptorSet textureDescriptorSet;
-    VkDescriptorSet samplerDescriptorSet;
+      char debugName[VE_MAX_DEBUG_NAME_LENGTH];
+      bool isValid;
+      VEDeviceInternal *device;
+   } VEVertexConfigInternal;
 
-    VkPipelineLayout globalGraphicsPipelineLayout;
-    VkPipelineLayout globalComputePipelineLayout;
-    
-    // Performance statistics
-    VEPerformanceStats performanceStats;
-    VEMemoryStats memoryStats;
-    VERenderConfigStats renderConfigStats;
-} VEDeviceInternal;
+   // Shader configuration internal structure
+   typedef struct VEShaderConfigInternal
+   {
+      VEShader *vertexShader;
+      VEShader *fragmentShader;
+      VEShader *geometryShader;
+      VEShader *tessControlShader;
+      VEShader *tessEvalShader;
+      VEShader *computeShader;
 
-// =============================================================================
-// Internal Function Declarations
-// =============================================================================
+      char debugName[VE_MAX_DEBUG_NAME_LENGTH];
+      bool isValid;
+      VEDeviceInternal *device;
+   } VEShaderConfigInternal;
 
-// Error handling
-void veSetError(const char* format, ...);
-const char* veResultToString(VkResult result);
-void vePrintVkResult(const char* operation, VkResult result);
+   // Command buffer internal structure
+   typedef struct VECommandBufferInternal
+   {
+      VkCommandBuffer commandBuffer;
+      VECommandPool *commandPool; // Reference to pool this came from
+      VEDeviceInternal *device;   // Reference to device for submission
+      bool isRecording;
+      bool isOneTime;
+      uint32_t index;
+      VkShaderStageFlags boundShaders;
+   } VECommandBufferInternal;
 
-// VMA management functions
-VEResult veInitializeVMA(VEDeviceInternal* device);
-void veCleanupVMA(VEDeviceInternal* device);
+   // Swapchain internal structure
+   typedef struct VESwapchainInternal
+   {
+      VkSwapchainKHR swapchain;
+      VkSurfaceKHR surface;
+      VkFormat format;
+      uint32_t width, height;
+      uint32_t imageCount;
+      VkImage images[VE_MAX_SWAPCHAIN_IMAGES];
+      VkImageView imageViews[VE_MAX_SWAPCHAIN_IMAGES];
+      VETextureIndex textureIndices[VE_MAX_SWAPCHAIN_IMAGES];
+      uint32_t currentImageIndex;
+      VkSemaphore imageAvailableSemaphore;
+      VkSemaphore renderFinishedSemaphore;
+      VkFence inFlightFence;
+      bool needsRecreation;
+      VEDeviceInternal *device;
+   } VESwapchainInternal;
 
-// Command pool managment
-bool veInitCommandPool(VEDeviceInternal* device, uint32_t queueFamily, VECommandPool* pool);
-bool veDestroyCommandPool(VEDeviceInternal* device, VECommandPool* pool);
+   // Device internal structure
+   typedef struct VEDeviceInternal
+   {
+      VEContextInternal *context;
 
-VECommandBufferInternal* veGetCommandBufferInternal(VECommandBuffer* cmd);
-VEResult veAllocateCommandBuffer(VEDeviceInternal* device, VECommandPool* pool, VECommandBufferInternal** outCmd);
-void veFreeCommandBuffer(VECommandBufferInternal* cmd);
+      // Vulkan objects
+      VkPhysicalDevice physicalDevice;
+      VkDevice device;
 
-// Resource index management functions
-uint32_t veAllocateBufferIndex(VEDeviceInternal* device);
-void veFreeBufferIndex(VEDeviceInternal* device, uint32_t index);
-VEBufferInternal* veGetBufferFromAddress(VEDeviceInternal* device, VEBufferAddress address);
-bool veValidateBufferAddress(VEDeviceInternal* device, VEBufferAddress address);
-VkBuffer veGetVkBufferFromAddress(VEDeviceInternal* device, VEBufferAddress address);
+      // Device properties
+      VkPhysicalDeviceProperties deviceProperties;
+      VkPhysicalDeviceMemoryProperties memoryProperties;
+      VEDeviceFeatures features;
+      VEQueueFamilies queueFamilies;
 
-uint32_t veAllocateTextureIndex(VEDeviceInternal* device);
-void veFreeTextureIndex(VEDeviceInternal* device, uint32_t index);
-VETextureInternal* veGetTexture(VEDeviceInternal* device, VETextureIndex index);
-VkImageView veGetImageViewFromTexture(VEDeviceInternal* device, VETextureIndex index);
+      // Queues
+      VkQueue graphicsQueue;
+      VkQueue computeQueue;
+      VkQueue transferQueue;
 
-uint32_t veAllocateSamplerIndex(VEDeviceInternal* device);
-void veFreeSamplerIndex(VEDeviceInternal* device, uint32_t index);
-VESamplerInternal* veGetSampler(VEDeviceInternal* device, VESamplerIndex index);
+      // VMA allocator
+      VmaAllocator allocator;
 
-// Bindless descriptor management
-VEResult veInitializeBindlessDescriptors(VEDeviceInternal* device);
-void veCleanupBindlessDescriptors(VEDeviceInternal* device);
-VEResult veUpdateTextureDescriptor(VEDeviceInternal* device, VETextureIndex index);
-VEResult veUpdateSamplerDescriptor(VEDeviceInternal* device, VESamplerIndex index);
+      // Resource management - simplified for address-only API
+      void *bufferMap; // std::unordered_map<VEBufferAddress, VEBufferInternal*>*
+                       // (C++ container)
 
-// Utility functions
-void veSetObjectDebugName(VEDeviceInternal* device, uint64_t objectHandle, 
-                         VkObjectType objectType, const char* name);
+      VETextureInternal *textures;
+      uint32_t *freeTextureIndices;
+      uint32_t freeTextureCount;
+      uint32_t textureCount;
+      uint32_t maxTextures;
 
-// Surface creation (platform-specific)
-VkResult veCreateSurface(VEContextInternal* context, void* windowHandle, VkSurfaceKHR* surface);
+      VESamplerInternal *samplers;
+      uint32_t *freeSamplerIndices;
+      uint32_t freeSamplerCount;
+      uint32_t samplerCount;
+      uint32_t maxSamplers;
 
+      VEShaderInternal *shaders;
+      uint32_t shaderCount;
+      uint32_t maxShaders;
 
-typedef struct VEFuncs
-{
-    // Device Functions to initialize
-    //VK_EXT_shader_object
-    PFN_vkCreateShadersEXT vkCreateShadersEXT;
-    PFN_vkCmdBindShadersEXT vkCmdBindShadersEXT;
-    PFN_vkGetShaderBinaryDataEXT vkGetShaderBinaryDataEXT;
-    PFN_vkDestroyShaderEXT vkDestroyShaderEXT;
+      VERenderConfigInternal *renderConfigs;
+      uint32_t renderConfigCount;
+      uint32_t maxRenderConfigs;
 
-    //VK_EXT_extended_dynamic_state3
-    PFN_vkCmdSetPolygonModeEXT vkCmdSetPolygonModeEXT;
-    PFN_vkCmdSetDepthClampEnableEXT vkCmdSetDepthClampEnableEXT;
-    PFN_vkCmdSetColorBlendEnableEXT vkCmdSetColorBlendEnableEXT;
-    PFN_vkCmdSetColorBlendEquationEXT vkCmdSetColorBlendEquationEXT;
-    PFN_vkCmdSetColorWriteMaskEXT vkCmdSetColorWriteMaskEXT;
-    PFN_vkCmdSetVertexInputEXT vkCmdSetVertexInputEXT;
-    PFN_vkCmdSetRasterizationSamplesEXT vkCmdSetRasterizationSamplesEXT;
-    PFN_vkCmdSetSampleMaskEXT vkCmdSetSampleMaskEXT;
-    PFN_vkCmdSetAlphaToCoverageEnableEXT vkCmdSetAlphaToCoverageEnableEXT;
-    PFN_vkCmdSetAlphaToOneEnableEXT vkCmdSetAlphaToOneEnableEXT;
-    PFN_vkCmdSetPatchControlPointsEXT vkCmdSetPatchControlPointsEXT;
+      VEVertexConfigInternal *vertexConfigs;
+      uint32_t vertexConfigCount;
+      uint32_t maxVertexConfigs;
 
-    PFN_vkCmdSetConservativeRasterizationModeEXT vkCmdSetConservativeRasterizationModeEXT;
-    PFN_vkCmdSetLineRasterizationModeEXT vkCmdSetLineRasterizationModeEXT;
-    PFN_vkCmdSetProvokingVertexModeEXT vkCmdSetProvokingVertexModeEXT;
+      VEShaderConfigInternal *shaderConfigs;
+      uint32_t shaderConfigCount;
+      uint32_t maxShaderConfigs;
 
-    //extended dynamic state 2 logic op
-    PFN_vkCmdSetLogicOpEnableEXT vkCmdSetLogicOpEnableEXT;
-    PFN_vkCmdSetLogicOpEXT vkCmdSetLogicOpEXT;
+      VECommandPool *graphicsCommandPool;
+      VECommandPool *computeCommandPool;
+      VECommandPool *transferCommandPool;
 
-    // Instance functions to initialize
-    PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;
-    PFN_vkSubmitDebugUtilsMessageEXT vkSubmitDebugUtilsMessageEXT;
-    PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessengerEXT;
-    PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectNameEXT;
-    PFN_vkCmdBeginDebugUtilsLabelEXT vkCmdBeginDebugUtilsLabelEXT;
-    PFN_vkCmdInsertDebugUtilsLabelEXT vkCmdInsertDebugUtilsLabelEXT;
-    PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabelEXT;
+      // Bindless descriptor sets
+      VkDescriptorPool descriptorPool;
+      VkDescriptorSetLayout textureDescriptorSetLayout;
+      VkDescriptorSetLayout samplerDescriptorSetLayout;
+      VkDescriptorSet textureDescriptorSet;
+      VkDescriptorSet samplerDescriptorSet;
 
-} VEFuncs;
+      VkPipelineLayout globalGraphicsPipelineLayout;
+      VkPipelineLayout globalComputePipelineLayout;
 
-extern VEFuncs veFuncs;
+      // Performance statistics
+      VEPerformanceStats performanceStats;
+      VEMemoryStats memoryStats;
+      VERenderConfigStats renderConfigStats;
+   } VEDeviceInternal;
 
-bool initializeInstanceFunctions(VkInstance instance);
-bool initializeDeviceFunctions(VkDevice device);
+   // =============================================================================
+   // Internal Function Declarations
+   // =============================================================================
 
+   // Error handling
+   void veSetError(const char *format, ...);
+   const char *veResultToString(VkResult result);
+   void vePrintVkResult(const char *operation, VkResult result);
+
+   // VMA management functions
+   VEResult veInitializeVMA(VEDeviceInternal *device);
+   void veCleanupVMA(VEDeviceInternal *device);
+
+   // Command pool managment
+   bool veInitCommandPool(VEDeviceInternal *device, uint32_t queueFamily, VECommandPool *pool);
+   bool veDestroyCommandPool(VEDeviceInternal *device, VECommandPool *pool);
+
+   VECommandBufferInternal *veGetCommandBufferInternal(VECommandBuffer *cmd);
+   VEResult veAllocateCommandBuffer(VEDeviceInternal *device, VECommandPool *pool, VECommandBufferInternal **outCmd);
+   void veFreeCommandBuffer(VECommandBufferInternal *cmd);
+
+   // Resource index management functions
+   uint32_t veAllocateBufferIndex(VEDeviceInternal *device);
+   void veFreeBufferIndex(VEDeviceInternal *device, uint32_t index);
+   VEBufferInternal *veGetBufferFromAddress(VEDeviceInternal *device, VEBufferAddress address);
+   bool veValidateBufferAddress(VEDeviceInternal *device, VEBufferAddress address);
+   VkBuffer veGetVkBufferFromAddress(VEDeviceInternal *device, VEBufferAddress address);
+
+   uint32_t veAllocateTextureIndex(VEDeviceInternal *device);
+   void veFreeTextureIndex(VEDeviceInternal *device, uint32_t index);
+   VETextureInternal *veGetTexture(VEDeviceInternal *device, VETextureIndex index);
+   VkImageView veGetImageViewFromTexture(VEDeviceInternal *device, VETextureIndex index);
+
+   uint32_t veAllocateSamplerIndex(VEDeviceInternal *device);
+   void veFreeSamplerIndex(VEDeviceInternal *device, uint32_t index);
+   VESamplerInternal *veGetSampler(VEDeviceInternal *device, VESamplerIndex index);
+
+   // Bindless descriptor management
+   VEResult veInitializeBindlessDescriptors(VEDeviceInternal *device);
+   void veCleanupBindlessDescriptors(VEDeviceInternal *device);
+   VEResult veUpdateTextureDescriptor(VEDeviceInternal *device, VETextureIndex index);
+   VEResult veUpdateSamplerDescriptor(VEDeviceInternal *device, VESamplerIndex index);
+
+   // Utility functions
+   void veSetObjectDebugName(VEDeviceInternal *device, uint64_t objectHandle, VkObjectType objectType,
+                             const char *name);
+
+   // Surface creation (platform-specific)
+   VkResult veCreateSurface(VEContextInternal *context, void *windowHandle, VkSurfaceKHR *surface);
+
+   typedef struct VEFuncs
+   {
+      // Device Functions to initialize
+      // VK_EXT_shader_object
+      PFN_vkCreateShadersEXT vkCreateShadersEXT;
+      PFN_vkCmdBindShadersEXT vkCmdBindShadersEXT;
+      PFN_vkGetShaderBinaryDataEXT vkGetShaderBinaryDataEXT;
+      PFN_vkDestroyShaderEXT vkDestroyShaderEXT;
+
+      // VK_EXT_extended_dynamic_state3
+      PFN_vkCmdSetPolygonModeEXT vkCmdSetPolygonModeEXT;
+      PFN_vkCmdSetDepthClampEnableEXT vkCmdSetDepthClampEnableEXT;
+      PFN_vkCmdSetColorBlendEnableEXT vkCmdSetColorBlendEnableEXT;
+      PFN_vkCmdSetColorBlendEquationEXT vkCmdSetColorBlendEquationEXT;
+      PFN_vkCmdSetColorWriteMaskEXT vkCmdSetColorWriteMaskEXT;
+      PFN_vkCmdSetVertexInputEXT vkCmdSetVertexInputEXT;
+      PFN_vkCmdSetRasterizationSamplesEXT vkCmdSetRasterizationSamplesEXT;
+      PFN_vkCmdSetSampleMaskEXT vkCmdSetSampleMaskEXT;
+      PFN_vkCmdSetAlphaToCoverageEnableEXT vkCmdSetAlphaToCoverageEnableEXT;
+      PFN_vkCmdSetAlphaToOneEnableEXT vkCmdSetAlphaToOneEnableEXT;
+      PFN_vkCmdSetPatchControlPointsEXT vkCmdSetPatchControlPointsEXT;
+
+      PFN_vkCmdSetConservativeRasterizationModeEXT vkCmdSetConservativeRasterizationModeEXT;
+      PFN_vkCmdSetLineRasterizationModeEXT vkCmdSetLineRasterizationModeEXT;
+      PFN_vkCmdSetProvokingVertexModeEXT vkCmdSetProvokingVertexModeEXT;
+
+      // extended dynamic state 2 logic op
+      PFN_vkCmdSetLogicOpEnableEXT vkCmdSetLogicOpEnableEXT;
+      PFN_vkCmdSetLogicOpEXT vkCmdSetLogicOpEXT;
+
+      // Instance functions to initialize
+      PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;
+      PFN_vkSubmitDebugUtilsMessageEXT vkSubmitDebugUtilsMessageEXT;
+      PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessengerEXT;
+      PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectNameEXT;
+      PFN_vkCmdBeginDebugUtilsLabelEXT vkCmdBeginDebugUtilsLabelEXT;
+      PFN_vkCmdInsertDebugUtilsLabelEXT vkCmdInsertDebugUtilsLabelEXT;
+      PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabelEXT;
+
+   } VEFuncs;
+
+   extern VEFuncs veFuncs;
+
+   bool initializeInstanceFunctions(VkInstance instance);
+   bool initializeDeviceFunctions(VkDevice device);
 
 #ifdef __cplusplus
 }

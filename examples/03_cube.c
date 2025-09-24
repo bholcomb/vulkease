@@ -199,7 +199,7 @@ static bool initWindow(CubeApp* app) {
     }
     
     glfwSetWindowUserPointer(app->window, app);
-    glfwSetFramebufferSizeCallback(app->window, framebufferSizeCallback);
+    glfwSetWindowSizeCallback(app->window, framebufferSizeCallback);
     
     return true;
 }

@@ -1,7 +1,7 @@
 /**
  * @file ve_vma_impl.cpp
  * @brief VMA (Vulkan Memory Allocator) Implementation
- * 
+ *
  * This file provides the VMA implementation in C++ to satisfy its requirements,
  * while the rest of VulkEase remains in C.
  */

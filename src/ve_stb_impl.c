@@ -1,7 +1,7 @@
 /**
  * @file ve_stb_impl.c
  * @brief STB Image Implementation
- * 
+ *
  * This file provides the STB Image implementation.
  */
 

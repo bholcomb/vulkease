@@ -39,9 +39,11 @@ EXAMPLE_CFLAGS = -std=c11 -Wall -Wextra
 ifeq ($(CONFIG),debug)
   CFLAGS   += -O0 -DDEBUG -g
   CXXFLAGS += -O0 -DDEBUG -g
+  EXAMPLE_CFLAGS += -O0 -DDEBUG -g
 else ifeq ($(CONFIG),release)
   CFLAGS   += -O3
   CXXFLAGS += -O3
+  EXAMPLE_CFLAGS += -O3
 else
   $(error Unknown CONFIG '$(CONFIG)'; use CONFIG=debug or CONFIG=release)
 endif
