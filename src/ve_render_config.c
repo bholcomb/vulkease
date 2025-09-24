@@ -17,9 +17,9 @@ VkColorComponentFlagBits VK_COLOR_COMPONENT_ALL =
 
 VERasterConfig veDefaultRasterConfig(void) {
     VERasterConfig config = {0};
-    config.cullMode = VE_CULL_MODE_BACK;
-    config.frontFace = VE_FRONT_FACE_COUNTER_CLOCKWISE;
-    config.polygonMode = VE_POLYGON_MODE_FILL;
+    config.cullMode = VK_CULL_MODE_BACK_BIT;
+    config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    config.polygonMode = VK_POLYGON_MODE_FILL;
     config.lineWidth = 1.0f;
     config.depthBiasEnable = false;
     config.depthBiasConstantFactor = 0.0f;
@@ -386,7 +386,7 @@ VERenderConfig* veCreateTransparentRenderConfig(VEDevice* device, const char* de
 
 VERenderConfig* veCreateWireframeRenderConfig(VEDevice* device, const char* debugName) {
     VERasterConfig raster = veDefaultRasterConfig();
-    raster.polygonMode = VE_POLYGON_MODE_LINE;
+    raster.polygonMode = VK_POLYGON_MODE_LINE;
     raster.lineWidth = 1.0f;
     VEDepthConfig depth = veDefaultDepthConfig();
     VEBlendConfig blend = veDefaultOpaqueBlendConfig();
@@ -410,7 +410,7 @@ VERenderConfig* veCreateWireframeRenderConfig(VEDevice* device, const char* debu
 
 VERenderConfig* veCreateShadowRenderConfig(VEDevice* device, const char* debugName) {
     VERasterConfig raster = veDefaultRasterConfig();
-    raster.cullMode = VE_CULL_MODE_FRONT; // Reduce peter-panning
+    raster.cullMode = VK_CULL_MODE_FRONT_BIT; // Reduce peter-panning
     raster.depthBiasEnable = true;
     raster.depthBiasConstantFactor = 2.0f;
     raster.depthBiasSlopeFactor = 1.5f;
@@ -441,7 +441,7 @@ VERenderConfig* veCreateShadowRenderConfig(VEDevice* device, const char* debugNa
 
 VERenderConfig* veCreateUIRenderConfig(VEDevice* device, const char* debugName) {
     VERasterConfig raster = veDefaultRasterConfig();
-    raster.cullMode = VE_CULL_MODE_NONE; // UI elements might be double-sided
+    raster.cullMode = VK_CULL_MODE_NONE; // UI elements might be double-sided
     
     VEDepthConfig depth = veDefaultDepthConfig();
     depth.depthTestEnable = false; // UI always on top

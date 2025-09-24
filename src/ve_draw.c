@@ -138,11 +138,11 @@ void veSetDepthTesting(VECommandBuffer* cmd, bool testEnabled, bool writeEnabled
     vkCmdSetDepthWriteEnable(internal->commandBuffer, writeEnabled);
 }
 
-void veSetCulling(VECommandBuffer* cmd, VECullMode cullMode) {
+void veSetCulling(VECommandBuffer* cmd, VkCullModeFlags cullMode) {
     if (!cmd) return;
     
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
-    vkCmdSetCullMode(internal->commandBuffer, (VkCullModeFlags)cullMode);
+    vkCmdSetCullMode(internal->commandBuffer, cullMode);
 }
 
 // =============================================================================
