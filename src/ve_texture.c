@@ -264,20 +264,6 @@ VEFormat veFormatFromVk(VkFormat format) {
     return (VEFormat)format;
 }
 
-VkImageUsageFlags veTextureUsageToVk(VETextureUsage usage) {
-    VkImageUsageFlags vkUsage = 0;
-    
-    if (usage & VE_TEXTURE_USAGE_SAMPLED) vkUsage |= VK_IMAGE_USAGE_SAMPLED_BIT;
-    if (usage & VE_TEXTURE_USAGE_STORAGE) vkUsage |= VK_IMAGE_USAGE_STORAGE_BIT;
-    if (usage & VE_TEXTURE_USAGE_COLOR_ATTACHMENT) vkUsage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    if (usage & VE_TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT) vkUsage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    if (usage & VE_TEXTURE_USAGE_TRANSFER_SRC) vkUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    if (usage & VE_TEXTURE_USAGE_TRANSFER_DST) vkUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    if (usage & VE_TEXTURE_USAGE_INPUT_ATTACHMENT) vkUsage |= VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
-    
-    return vkUsage;
-}
-
 VkSampleCountFlagBits veSampleCountToVk(VESampleCount sampleCount) {
     return (VkSampleCountFlagBits)sampleCount;
 }
@@ -414,7 +400,7 @@ VETextureIndex veCreateTexture(VEDevice* device, const VETextureDesc* desc) {
     texture->width = desc->width;
     texture->height = desc->height;
     texture->depth = desc->depth;
-    texture->mipLevels = desc->mipLevels == 0 ? 1 : desc->mipLevels;
+    texture->mipLevels = desc->mipLevels;
     texture->arrayLayers = desc->arrayLayers;
     texture->format = desc->format;
     texture->usage = desc->usage;
@@ -427,7 +413,7 @@ VETextureIndex veCreateTexture(VEDevice* device, const VETextureDesc* desc) {
     } else {
         snprintf(texture->debugName, VE_MAX_DEBUG_NAME_LENGTH, "Texture_%u", index);
     }
-    
+
     VkImageCreateInfo imageInfo = {0};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = desc->depth > 1 ? VK_IMAGE_TYPE_3D : (desc->height > 1 ? VK_IMAGE_TYPE_2D : VK_IMAGE_TYPE_1D);
@@ -439,18 +425,11 @@ VETextureIndex veCreateTexture(VEDevice* device, const VETextureDesc* desc) {
     imageInfo.format = veFormatToVk(desc->format);
     imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.usage = veTextureUsageToVk(desc->usage);
-    imageInfo.samples = veSampleCountToVk(desc->sampleCount);
+    imageInfo.usage = veConvertTextureUsage(desc->usage);
+    imageInfo.samples = veConvertSampleCount(desc->sampleCount);
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     
     imageInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT; // Always add transfer dst for potential data uploads
-
-    // Auto-generate mipmaps if requested
-    if (desc->mipLevels == 0 && (desc->usage & VE_TEXTURE_USAGE_SAMPLED)) {
-        texture->mipLevels = (uint32_t)floor(log2(fmax(desc->width, desc->height))) + 1;
-        imageInfo.mipLevels = texture->mipLevels;
-        imageInfo.usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    }
     
     if(desc->arrayLayers > 1)
     {
@@ -727,12 +706,20 @@ VETextureIndex veLoadTexture(VEDevice* device, const char* filename,
         veSetError("Failed to load image: %s", stbi_failure_reason());
         return VE_INVALID_TEXTURE_INDEX;
     }
+
+    uint32_t mipLevels = 0;
+    if(generateMips)
+    {
+        mipLevels = (uint32_t)floor(log2(fmax(width, height))) + 1;
+        usage |= VE_TEXTURE_USAGE_TRANSFER_DST; 
+        usage |= VE_TEXTURE_USAGE_TRANSFER_SRC;
+    }
     
     VETextureDesc desc = {
         .width = (uint32_t)width,
         .height = (uint32_t)height,
         .depth = 1,
-        .mipLevels = generateMips ? 0 : 1,
+        .mipLevels = mipLevels,
         .arrayLayers = 1,
         .format = VE_FORMAT_RGBA8_SRGB,
         .usage = usage,
@@ -741,7 +728,7 @@ VETextureIndex veLoadTexture(VEDevice* device, const char* filename,
         .initialDataSize = width * height * 4,
         .debugName = filename
     };
-    
+
     VETextureIndex result = veCreateTexture(device, &desc);
     
     // Generate mipmaps if requested and texture creation succeeded
@@ -849,7 +836,7 @@ VEResult veGenerateMipmaps(VEDevice* device, VECommandBuffer* cmd, VETextureInde
     }
     
     // Ensure texture has transfer source usage for blitting
-    VkImageUsageFlags usage = veTextureUsageToVk(textureInternal->usage);
+    VkImageUsageFlags usage = veConvertTextureUsage(textureInternal->usage);
     if (!(usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT)) {
         veSetError("Texture must have transfer source usage for mipmap generation");
         return VE_ERROR_INVALID_PARAMETER;
@@ -858,34 +845,59 @@ VEResult veGenerateMipmaps(VEDevice* device, VECommandBuffer* cmd, VETextureInde
     VkImage image = textureInternal->image;
     uint32_t mipWidth = textureInternal->width;
     uint32_t mipHeight = textureInternal->height;
+
+    // Transition mip level 0 from its current layout to TRANSFER_SRC_OPTIMAL
+    // This handles the case where texture was already transitioned to SHADER_READ_ONLY
+    VkImageMemoryBarrier2 initialBarrier = {0};
+    initialBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+    initialBarrier.srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;  // Where it might be used
+    initialBarrier.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;              // Current access
+    initialBarrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;         // Where we need it
+    initialBarrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;           // Access we need
+    initialBarrier.oldLayout = textureInternal->currentLayout;             // Use tracked layout
+    initialBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;       // Ready to be source
+    initialBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    initialBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    initialBarrier.image = image;
+    initialBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    initialBarrier.subresourceRange.baseMipLevel = 0;                      // Only mip 0
+    initialBarrier.subresourceRange.levelCount = 1;
+    initialBarrier.subresourceRange.baseArrayLayer = 0;
+    initialBarrier.subresourceRange.layerCount = textureInternal->arrayLayers;
     
-    // Generate mipmaps by blitting from level i to level i+1
+    VkDependencyInfo initialDependencyInfo = {0};
+    initialDependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    initialDependencyInfo.imageMemoryBarrierCount = 1;
+    initialDependencyInfo.pImageMemoryBarriers = &initialBarrier;
+    
+    vkCmdPipelineBarrier2(cmdInternal->commandBuffer, &initialDependencyInfo);
+    
+    // Transition all OTHER mip levels (1+) from UNDEFINED to TRANSFER_DST_OPTIMAL  
+    if (textureInternal->mipLevels > 1) {
+        VkImageMemoryBarrier2 otherMipsBarrier = {0};
+        otherMipsBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        otherMipsBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;   // No prior usage
+        otherMipsBarrier.srcAccessMask = 0;                                    // No prior access
+        otherMipsBarrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        otherMipsBarrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        otherMipsBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;               // Uninitialized
+        otherMipsBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;    // Ready for writes
+        otherMipsBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        otherMipsBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        otherMipsBarrier.image = image;
+        otherMipsBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        otherMipsBarrier.subresourceRange.baseMipLevel = 1;                   // Mips 1+
+        otherMipsBarrier.subresourceRange.levelCount = textureInternal->mipLevels - 1;
+        otherMipsBarrier.subresourceRange.baseArrayLayer = 0;
+        otherMipsBarrier.subresourceRange.layerCount = textureInternal->arrayLayers;
+        
+        otherMipsBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        initialDependencyInfo.pImageMemoryBarriers = &otherMipsBarrier;
+        vkCmdPipelineBarrier2(cmdInternal->commandBuffer, &initialDependencyInfo);
+    }
+    
+    // Generate mipmaps by blitting from level i-1 to level i
     for (uint32_t i = 1; i < textureInternal->mipLevels; i++) {
-        // Transition previous mip level to transfer source layout
-        VkImageMemoryBarrier2 barrier = {0};
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-        barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-        barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-        barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image = image;
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        barrier.subresourceRange.baseMipLevel = i - 1;
-        barrier.subresourceRange.levelCount = 1;
-        barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = textureInternal->arrayLayers;
-        
-        VkDependencyInfo dependencyInfo = {0};
-        dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dependencyInfo.imageMemoryBarrierCount = 1;
-        dependencyInfo.pImageMemoryBarriers = &barrier;
-        
-        vkCmdPipelineBarrier2(cmdInternal->commandBuffer, &dependencyInfo);
-        
         // Calculate dimensions for current mip level
         uint32_t nextMipWidth = mipWidth > 1 ? mipWidth / 2 : 1;
         uint32_t nextMipHeight = mipHeight > 1 ? mipHeight / 2 : 1;
@@ -910,27 +922,54 @@ VEResult veGenerateMipmaps(VEDevice* device, VECommandBuffer* cmd, VETextureInde
                       image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                       image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                       1, &blit, VK_FILTER_LINEAR);
+
+        // After blit, transition level i from DST to SRC for next iteration
+        if (i < textureInternal->mipLevels - 1) {
+            VkImageMemoryBarrier2 barrier = {0};
+            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = image;
+            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            barrier.subresourceRange.baseMipLevel = i;  // Current level becomes source
+            barrier.subresourceRange.levelCount = 1;
+            barrier.subresourceRange.baseArrayLayer = 0;
+            barrier.subresourceRange.layerCount = textureInternal->arrayLayers;
+            
+            VkDependencyInfo dependencyInfo = {0};
+            dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            dependencyInfo.imageMemoryBarrierCount = 1;
+            dependencyInfo.pImageMemoryBarriers = &barrier;
+            
+            vkCmdPipelineBarrier2(cmdInternal->commandBuffer, &dependencyInfo);
+        }
         
         // Update dimensions for next iteration
         mipWidth = nextMipWidth;
         mipHeight = nextMipHeight;
     }
     
-    // Transition all mip levels to shader read optimal layout
+    // transition ALL levels to SHADER_READ_ONLY at once
     VkImageMemoryBarrier2 finalBarrier = {0};
     finalBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
     finalBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
     finalBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
     finalBarrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
     finalBarrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-    finalBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    finalBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;  // Mixed layouts
     finalBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     finalBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     finalBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     finalBarrier.image = image;
     finalBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     finalBarrier.subresourceRange.baseMipLevel = 0;
-    finalBarrier.subresourceRange.levelCount = textureInternal->mipLevels;
+    finalBarrier.subresourceRange.levelCount = textureInternal->mipLevels;  // ALL levels
     finalBarrier.subresourceRange.baseArrayLayer = 0;
     finalBarrier.subresourceRange.layerCount = textureInternal->arrayLayers;
     
@@ -941,9 +980,7 @@ VEResult veGenerateMipmaps(VEDevice* device, VECommandBuffer* cmd, VETextureInde
     
     vkCmdPipelineBarrier2(cmdInternal->commandBuffer, &finalDependencyInfo);
     
-    // Update tracked layout
     textureInternal->currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    
     return VE_SUCCESS;
 }
 

@@ -637,6 +637,7 @@ VEDevice* veCreateDevice(VEContext* context) {
     vulkan12Features.descriptorBindingVariableDescriptorCount = device->features.updateAfterBind;
     vulkan12Features.runtimeDescriptorArray = VK_TRUE;
     vulkan12Features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+    vulkan12Features.scalarBlockLayout = VK_TRUE;
     
     VkPhysicalDeviceVulkan13Features vulkan13Features = {0};
     vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
