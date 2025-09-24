@@ -117,13 +117,13 @@ static Mat4 mat4Identity() {
 static Mat4 mat4Perspective(float fov, float aspect, float near, float far) {
     Mat4 m = {0};
     float tanHalfFov = tanf(fov * 0.5f);
-    
+
+    //flipped Y for vulkan screen
     m.m[0] = 1.0f / (aspect * tanHalfFov);
-    m.m[5] = 1.0f / tanHalfFov;
-    m.m[10] = -(far + near) / (far - near);
+    m.m[5] = -1.0f / tanHalfFov;                   // ✅ Flip Y for Vulkan
+    m.m[10] = far / (near - far);                  // ✅ Z [0,1] mapping  
     m.m[11] = -1.0f;
-    m.m[14] = -(2.0f * far * near) / (far - near);
-    
+    m.m[14] = -(far * near) / (far - near);       // ✅ Z [0,1] mapping
     return m;
 }
 
@@ -440,8 +440,8 @@ static void updateUniforms(CubeApp* app) {
     Mat4 view = mat4Translate(0.0f, 0.0f, -5.0f);
     Mat4 model = mat4RotateY(app->rotationAngle);
     
-    Mat4 vm = mat4Multiply(&view, &model);
-    Mat4 mvp = mat4Multiply(&projection, &vm);
+    Mat4 vm = mat4Multiply(&model, &view);
+    Mat4 mvp = mat4Multiply(&vm, &projection);
     
     // Update uniform buffer
     UniformData uniformData = { .mvpMatrix = mvp };

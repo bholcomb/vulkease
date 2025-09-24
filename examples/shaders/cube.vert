@@ -13,7 +13,7 @@ struct Vertex {
 };
 
 // Buffer reference for bindless vertex access
-layout(buffer_reference, std430) readonly buffer VertexBuffer {
+layout(buffer_reference, scalar) readonly buffer VertexBuffer {
     Vertex vertices[];
 };
 

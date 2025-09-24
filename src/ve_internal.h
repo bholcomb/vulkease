@@ -354,10 +354,25 @@ VEResult veUpdateTextureDescriptor(VEDeviceInternal* device, VETextureIndex inde
 VEResult veUpdateSamplerDescriptor(VEDeviceInternal* device, VESamplerIndex index);
 
 // Format conversion utilities
+VkImageUsageFlags veConvertTextureUsage(VETextureUsage usage);
+VkIndexType veIndexFormatToVk(VEIndexFormat format);
+VkBufferUsageFlags veConvertBufferUsage(VEBufferUsage usage);
+VkSampleCountFlagBits veConvertSampleCount(VESampleCount sampleCount);
+VkFormat veConvertFormat(VEFormat format);
+VkPrimitiveTopology veConvertPrimitiveTopology(VEPrimitiveTopology topology);
+VkVertexInputRate veConvertVertexInputRate(VEVertexInputRate inputRate);
+VkColorComponentFlags veConvertColorComponentFlags(VEColorComponentFlags flags);
+VkLogicOp veConvertLogicOp(VELogicOp logicOp);
+VkBlendOp veConvertBlendOp(VEBlendOp blendOp);
+VkBlendFactor veConvertBlendFactor(VEBlendFactor blendFactor);
+VkStencilOp veConvertStencilOp(VEStencilOp stencilOp);
+VkCompareOp veConvertCompareOp(VECompareOp compareOp);
+VkPolygonMode veConvertPolygonMode(VEPolygonMode polygonMode);
+VkFrontFace veConvertFrontFace(VEFrontFace frontFace);
+VkCullModeFlags veConvertCullMode(VECullMode cullMode);
+
 VkFormat veFormatToVk(VEFormat format);
 VEFormat veFormatFromVk(VkFormat format);
-VkImageUsageFlags veTextureUsageToVk(VETextureUsage usage);
-VkSampleCountFlagBits veSampleCountToVk(VESampleCount sampleCount);
 VkIndexType veIndexFormatToVk(VEIndexFormat format);
 
 // Utility functions
