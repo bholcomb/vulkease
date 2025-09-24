@@ -1,1 +1,13 @@
 [X] Staging buffer for uploading data to GPU only buffers.
+[ ] External syncronization for 
+[ ]     vkQueueSubmit
+[ ]     vkQueuePresentKHR
+[ ]     vkQueueWaitIdle
+[ ]     VkCommandPool
+[ ]     Command buffer recording (all vkCmd... functions)
+[ ]     vkAllocateCommandBuffers
+[ ]     vkFreeCommandBuffers
+[ ]     vkResetCommandPool
+[ ]     vkCreateDevice
+[ ]     vkDestroyDevicev
+[ ] Upgrade to vulkan 1.4 (blocked by driver version only supporting 1.3)
