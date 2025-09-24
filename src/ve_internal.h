@@ -147,7 +147,7 @@ typedef struct VESamplerInternal {
 // Shader internal structure
 typedef struct VEShaderInternal {
     VkShaderEXT shaderObject;
-    VEShaderStage stage;
+    VkShaderStageFlags stage;
     char entryPoint[64];
     char debugName[VE_MAX_DEBUG_NAME_LENGTH];
     char sourceFile[512]; // For hot-reload
@@ -211,7 +211,7 @@ typedef struct VECommandBufferInternal {
     bool isRecording;
     bool isOneTime;
     uint32_t index;
-    VEShaderStage boundShaders;
+    VkShaderStageFlags boundShaders;
 } VECommandBufferInternal;
 
 // Swapchain internal structure
@@ -315,9 +315,6 @@ void veSetError(const char* format, ...);
 const char* veResultToString(VkResult result);
 void vePrintVkResult(const char* operation, VkResult result);
 
-// Format and stage conversion utilities
-VkShaderStageFlagBits veShaderStageToVk(VEShaderStage stage);
-
 // VMA management functions
 VEResult veInitializeVMA(VEDeviceInternal* device);
 void veCleanupVMA(VEDeviceInternal* device);
@@ -351,18 +348,6 @@ VEResult veInitializeBindlessDescriptors(VEDeviceInternal* device);
 void veCleanupBindlessDescriptors(VEDeviceInternal* device);
 VEResult veUpdateTextureDescriptor(VEDeviceInternal* device, VETextureIndex index);
 VEResult veUpdateSamplerDescriptor(VEDeviceInternal* device, VESamplerIndex index);
-
-// Format conversion utilities
-VkIndexType veIndexFormatToVk(VEIndexFormat format);
-VkLogicOp veConvertLogicOp(VELogicOp logicOp);
-VkBlendOp veConvertBlendOp(VEBlendOp blendOp);
-VkBlendFactor veConvertBlendFactor(VEBlendFactor blendFactor);
-VkPolygonMode veConvertPolygonMode(VEPolygonMode polygonMode);
-VkFrontFace veConvertFrontFace(VEFrontFace frontFace);
-VkCullModeFlags veConvertCullMode(VECullMode cullMode);
-
-
-VkIndexType veIndexFormatToVk(VEIndexFormat format);
 
 // Utility functions
 void veSetObjectDebugName(VEDeviceInternal* device, uint64_t objectHandle, 

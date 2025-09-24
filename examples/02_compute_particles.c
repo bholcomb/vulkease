@@ -178,7 +178,7 @@ static bool initVulkEase(GLFWwindow* window) {
 static bool createShaders() {
     // Load compute shader for particle simulation
     g_computeShader = veLoadShader(g_device, COMPUTE_SHADER_PATH, 
-                                  VE_SHADER_STAGE_COMPUTE, "main", "ParticleComputeShader");
+                                  VK_SHADER_STAGE_COMPUTE_BIT, "main", "ParticleComputeShader");
     if (!g_computeShader) {
         fprintf(stderr, "Failed to load compute shader: %s\n", veGetLastError());
         return false;
@@ -186,14 +186,14 @@ static bool createShaders() {
     
     // Load graphics shaders for particle rendering
     g_vertexShader = veLoadShader(g_device, VERTEX_SHADER_PATH, 
-                                 VE_SHADER_STAGE_VERTEX, "main", "ParticleVertexShader");
+                                 VK_SHADER_STAGE_VERTEX_BIT, "main", "ParticleVertexShader");
     if (!g_vertexShader) {
         fprintf(stderr, "Failed to load vertex shader: %s\n", veGetLastError());
         return false;
     }
     
     g_fragmentShader = veLoadShader(g_device, FRAGMENT_SHADER_PATH, 
-                                   VE_SHADER_STAGE_FRAGMENT, "main", "ParticleFragmentShader");
+                                   VK_SHADER_STAGE_FRAGMENT_BIT, "main", "ParticleFragmentShader");
     if (!g_fragmentShader) {
         fprintf(stderr, "Failed to load fragment shader: %s\n", veGetLastError());
         return false;
@@ -333,8 +333,8 @@ static void renderParticles(VECommandBuffer* cmd, VETextureIndex backbuffer) {
     // Set up rendering info
     VERenderingAttachment colorAttachment = {
         .texture = backbuffer,
-        .loadOp = VE_LOAD_OP_CLEAR,
-        .storeOp = VE_STORE_OP_STORE,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
         .clearValue = {0.05f, 0.05f, 0.1f, 1.0f}, // Dark blue background
         .resolveTexture = VE_INVALID_TEXTURE_INDEX
     };

@@ -63,16 +63,16 @@ VEDepthConfig veDefaultDepthConfig(void) {
 VEBlendConfig veDefaultOpaqueBlendConfig(void) {
     VEBlendConfig config = {0};
     config.logicOpEnable = false;
-    config.logicOp = VE_LOGIC_OP_COPY;
+    config.logicOp = VK_LOGIC_OP_COPY;
     config.attachmentCount = 1;
     
     config.attachments[0].blendEnable = false;
-    config.attachments[0].srcColorBlendFactor = VE_BLEND_FACTOR_ONE;
-    config.attachments[0].dstColorBlendFactor = VE_BLEND_FACTOR_ZERO;
-    config.attachments[0].colorBlendOp = VE_BLEND_OP_ADD;
-    config.attachments[0].srcAlphaBlendFactor = VE_BLEND_FACTOR_ONE;
-    config.attachments[0].dstAlphaBlendFactor = VE_BLEND_FACTOR_ZERO;
-    config.attachments[0].alphaBlendOp = VE_BLEND_OP_ADD;
+    config.attachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    config.attachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+    config.attachments[0].colorBlendOp = VK_BLEND_OP_ADD;
+    config.attachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    config.attachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    config.attachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
     config.attachments[0].colorWriteMask = VK_COLOR_COMPONENT_ALL;
     
     config.blendConstants[0] = 0.0f;
@@ -86,16 +86,16 @@ VEBlendConfig veDefaultOpaqueBlendConfig(void) {
 VEBlendConfig veDefaultAlphaBlendConfig(void) {
     VEBlendConfig config = {0};
     config.logicOpEnable = false;
-    config.logicOp = VE_LOGIC_OP_COPY;
+    config.logicOp = VK_LOGIC_OP_COPY;
     config.attachmentCount = 1;
     
     config.attachments[0].blendEnable = true;
-    config.attachments[0].srcColorBlendFactor = VE_BLEND_FACTOR_SRC_ALPHA;
-    config.attachments[0].dstColorBlendFactor = VE_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    config.attachments[0].colorBlendOp = VE_BLEND_OP_ADD;
-    config.attachments[0].srcAlphaBlendFactor = VE_BLEND_FACTOR_ONE;
-    config.attachments[0].dstAlphaBlendFactor = VE_BLEND_FACTOR_ZERO;
-    config.attachments[0].alphaBlendOp = VE_BLEND_OP_ADD;
+    config.attachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    config.attachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    config.attachments[0].colorBlendOp = VK_BLEND_OP_ADD;
+    config.attachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    config.attachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    config.attachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
     config.attachments[0].colorWriteMask = VK_COLOR_COMPONENT_ALL;
     
     config.blendConstants[0] = 0.0f;
@@ -109,16 +109,16 @@ VEBlendConfig veDefaultAlphaBlendConfig(void) {
 VEBlendConfig veDefaultAdditiveBlendConfig(void) {
     VEBlendConfig config = {0};
     config.logicOpEnable = false;
-    config.logicOp = VE_LOGIC_OP_COPY;
+    config.logicOp = VK_LOGIC_OP_COPY;
     config.attachmentCount = 1;
     
     config.attachments[0].blendEnable = true;
-    config.attachments[0].srcColorBlendFactor = VE_BLEND_FACTOR_SRC_ALPHA;
-    config.attachments[0].dstColorBlendFactor = VE_BLEND_FACTOR_ONE;
-    config.attachments[0].colorBlendOp = VE_BLEND_OP_ADD;
-    config.attachments[0].srcAlphaBlendFactor = VE_BLEND_FACTOR_ZERO;
-    config.attachments[0].dstAlphaBlendFactor = VE_BLEND_FACTOR_ONE;
-    config.attachments[0].alphaBlendOp = VE_BLEND_OP_ADD;
+    config.attachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    config.attachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    config.attachments[0].colorBlendOp = VK_BLEND_OP_ADD;
+    config.attachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    config.attachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    config.attachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
     config.attachments[0].colorWriteMask = VK_COLOR_COMPONENT_ALL;
     
     config.blendConstants[0] = 0.0f;
