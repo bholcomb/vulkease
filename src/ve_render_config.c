@@ -5,6 +5,12 @@
 
 #include "ve_internal.h"
 
+VkColorComponentFlagBits VK_COLOR_COMPONENT_ALL = 
+    VK_COLOR_COMPONENT_R_BIT |
+    VK_COLOR_COMPONENT_G_BIT |
+    VK_COLOR_COMPONENT_B_BIT |
+    VK_COLOR_COMPONENT_A_BIT;
+
 // =============================================================================
 // Default Configuration Creators
 // =============================================================================
@@ -28,25 +34,25 @@ VEDepthConfig veDefaultDepthConfig(void) {
     VEDepthConfig config = {0};
     config.depthTestEnable = true;
     config.depthWriteEnable = true;
-    config.depthCompareOp = VE_COMPARE_OP_LESS;
+    config.depthCompareOp = VK_COMPARE_OP_LESS;
     config.depthBoundsTestEnable = false;
     config.minDepthBounds = 0.0f;
     config.maxDepthBounds = 1.0f;
     config.stencilTestEnable = false;
     
     // Default stencil ops
-    config.frontFailOp = VE_STENCIL_OP_KEEP;
-    config.frontPassOp = VE_STENCIL_OP_KEEP;
-    config.frontDepthFailOp = VE_STENCIL_OP_KEEP;
-    config.frontCompareOp = VE_COMPARE_OP_ALWAYS;
+    config.frontFailOp = VK_STENCIL_OP_KEEP;
+    config.frontPassOp = VK_STENCIL_OP_KEEP;
+    config.frontDepthFailOp = VK_STENCIL_OP_KEEP;
+    config.frontCompareOp = VK_COMPARE_OP_ALWAYS;
     config.frontCompareMask = 0xFF;
     config.frontWriteMask = 0xFF;
     config.frontReference = 0;
     
-    config.backFailOp = VE_STENCIL_OP_KEEP;
-    config.backPassOp = VE_STENCIL_OP_KEEP;
-    config.backDepthFailOp = VE_STENCIL_OP_KEEP;
-    config.backCompareOp = VE_COMPARE_OP_ALWAYS;
+    config.backFailOp = VK_STENCIL_OP_KEEP;
+    config.backPassOp = VK_STENCIL_OP_KEEP;
+    config.backDepthFailOp = VK_STENCIL_OP_KEEP;
+    config.backCompareOp = VK_COMPARE_OP_ALWAYS;
     config.backCompareMask = 0xFF;
     config.backWriteMask = 0xFF;
     config.backReference = 0;
@@ -67,7 +73,7 @@ VEBlendConfig veDefaultOpaqueBlendConfig(void) {
     config.attachments[0].srcAlphaBlendFactor = VE_BLEND_FACTOR_ONE;
     config.attachments[0].dstAlphaBlendFactor = VE_BLEND_FACTOR_ZERO;
     config.attachments[0].alphaBlendOp = VE_BLEND_OP_ADD;
-    config.attachments[0].colorWriteMask = VE_COLOR_COMPONENT_ALL;
+    config.attachments[0].colorWriteMask = VK_COLOR_COMPONENT_ALL;
     
     config.blendConstants[0] = 0.0f;
     config.blendConstants[1] = 0.0f;
@@ -90,7 +96,7 @@ VEBlendConfig veDefaultAlphaBlendConfig(void) {
     config.attachments[0].srcAlphaBlendFactor = VE_BLEND_FACTOR_ONE;
     config.attachments[0].dstAlphaBlendFactor = VE_BLEND_FACTOR_ZERO;
     config.attachments[0].alphaBlendOp = VE_BLEND_OP_ADD;
-    config.attachments[0].colorWriteMask = VE_COLOR_COMPONENT_ALL;
+    config.attachments[0].colorWriteMask = VK_COLOR_COMPONENT_ALL;
     
     config.blendConstants[0] = 0.0f;
     config.blendConstants[1] = 0.0f;
@@ -113,7 +119,7 @@ VEBlendConfig veDefaultAdditiveBlendConfig(void) {
     config.attachments[0].srcAlphaBlendFactor = VE_BLEND_FACTOR_ZERO;
     config.attachments[0].dstAlphaBlendFactor = VE_BLEND_FACTOR_ONE;
     config.attachments[0].alphaBlendOp = VE_BLEND_OP_ADD;
-    config.attachments[0].colorWriteMask = VE_COLOR_COMPONENT_ALL;
+    config.attachments[0].colorWriteMask = VK_COLOR_COMPONENT_ALL;
     
     config.blendConstants[0] = 0.0f;
     config.blendConstants[1] = 0.0f;
@@ -125,7 +131,7 @@ VEBlendConfig veDefaultAdditiveBlendConfig(void) {
 
 VEMultisampleConfig veDefaultMultisampleConfig(void) {
     VEMultisampleConfig config = {0};
-    config.rasterizationSamples = VE_SAMPLE_COUNT_1;
+    config.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
     config.sampleShadingEnable = false;
     config.minSampleShading = 1.0f;
     config.alphaToCoverageEnable = false;
@@ -139,7 +145,7 @@ VEVertexInputConfig veDefaultVertexInputConfig(void) {
     config.bindings = NULL;
     config.attributeCount = 0;
     config.attributes = NULL;
-    config.topology = VE_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     config.primitiveRestartEnable = false;
     return config;
 }
@@ -244,7 +250,7 @@ VERenderConfig* veCreateRenderConfig(VEDevice* device, const VERenderConfigDesc*
         snprintf(config->debugName, sizeof(config->debugName), "RenderConfig_%u", index);
     }
 
-    config->device = device; 
+    config->device = (VEDeviceInternal*)device; 
     config->isValid = true;
     deviceInternal->renderConfigCount++;
     
@@ -299,7 +305,7 @@ VEVertexConfig* veCreateVertexConfig(VEDevice* device, uint32_t bindingCount,
     
     config->bindingCount = bindingCount;
     config->attributeCount = attributeCount;
-    config->topology = VE_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    config->topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     config->primitiveRestartEnable = false;
     
     // Copy bindings
@@ -314,7 +320,7 @@ VEVertexConfig* veCreateVertexConfig(VEDevice* device, uint32_t bindingCount,
     
     snprintf(config->debugName, sizeof(config->debugName), "VertexConfig_%u", index);
     
-    config->device = device;
+    config->device = (VEDeviceInternal*)device;
     config->isValid = true;
     deviceInternal->vertexConfigCount++;
     

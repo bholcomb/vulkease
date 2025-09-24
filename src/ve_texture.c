@@ -253,22 +253,6 @@ VkImageView veGetImageViewFromTexture(VEDeviceInternal* device, VETextureIndex i
 }
 
 // =============================================================================
-// Format Conversion Utilities
-// =============================================================================
-
-VkFormat veFormatToVk(VEFormat format) {
-    return (VkFormat)format;
-}
-
-VEFormat veFormatFromVk(VkFormat format) {
-    return (VEFormat)format;
-}
-
-VkSampleCountFlagBits veSampleCountToVk(VESampleCount sampleCount) {
-    return (VkSampleCountFlagBits)sampleCount;
-}
-
-// =============================================================================
 // Texture Data Upload
 // =============================================================================
 
@@ -422,11 +406,11 @@ VETextureIndex veCreateTexture(VEDevice* device, const VETextureDesc* desc) {
     imageInfo.extent.depth = desc->depth > 0 ? desc->depth : 1;
     imageInfo.mipLevels = texture->mipLevels;
     imageInfo.arrayLayers = desc->arrayLayers;
-    imageInfo.format = veFormatToVk(desc->format);
+    imageInfo.format = desc->format;
     imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.usage = veConvertTextureUsage(desc->usage);
-    imageInfo.samples = veConvertSampleCount(desc->sampleCount);
+    imageInfo.usage = desc->usage;
+    imageInfo.samples = desc->sampleCount;
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     
     imageInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT; // Always add transfer dst for potential data uploads
@@ -464,11 +448,11 @@ VETextureIndex veCreateTexture(VEDevice* device, const VETextureDesc* desc) {
     viewInfo.subresourceRange.layerCount = desc->arrayLayers;
     
     // Handle depth/stencil formats
-    if (desc->format >= VE_FORMAT_D16_UNORM && desc->format <= VE_FORMAT_D32_SFLOAT_S8_UINT) {
+    if (desc->format >= VK_FORMAT_D16_UNORM && desc->format <= VK_FORMAT_D32_SFLOAT_S8_UINT) {
         viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        if (desc->format == VE_FORMAT_D16_UNORM_S8_UINT || 
-            desc->format == VE_FORMAT_D24_UNORM_S8_UINT ||
-            desc->format == VE_FORMAT_D32_SFLOAT_S8_UINT) {
+        if (desc->format == VK_FORMAT_D16_UNORM_S8_UINT || 
+            desc->format == VK_FORMAT_D24_UNORM_S8_UINT ||
+            desc->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
             viewInfo.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
         }
     }
@@ -557,23 +541,23 @@ VEResult veGetTextureSize(VEDevice* device, VETextureIndex index,
     return VE_SUCCESS;
 }
 
-VEFormat veGetTextureFormat(VEDevice* device, VETextureIndex index) {
+VkFormat veGetTextureFormat(VEDevice* device, VETextureIndex index) {
     if (!device || index == VE_INVALID_TEXTURE_INDEX) {
-        return VE_FORMAT_RGBA8_UNORM;
+        return VK_FORMAT_R8G8B8A8_UNORM;
     }
     
     VEDeviceInternal* deviceInternal = (VEDeviceInternal*)device;
     VETextureInternal* texture = veGetTexture(deviceInternal, index);
     
-    return texture ? texture->format : VE_FORMAT_RGBA8_UNORM;
+    return texture ? texture->format : VK_FORMAT_R8G8B8A8_UNORM;
 }
 
 // =============================================================================
 // Convenience Texture Creation Functions
 // =============================================================================
 
-VETextureIndex veCreateTexture1D(VEDevice* device, uint32_t width, VEFormat format,
-                                VETextureUsage usage, const char* debugName) {
+VETextureIndex veCreateTexture1D(VEDevice* device, uint32_t width, VkFormat format,
+                                VkImageUsageFlags usage, const char* debugName) {
     VETextureDesc desc = {
         .width = width,
         .height = 1,
@@ -582,7 +566,7 @@ VETextureIndex veCreateTexture1D(VEDevice* device, uint32_t width, VEFormat form
         .arrayLayers = 1,
         .format = format,
         .usage = usage,
-        .sampleCount = VE_SAMPLE_COUNT_1,
+        .sampleCount = VK_SAMPLE_COUNT_1_BIT,
         .initialData = NULL,
         .initialDataSize = 0,
         .debugName = debugName
@@ -592,7 +576,7 @@ VETextureIndex veCreateTexture1D(VEDevice* device, uint32_t width, VEFormat form
 }
 
 VETextureIndex veCreateTexture2D(VEDevice* device, uint32_t width, uint32_t height,
-                                VEFormat format, VETextureUsage usage, const char* debugName) {
+                                VkFormat format, VkImageUsageFlags usage, const char* debugName) {
     VETextureDesc desc = {
         .width = width,
         .height = height,
@@ -601,7 +585,7 @@ VETextureIndex veCreateTexture2D(VEDevice* device, uint32_t width, uint32_t heig
         .arrayLayers = 1,
         .format = format,
         .usage = usage,
-        .sampleCount = VE_SAMPLE_COUNT_1,
+        .sampleCount = VK_SAMPLE_COUNT_1_BIT,
         .initialData = NULL,
         .initialDataSize = 0,
         .debugName = debugName
@@ -611,7 +595,7 @@ VETextureIndex veCreateTexture2D(VEDevice* device, uint32_t width, uint32_t heig
 }
 
 VETextureIndex veCreateTexture3D(VEDevice* device, uint32_t width, uint32_t height, uint32_t depth,
-                                VEFormat format, VETextureUsage usage, const char* debugName) {
+                                VkFormat format, VkImageUsageFlags usage, const char* debugName) {
     VETextureDesc desc = {
         .width = width,
         .height = height,
@@ -620,7 +604,7 @@ VETextureIndex veCreateTexture3D(VEDevice* device, uint32_t width, uint32_t heig
         .arrayLayers = 1,
         .format = format,
         .usage = usage,
-        .sampleCount = VE_SAMPLE_COUNT_1,
+        .sampleCount = VK_SAMPLE_COUNT_1_BIT,
         .initialData = NULL,
         .initialDataSize = 0,
         .debugName = debugName
@@ -630,7 +614,7 @@ VETextureIndex veCreateTexture3D(VEDevice* device, uint32_t width, uint32_t heig
 }
 
 VETextureIndex veCreateTexture2DArray(VEDevice* device, uint32_t width, uint32_t height,
-                                     uint32_t layers, VEFormat format, VETextureUsage usage,
+                                     uint32_t layers, VkFormat format, VkImageUsageFlags usage,
                                      const char* debugName) {
     VETextureDesc desc = {
         .width = width,
@@ -640,7 +624,7 @@ VETextureIndex veCreateTexture2DArray(VEDevice* device, uint32_t width, uint32_t
         .arrayLayers = layers,
         .format = format,
         .usage = usage,
-        .sampleCount = VE_SAMPLE_COUNT_1,
+        .sampleCount = VK_SAMPLE_COUNT_1_BIT,
         .initialData = NULL,
         .initialDataSize = 0,
         .debugName = debugName
@@ -649,8 +633,8 @@ VETextureIndex veCreateTexture2DArray(VEDevice* device, uint32_t width, uint32_t
     return veCreateTexture(device, &desc);
 }
 
-VETextureIndex veCreateTextureCube(VEDevice* device, uint32_t size, VEFormat format,
-                                  VETextureUsage usage, const char* debugName) {
+VETextureIndex veCreateTextureCube(VEDevice* device, uint32_t size, VkFormat format,
+                                  VkImageUsageFlags usage, const char* debugName) {
     VETextureDesc desc = {
         .width = size,
         .height = size,
@@ -659,7 +643,7 @@ VETextureIndex veCreateTextureCube(VEDevice* device, uint32_t size, VEFormat for
         .arrayLayers = 6,
         .format = format,
         .usage = usage,
-        .sampleCount = VE_SAMPLE_COUNT_1,
+        .sampleCount = VK_SAMPLE_COUNT_1_BIT,
         .initialData = NULL,
         .initialDataSize = 0,
         .debugName = debugName
@@ -669,8 +653,8 @@ VETextureIndex veCreateTextureCube(VEDevice* device, uint32_t size, VEFormat for
 }
 
 VETextureIndex veCreateTexture2DMultisample(VEDevice* device, uint32_t width, uint32_t height,
-                                           VEFormat format, VESampleCount sampleCount,
-                                           VETextureUsage usage, const char* debugName) {
+                                           VkFormat format, VkSampleCountFlags sampleCount,
+                                           VkImageUsageFlags usage, const char* debugName) {
     VETextureDesc desc = {
         .width = width,
         .height = height,
@@ -693,7 +677,7 @@ VETextureIndex veCreateTexture2DMultisample(VEDevice* device, uint32_t width, ui
 // =============================================================================
 
 VETextureIndex veLoadTexture(VEDevice* device, const char* filename,
-                            VETextureUsage usage, bool generateMips) {
+                            VkImageUsageFlags usage, bool generateMips) {
     if (!device || !filename) {
         veSetError("Invalid parameters for texture loading");
         return VE_INVALID_TEXTURE_INDEX;
@@ -711,8 +695,8 @@ VETextureIndex veLoadTexture(VEDevice* device, const char* filename,
     if(generateMips)
     {
         mipLevels = (uint32_t)floor(log2(fmax(width, height))) + 1;
-        usage |= VE_TEXTURE_USAGE_TRANSFER_DST; 
-        usage |= VE_TEXTURE_USAGE_TRANSFER_SRC;
+        usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT; 
+        usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     }
     
     VETextureDesc desc = {
@@ -721,9 +705,9 @@ VETextureIndex veLoadTexture(VEDevice* device, const char* filename,
         .depth = 1,
         .mipLevels = mipLevels,
         .arrayLayers = 1,
-        .format = VE_FORMAT_RGBA8_SRGB,
+        .format = VK_FORMAT_R8G8B8A8_SRGB,
         .usage = usage,
-        .sampleCount = VE_SAMPLE_COUNT_1,
+        .sampleCount = VK_SAMPLE_COUNT_1_BIT,
         .initialData = pixels,
         .initialDataSize = width * height * 4,
         .debugName = filename
@@ -747,7 +731,7 @@ VETextureIndex veLoadTexture(VEDevice* device, const char* filename,
 }
 
 VETextureIndex veLoadHDRTexture(VEDevice* device, const char* filename,
-                               VETextureUsage usage, bool generateMips) {
+                               VkImageUsageFlags usage, bool generateMips) {
     if (!device || !filename) {
         veSetError("Invalid parameters for HDR texture loading");
         return VE_INVALID_TEXTURE_INDEX;
@@ -767,9 +751,9 @@ VETextureIndex veLoadHDRTexture(VEDevice* device, const char* filename,
         .depth = 1,
         .mipLevels = generateMips ? 0 : 1,
         .arrayLayers = 1,
-        .format = VE_FORMAT_RGBA32_SFLOAT,
+        .format = VK_FORMAT_R32G32B32A32_SFLOAT,
         .usage = usage,
-        .sampleCount = VE_SAMPLE_COUNT_1,
+        .sampleCount = VK_SAMPLE_COUNT_1_BIT,
         .initialData = pixels,
         .initialDataSize = width * height * 4 * sizeof(float),
         .debugName = filename
@@ -793,7 +777,7 @@ VETextureIndex veLoadHDRTexture(VEDevice* device, const char* filename,
 }
 
 VETextureIndex veLoadCubeTexture(VEDevice* device, const char* filenames[6],
-                               VETextureUsage usage, bool generateMips) {
+                               VkImageUsageFlags usage, bool generateMips) {
     veSetError("Cube texture loading not implemented");
     return VE_INVALID_TEXTURE_INDEX;
 }
@@ -820,7 +804,7 @@ VEResult veGenerateMipmaps(VEDevice* device, VECommandBuffer* cmd, VETextureInde
         return VE_ERROR_INVALID_PARAMETER;
     }
     
-    if (textureInternal->sampleCount != VE_SAMPLE_COUNT_1) {
+    if (textureInternal->sampleCount != VK_SAMPLE_COUNT_1_BIT) {
         veSetError("Cannot generate mipmaps for multisampled textures");
         return VE_ERROR_INVALID_PARAMETER;
     }
@@ -828,7 +812,7 @@ VEResult veGenerateMipmaps(VEDevice* device, VECommandBuffer* cmd, VETextureInde
     // Check if format supports linear filtering (required for mipmap generation)
     VkFormatProperties formatProps;
     vkGetPhysicalDeviceFormatProperties(deviceInternal->physicalDevice, 
-                                       veFormatToVk(textureInternal->format), &formatProps);
+                                       textureInternal->format, &formatProps);
     
     if (!(formatProps.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
         veSetError("Format does not support linear filtering required for mipmap generation");
@@ -836,7 +820,7 @@ VEResult veGenerateMipmaps(VEDevice* device, VECommandBuffer* cmd, VETextureInde
     }
     
     // Ensure texture has transfer source usage for blitting
-    VkImageUsageFlags usage = veConvertTextureUsage(textureInternal->usage);
+    VkImageUsageFlags usage = textureInternal->usage;
     if (!(usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT)) {
         veSetError("Texture must have transfer source usage for mipmap generation");
         return VE_ERROR_INVALID_PARAMETER;

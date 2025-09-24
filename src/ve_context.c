@@ -103,6 +103,29 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     return VK_FALSE;
 }
 
+
+const char* veResultToString(VkResult result) {
+    switch (result) {
+        case VK_SUCCESS: return "VK_SUCCESS";
+        case VK_NOT_READY: return "VK_NOT_READY";
+        case VK_TIMEOUT: return "VK_TIMEOUT";
+        case VK_ERROR_OUT_OF_HOST_MEMORY: return "VK_ERROR_OUT_OF_HOST_MEMORY";
+        case VK_ERROR_OUT_OF_DEVICE_MEMORY: return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
+        case VK_ERROR_INITIALIZATION_FAILED: return "VK_ERROR_INITIALIZATION_FAILED";
+        case VK_ERROR_DEVICE_LOST: return "VK_ERROR_DEVICE_LOST";
+        case VK_ERROR_MEMORY_MAP_FAILED: return "VK_ERROR_MEMORY_MAP_FAILED";
+        default: return "Unknown VkResult";
+    }
+}
+
+void vePrintVkResult(const char* operation, VkResult result) {
+    if (result != VK_SUCCESS) {
+        printf("VulkEase: %s failed with %s (%d)\n", operation, veResultToString(result), result);
+    }
+}
+
+
+
 // =============================================================================
 // Extension Support Checking
 // =============================================================================
@@ -1001,3 +1024,4 @@ bool initializeDeviceFunctions(VkDevice device)
 
     return true;
 }
+

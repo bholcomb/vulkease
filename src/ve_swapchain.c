@@ -121,18 +121,16 @@ static bool checkSwapchainSupport(VkPhysicalDevice device, VkSurfaceKHR surface)
     return formatCount > 0 && presentModeCount > 0;
 }
 
-static VkSurfaceFormatKHR chooseSwapSurfaceFormat(VkPhysicalDevice device, VkSurfaceKHR surface, VEFormat preferredFormat) {
+static VkSurfaceFormatKHR chooseSwapSurfaceFormat(VkPhysicalDevice device, VkSurfaceKHR surface, VkFormat preferredFormat) {
     uint32_t formatCount;
     vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, NULL);
 
     VkSurfaceFormatKHR* availableFormats = malloc(formatCount * sizeof(VkSurfaceFormatKHR));
     vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, availableFormats);
 
-    VkFormat preferredVkFormat = veFormatToVk(preferredFormat);
-
     // Look for preferred format
     for (uint32_t i = 0; i < formatCount; i++) {
-        if (availableFormats[i].format == preferredVkFormat && 
+        if (availableFormats[i].format == preferredFormat && 
             availableFormats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
             VkSurfaceFormatKHR result = availableFormats[i];
             free(availableFormats);
@@ -196,7 +194,7 @@ static VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR* capabilities,
 // =============================================================================
 
 VESwapchain* veCreateSwapchain(VEDevice* device, void* windowHandle,
-                              uint32_t width, uint32_t height, VEFormat format, bool vsync) {
+                              uint32_t width, uint32_t height, VkFormat format, bool vsync) {
     if (!device || !windowHandle || width == 0 || height == 0) {
         veSetError("Invalid parameters for swapchain creation");
         return NULL;
@@ -237,7 +235,7 @@ VESwapchain* veCreateSwapchain(VEDevice* device, void* windowHandle,
 
     // Choose surface format
     VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(deviceInternal->physicalDevice, swapchain->surface, format);
-    swapchain->format = veFormatFromVk(surfaceFormat.format);
+    swapchain->format = surfaceFormat.format;
 
     // Choose present mode
     VkPresentModeKHR presentMode = chooseSwapPresentMode(deviceInternal->physicalDevice, swapchain->surface, vsync);
@@ -331,8 +329,8 @@ VESwapchain* veCreateSwapchain(VEDevice* device, void* windowHandle,
             texture->mipLevels = 1;
             texture->arrayLayers = 1;
             texture->format = swapchain->format;
-            texture->usage = VE_TEXTURE_USAGE_COLOR_ATTACHMENT | VE_TEXTURE_USAGE_SAMPLED;
-            texture->sampleCount = VE_SAMPLE_COUNT_1;
+            texture->usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+            texture->sampleCount = VK_SAMPLE_COUNT_1_BIT;
             texture->index = textureIndex;
             texture->isValid = true;
             snprintf(texture->debugName, sizeof(texture->debugName), "SwapchainImage_%u", i);
@@ -591,8 +589,8 @@ VEResult veGetSwapchainSize(VESwapchain* swapchain, uint32_t* width, uint32_t* h
     return VE_SUCCESS;
 }
 
-VEFormat veGetSwapchainFormat(VESwapchain* swapchain) {
-    if (!swapchain) return VE_FORMAT_RGBA8_UNORM;
+VkFormat veGetSwapchainFormat(VESwapchain* swapchain) {
+    if (!swapchain) return VK_FORMAT_R8G8B8_UNORM;
     
     VESwapchainInternal* internal = (VESwapchainInternal*)swapchain;
     return internal->format;

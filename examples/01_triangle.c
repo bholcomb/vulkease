@@ -125,7 +125,7 @@ static bool initVulkEase(GLFWwindow* window) {
     void* windowData[] = {displayHandle, windowHandle};
 
     // Create swapchain using VulkEase's simple window handle approach
-    g_swapchain = veCreateSwapchain(g_device, windowData, win_width, win_height, VE_FORMAT_BGRA8_SRGB, true);
+    g_swapchain = veCreateSwapchain(g_device, windowData, win_width, win_height, VK_FORMAT_B8G8R8A8_SRGB, true);
 
 #elif defined(__APPLE__)
     void* windowHandle = NULL;    
@@ -179,7 +179,7 @@ static bool createBuffers() {
     // Create vertex buffer
     VEBufferDesc bufferDesc = {
         .size = sizeof(triangleVertices),
-        .usage = VE_BUFFER_USAGE_VERTEX,
+        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         .initialData = triangleVertices,
         .initialDataSize = sizeof(triangleVertices),
         .persistentlyMapped = false,

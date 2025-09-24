@@ -26,6 +26,8 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#include <vulkan/vulkan.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -103,89 +105,6 @@ typedef enum VEResult {
 // Enums and Constants
 // =============================================================================
 
-// Formats (subset of VkFormat)
-typedef enum VEFormat {
-    // 8-bit formats
-    VE_FORMAT_R8_UNORM = 9,
-    VE_FORMAT_RG8_UNORM = 16,
-    VE_FORMAT_RGBA8_UNORM = 37,
-    VE_FORMAT_RGBA8_SRGB = 43,
-    VE_FORMAT_BGRA8_UNORM = 44,
-    VE_FORMAT_BGRA8_SRGB = 50,
-    
-    // 16-bit formats
-    VE_FORMAT_R16_UNORM = 70,
-    VE_FORMAT_R16_SFLOAT = 76,
-    VE_FORMAT_RG16_UNORM = 77,
-    VE_FORMAT_RG16_SFLOAT = 83,
-    VE_FORMAT_RGBA16_UNORM = 91,
-    VE_FORMAT_RGBA16_SFLOAT = 97,
-    
-    // 32-bit formats
-    VE_FORMAT_R32_UINT = 98,
-    VE_FORMAT_R32_SINT = 99,
-    VE_FORMAT_R32_SFLOAT = 100,
-    VE_FORMAT_RG32_UINT = 101,
-    VE_FORMAT_RG32_SINT = 102,
-    VE_FORMAT_RG32_SFLOAT = 103,
-    VE_FORMAT_RGB32_UINT = 104,
-    VE_FORMAT_RGB32_SINT = 105,
-    VE_FORMAT_RGB32_SFLOAT = 106,
-    VE_FORMAT_RGBA32_UINT = 107,
-    VE_FORMAT_RGBA32_SINT = 108,
-    VE_FORMAT_RGBA32_SFLOAT = 109,
-    
-    // Depth/stencil formats
-    VE_FORMAT_D16_UNORM = 124,
-    VE_FORMAT_X8_D24_UNORM_PACK32 = 125,
-    VE_FORMAT_D32_SFLOAT = 126,
-    VE_FORMAT_S8_UINT = 127,
-    VE_FORMAT_D16_UNORM_S8_UINT = 128,
-    VE_FORMAT_D24_UNORM_S8_UINT = 129,
-    VE_FORMAT_D32_SFLOAT_S8_UINT = 130,
-    
-    // Compressed formats
-    VE_FORMAT_BC1_RGB_UNORM = 131,
-    VE_FORMAT_BC1_RGB_SRGB = 132,
-    VE_FORMAT_BC1_RGBA_UNORM = 133,
-    VE_FORMAT_BC1_RGBA_SRGB = 134,
-    VE_FORMAT_BC2_UNORM = 135,
-    VE_FORMAT_BC2_SRGB = 136,
-    VE_FORMAT_BC3_UNORM = 137,
-    VE_FORMAT_BC3_SRGB = 138,
-    VE_FORMAT_BC4_UNORM = 139,
-    VE_FORMAT_BC4_SNORM = 140,
-    VE_FORMAT_BC5_UNORM = 141,
-    VE_FORMAT_BC5_SNORM = 142,
-    VE_FORMAT_BC6H_UFLOAT = 143,
-    VE_FORMAT_BC6H_SFLOAT = 144,
-    VE_FORMAT_BC7_UNORM = 145,
-    VE_FORMAT_BC7_SRGB = 146
-} VEFormat;
-
-// Buffer usage flags
-typedef enum VEBufferUsage {
-    VE_BUFFER_USAGE_VERTEX = 0x1,
-    VE_BUFFER_USAGE_INDEX = 0x2,
-    VE_BUFFER_USAGE_UNIFORM = 0x4,
-    VE_BUFFER_USAGE_STORAGE = 0x8,
-    VE_BUFFER_USAGE_INDIRECT = 0x10,
-    VE_BUFFER_USAGE_TRANSFER_SRC = 0x20,
-    VE_BUFFER_USAGE_TRANSFER_DST = 0x40,
-    VE_BUFFER_USAGE_CONDITIONAL_RENDERING = 0x200
-} VEBufferUsage;
-
-// Texture usage flags
-typedef enum VETextureUsage {
-    VE_TEXTURE_USAGE_SAMPLED = 0x1,
-    VE_TEXTURE_USAGE_STORAGE = 0x2,
-    VE_TEXTURE_USAGE_COLOR_ATTACHMENT = 0x4,
-    VE_TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT = 0x8,
-    VE_TEXTURE_USAGE_TRANSFER_SRC = 0x10,
-    VE_TEXTURE_USAGE_TRANSFER_DST = 0x20,
-    VE_TEXTURE_USAGE_INPUT_ATTACHMENT = 0x80
-} VETextureUsage;
-
 // Shader stages
 typedef enum VEShaderStage {
     VE_SHADER_STAGE_VERTEX = 0x1,
@@ -196,21 +115,6 @@ typedef enum VEShaderStage {
     VE_SHADER_STAGE_GRAPHICS = 0x1f,
     VE_SHADER_STAGE_COMPUTE = 0x20
 } VEShaderStage;
-
-// Filtering modes
-typedef enum VEFilter {
-    VE_FILTER_NEAREST = 0,
-    VE_FILTER_LINEAR = 1
-} VEFilter;
-
-// Address modes for samplers
-typedef enum VEAddressMode {
-    VE_ADDRESS_MODE_REPEAT = 0,
-    VE_ADDRESS_MODE_MIRRORED_REPEAT = 1,
-    VE_ADDRESS_MODE_CLAMP_TO_EDGE = 2,
-    VE_ADDRESS_MODE_CLAMP_TO_BORDER = 3,
-    VE_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE = 4
-} VEAddressMode;
 
 // Dynamic rendering load/store operations
 typedef enum VELoadOp {
@@ -266,29 +170,6 @@ typedef enum VEPolygonMode {
     VE_POLYGON_MODE_LINE = 1,
     VE_POLYGON_MODE_POINT = 2
 } VEPolygonMode;
-
-// Depth/stencil state enums
-typedef enum VECompareOp {
-    VE_COMPARE_OP_NEVER = 0,
-    VE_COMPARE_OP_LESS = 1,
-    VE_COMPARE_OP_EQUAL = 2,
-    VE_COMPARE_OP_LESS_OR_EQUAL = 3,
-    VE_COMPARE_OP_GREATER = 4,
-    VE_COMPARE_OP_NOT_EQUAL = 5,
-    VE_COMPARE_OP_GREATER_OR_EQUAL = 6,
-    VE_COMPARE_OP_ALWAYS = 7
-} VECompareOp;
-
-typedef enum VEStencilOp {
-    VE_STENCIL_OP_KEEP = 0,
-    VE_STENCIL_OP_ZERO = 1,
-    VE_STENCIL_OP_REPLACE = 2,
-    VE_STENCIL_OP_INCREMENT_AND_CLAMP = 3,
-    VE_STENCIL_OP_DECREMENT_AND_CLAMP = 4,
-    VE_STENCIL_OP_INVERT = 5,
-    VE_STENCIL_OP_INCREMENT_AND_WRAP = 6,
-    VE_STENCIL_OP_DECREMENT_AND_WRAP = 7
-} VEStencilOp;
 
 // Debug and profiling enums
 typedef enum VEObjectType {
@@ -356,45 +237,6 @@ typedef enum VELogicOp {
     VE_LOGIC_OP_SET = 15
 } VELogicOp;
 
-typedef enum VEColorComponentFlags {
-    VE_COLOR_COMPONENT_R_BIT = 0x1,
-    VE_COLOR_COMPONENT_G_BIT = 0x2,
-    VE_COLOR_COMPONENT_B_BIT = 0x4,
-    VE_COLOR_COMPONENT_A_BIT = 0x8,
-    VE_COLOR_COMPONENT_ALL = 0xF
-} VEColorComponentFlags;
-
-// Vertex input enums (VK_EXT_vertex_input_dynamic_state)
-typedef enum VEVertexInputRate {
-    VE_VERTEX_INPUT_RATE_VERTEX = 0,
-    VE_VERTEX_INPUT_RATE_INSTANCE = 1
-} VEVertexInputRate;
-
-typedef enum VEPrimitiveTopology {
-    VE_PRIMITIVE_TOPOLOGY_POINT_LIST = 0,
-    VE_PRIMITIVE_TOPOLOGY_LINE_LIST = 1,
-    VE_PRIMITIVE_TOPOLOGY_LINE_STRIP = 2,
-    VE_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST = 3,
-    VE_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP = 4,
-    VE_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN = 5,
-    VE_PRIMITIVE_TOPOLOGY_LINE_LIST_WITH_ADJACENCY = 6,
-    VE_PRIMITIVE_TOPOLOGY_LINE_STRIP_WITH_ADJACENCY = 7,
-    VE_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST_WITH_ADJACENCY = 8,
-    VE_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP_WITH_ADJACENCY = 9,
-    VE_PRIMITIVE_TOPOLOGY_PATCH_LIST = 10
-} VEPrimitiveTopology;
-
-// Sample count for multisampling
-typedef enum VESampleCount {
-    VE_SAMPLE_COUNT_1 = 1,
-    VE_SAMPLE_COUNT_2 = 2,
-    VE_SAMPLE_COUNT_4 = 4,
-    VE_SAMPLE_COUNT_8 = 8,
-    VE_SAMPLE_COUNT_16 = 16,
-    VE_SAMPLE_COUNT_32 = 32,
-    VE_SAMPLE_COUNT_64 = 64
-} VESampleCount;
-
 // =============================================================================
 // Structure Types
 // =============================================================================
@@ -420,7 +262,7 @@ typedef struct VEViewport {
 // Buffer creation descriptor
 typedef struct VEBufferDesc {
     size_t size;
-    VEBufferUsage usage;
+    VkBufferUsageFlags usage;
     const void* initialData;        // Optional initial data
     size_t initialDataSize;
     bool persistentlyMapped;        // Keep CPU-mapped for frequent updates
@@ -434,9 +276,9 @@ typedef struct VETextureDesc {
     uint32_t depth;                 // 1 for 2D textures
     uint32_t mipLevels;            // 0 = auto-generate all mips
     uint32_t arrayLayers;          // 1 for single texture
-    VEFormat format;
-    VETextureUsage usage;
-    VESampleCount sampleCount;     // For multisampled textures
+    VkFormat format;
+    VkImageUsageFlags usage;
+    VkSampleCountFlags sampleCount;     // For multisampled textures
     const void* initialData;        // Optional initial data
     size_t initialDataSize;
     const char* debugName;          // Debug name (optional)
@@ -444,15 +286,15 @@ typedef struct VETextureDesc {
 
 // Sampler creation descriptor
 typedef struct VESamplerDesc {
-    VEFilter minFilter;
-    VEFilter magFilter;
-    VEFilter mipmapFilter;
-    VEAddressMode addressModeU;
-    VEAddressMode addressModeV;
-    VEAddressMode addressModeW;
+    VkFilter minFilter;
+    VkFilter magFilter;
+    VkFilter mipmapFilter;
+    VkSamplerAddressMode addressModeU;
+    VkSamplerAddressMode addressModeV;
+    VkSamplerAddressMode addressModeW;
     float maxAnisotropy;           // 1.0 = no anisotropy
     bool compareEnable;            // For shadow mapping
-    VECompareOp compareOp;
+    VkCompareOp compareOp;
     float minLod;
     float maxLod;
     const char* debugName;          // Debug name (optional)
@@ -486,7 +328,7 @@ typedef struct VEDepthConfig {
     // Depth testing
     bool depthTestEnable;                   // VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE
     bool depthWriteEnable;                  // VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE
-    VECompareOp depthCompareOp;            // VK_DYNAMIC_STATE_DEPTH_COMPARE_OP
+    VkCompareOp depthCompareOp;            // VK_DYNAMIC_STATE_DEPTH_COMPARE_OP
     
     // Depth bounds
     bool depthBoundsTestEnable;            // VK_DYNAMIC_STATE_DEPTH_BOUNDS_TEST_ENABLE
@@ -497,19 +339,19 @@ typedef struct VEDepthConfig {
     bool stencilTestEnable;                // VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE
     
     // Front face stencil
-    VEStencilOp frontFailOp;
-    VEStencilOp frontPassOp;
-    VEStencilOp frontDepthFailOp;
-    VECompareOp frontCompareOp;
+    VkStencilOp frontFailOp;
+    VkStencilOp frontPassOp;
+    VkStencilOp frontDepthFailOp;
+    VkCompareOp frontCompareOp;
     uint32_t frontCompareMask;             // VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK
     uint32_t frontWriteMask;               // VK_DYNAMIC_STATE_STENCIL_WRITE_MASK
     uint32_t frontReference;               // VK_DYNAMIC_STATE_STENCIL_REFERENCE
     
     // Back face stencil  
-    VEStencilOp backFailOp;
-    VEStencilOp backPassOp;
-    VEStencilOp backDepthFailOp;
-    VECompareOp backCompareOp;
+    VkStencilOp backFailOp;
+    VkStencilOp backPassOp;
+    VkStencilOp backDepthFailOp;
+    VkCompareOp backCompareOp;
     uint32_t backCompareMask;
     uint32_t backWriteMask;
     uint32_t backReference;
@@ -524,7 +366,7 @@ typedef struct VEBlendAttachment {
     VEBlendFactor srcAlphaBlendFactor;
     VEBlendFactor dstAlphaBlendFactor;
     VEBlendOp alphaBlendOp;
-    VEColorComponentFlags colorWriteMask;  // VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT
+    VkColorComponentFlags colorWriteMask;  // VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT
 } VEBlendAttachment;
 
 typedef struct VEBlendConfig {
@@ -539,7 +381,7 @@ typedef struct VEBlendConfig {
 
 // Multisample configuration
 typedef struct VEMultisampleConfig {
-    VESampleCount rasterizationSamples;
+    VkSampleCountFlags rasterizationSamples;
     bool sampleShadingEnable;
     float minSampleShading;
     bool alphaToCoverageEnable;
@@ -550,14 +392,14 @@ typedef struct VEMultisampleConfig {
 typedef struct VEVertexBinding {
     uint32_t binding;
     uint32_t stride;
-    VEVertexInputRate inputRate;
+    VkVertexInputRate inputRate;
     uint32_t divisor;                      // For instanced rendering
 } VEVertexBinding;
 
 typedef struct VEVertexAttribute {
     uint32_t location;
     uint32_t binding;
-    VEFormat format;
+    VkFormat format;
     uint32_t offset;
 } VEVertexAttribute;
 
@@ -568,7 +410,7 @@ typedef struct VEVertexInputConfig {
     uint32_t attributeCount;
     VEVertexAttribute* attributes;         // VK_DYNAMIC_STATE_VERTEX_INPUT_EXT
     
-    VEPrimitiveTopology topology;          // VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY
+    VkPrimitiveTopology topology;          // VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY
     bool primitiveRestartEnable;           // VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE
 
     uint32_t patchControlPoints;           // VK_DYNAMIC_STATE_PATCH_CONTROL_POINTS_EXT
@@ -747,7 +589,7 @@ VULKEASE_API VEResult veUpdateBuffer(VEDevice* device, VEBufferAddress address,
  * Get buffer size and properties
  */
 VULKEASE_API size_t veGetBufferSize(VEDevice* device, VEBufferAddress address);
-VULKEASE_API VEBufferUsage veGetBufferUsage(VEDevice* device, VEBufferAddress address);
+VULKEASE_API VkBufferUsageFlags veGetBufferUsage(VEDevice* device, VEBufferAddress address);
 
 /**
  * Convenience functions for common buffer types
@@ -782,35 +624,35 @@ VULKEASE_API void veDestroyTexture(VEDevice* device, VETextureIndex index);
  */
 VULKEASE_API VEResult veGetTextureSize(VEDevice* device, VETextureIndex index,
                                       uint32_t* width, uint32_t* height, uint32_t* depth);
-VULKEASE_API VEFormat veGetTextureFormat(VEDevice* device, VETextureIndex index);
+VULKEASE_API VkFormat veGetTextureFormat(VEDevice* device, VETextureIndex index);
 
 /**
  * Convenience functions for common texture types
  */
-VULKEASE_API VETextureIndex veCreateTexture1D(VEDevice* device, uint32_t width, VEFormat format,
-                                             VETextureUsage usage, const char* debugName);
+VULKEASE_API VETextureIndex veCreateTexture1D(VEDevice* device, uint32_t width, VkFormat format,
+                                             VkImageUsageFlags usage, const char* debugName);
 VULKEASE_API VETextureIndex veCreateTexture2D(VEDevice* device, uint32_t width, uint32_t height,
-                                             VEFormat format, VETextureUsage usage, const char* debugName);
+                                             VkFormat format, VkImageUsageFlags usage, const char* debugName);
 VULKEASE_API VETextureIndex veCreateTexture3D(VEDevice* device, uint32_t width, uint32_t height, uint32_t depth,
-                                             VEFormat format, VETextureUsage usage, const char* debugName);
+                                             VkFormat format, VkImageUsageFlags usage, const char* debugName);
 VULKEASE_API VETextureIndex veCreateTexture2DArray(VEDevice* device, uint32_t width, uint32_t height,
-                                                  uint32_t layers, VEFormat format, VETextureUsage usage,
+                                                  uint32_t layers, VkFormat format, VkImageUsageFlags usage,
                                                   const char* debugName);
-VULKEASE_API VETextureIndex veCreateTextureCube(VEDevice* device, uint32_t size, VEFormat format,
-                                               VETextureUsage usage, const char* debugName);
+VULKEASE_API VETextureIndex veCreateTextureCube(VEDevice* device, uint32_t size, VkFormat format,
+                                               VkImageUsageFlags usage, const char* debugName);
 VULKEASE_API VETextureIndex veCreateTexture2DMultisample(VEDevice* device, uint32_t width, uint32_t height,
-                                                        VEFormat format, VESampleCount sampleCount,
-                                                        VETextureUsage usage, const char* debugName);
+                                                        VkFormat format, VkSampleCountFlags sampleCount,
+                                                        VkImageUsageFlags usage, const char* debugName);
 
 /**
  * Load texture from file using STB Image
  */
 VULKEASE_API VETextureIndex veLoadTexture(VEDevice* device, const char* filename,
-                                         VETextureUsage usage, bool generateMips);
+                                         VkImageUsageFlags usage, bool generateMips);
 VULKEASE_API VETextureIndex veLoadHDRTexture(VEDevice* device, const char* filename,
-                                            VETextureUsage usage, bool generateMips);
+                                            VkImageUsageFlags usage, bool generateMips);
 VULKEASE_API VETextureIndex veLoadCubeTexture(VEDevice* device, const char* filenames[6],
-                                             VETextureUsage usage, bool generateMips);
+                                             VkImageUsageFlags usage, bool generateMips);
 
 /**
  * Generate mipmaps for texture
@@ -1092,7 +934,7 @@ VULKEASE_API void veTransitionTextureToLayout(VECommandBuffer* cmd, VETextureInd
  * Create swapchain for window
  */
 VULKEASE_API VESwapchain* veCreateSwapchain(VEDevice* device, void* windowHandle,
-                                           uint32_t width, uint32_t height, VEFormat forma, bool vsync);
+                                           uint32_t width, uint32_t height, VkFormat forma, bool vsync);
 VULKEASE_API void veDestroySwapchain(VESwapchain* swapchain);
 
 /**
@@ -1114,7 +956,7 @@ VULKEASE_API VEResult veResizeSwapchain(VESwapchain* swapchain, uint32_t width, 
  * Get swapchain information
  */
 VULKEASE_API VEResult veGetSwapchainSize(VESwapchain* swapchain, uint32_t* width, uint32_t* height);
-VULKEASE_API VEFormat veGetSwapchainFormat(VESwapchain* swapchain);
+VULKEASE_API VkFormat veGetSwapchainFormat(VESwapchain* swapchain);
 
 // =============================================================================
 // Debug and Profiling
@@ -1208,12 +1050,12 @@ typedef struct VEComputePushConstants {
 
 #define VE_DEFAULT_TEXTURE_DESC() \
     { .width = 0, .height = 0, .depth = 1, .mipLevels = 1, .arrayLayers = 1, .format = VE_FORMAT_RGBA8_UNORM, \
-      .usage = VE_TEXTURE_USAGE_SAMPLED, .sampleCount = VE_SAMPLE_COUNT_1, .initialData = NULL, .initialDataSize = 0, .debugName = NULL }
+      .usage = VE_TEXTURE_USAGE_SAMPLED, .sampleCount = VK_SAMPLE_COUNT_1_BIT, .initialData = NULL, .initialDataSize = 0, .debugName = NULL }
 
 #define VE_DEFAULT_SAMPLER_DESC() \
-    { .minFilter = VE_FILTER_LINEAR, .magFilter = VE_FILTER_LINEAR, .mipmapFilter = VE_FILTER_LINEAR, \
-      .addressModeU = VE_ADDRESS_MODE_REPEAT, .addressModeV = VE_ADDRESS_MODE_REPEAT, .addressModeW = VE_ADDRESS_MODE_REPEAT, \
-      .maxAnisotropy = 1.0f, .compareEnable = false, .compareOp = VE_COMPARE_OP_ALWAYS, .minLod = 0.0f, .maxLod = 1000.0f, .debugName = NULL }
+    { .minFilter = VK_FILTER_LINEAR, .magFilter = VK_FILTER_LINEAR, .mipmapFilter = VK_FILTER_LINEAR, \
+      .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT, .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT, .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT, \
+      .maxAnisotropy = 1.0f, .compareEnable = false, .compareOp = VK_COMPARE_OP_ALWAYS, .minLod = 0.0f, .maxLod = 1000.0f, .debugName = NULL }
 
 // Color constants
 #define VE_COLOR_BLACK   ((VEColor){0.0f, 0.0f, 0.0f, 1.0f})
