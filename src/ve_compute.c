@@ -52,44 +52,9 @@ void veBindComputeShader(VECommandBuffer* cmd, VEShader* shader) {
         return;
     }
     
-    VkShaderStageFlagBits stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    VkSampleCountFlags stage = VK_SHADER_STAGE_COMPUTE_BIT;
     
     veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, 1, &stage, &shaderInternal->shaderObject);
-}
-
-void veSetComputeConstants(VECommandBuffer* cmd, const void* data, size_t size, size_t offset) {
-    if (!cmd || !data || size == 0) {
-        return;
-    }
-    
-    VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
-    
-    // Push constants for compute shaders
-    // In a full implementation, we would need pipeline layout information
-    // For now, assume standard compute push constant layout
-    
-    // With VK_EXT_shader_object, push constants are defined in the shader objects themselves
-    // when creating the shader with vkCreateShadersEXT
-    // 
-    // NOTE: Currently VulkEase shaders don't define push constant ranges in their creation.
-    // The shader creation in ve_shader.c needs to be updated to include:
-    // - pushConstantRangeCount = 1  
-    // - pPushConstantRanges pointing to VulkEase's standard push constant layout
-    //
-    // Once shaders properly define their push constant interface, this function will work.
-    
-    // Simple bounds check for VulkEase's standard push constant structures (128 bytes each)
-    if (offset + size > 128) { // VulkEase standard structures are exactly 128 bytes
-        veSetError("Push constant size exceeds VulkEase standard limit (max 128 bytes, requested %zu+%zu)", offset, size);
-        return;
-    }
-    
-    // TODO: This will work once shaders define push constant ranges in their creation
-    // For now, this is a placeholder that shows the correct approach for shader objects
-    veSetError("Push constants not yet implemented - shader creation needs push constant ranges");
-    
-    // vkCmdPushConstants(internal->commandBuffer, ???, VK_SHADER_STAGE_COMPUTE_BIT, 
-    //                   (uint32_t)offset, (uint32_t)size, data);
 }
 
 // =============================================================================
@@ -339,11 +304,11 @@ void veBarrierImage(VECommandBuffer* cmd, VETextureIndex texture,
     imageBarrier.subresourceRange.layerCount = textureInternal->arrayLayers;
     
     // Handle depth/stencil formats
-    if (textureInternal->format >= VE_FORMAT_D16_UNORM && textureInternal->format <= VE_FORMAT_D32_SFLOAT_S8_UINT) {
+    if (textureInternal->format >= VK_FORMAT_D16_UNORM && textureInternal->format <= VK_FORMAT_D32_SFLOAT_S8_UINT) {
         imageBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        if (textureInternal->format == VE_FORMAT_D16_UNORM_S8_UINT || 
-            textureInternal->format == VE_FORMAT_D24_UNORM_S8_UINT ||
-            textureInternal->format == VE_FORMAT_D32_SFLOAT_S8_UINT) {
+        if (textureInternal->format == VK_FORMAT_D16_UNORM_S8_UINT || 
+            textureInternal->format == VK_FORMAT_D24_UNORM_S8_UINT ||
+            textureInternal->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
             imageBarrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
         }
     }

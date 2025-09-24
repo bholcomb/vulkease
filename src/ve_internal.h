@@ -10,7 +10,6 @@
 #define VE_INTERNAL_H
 
 #include "vulkease.h"
-#include <vulkan/vulkan.h>
 
 // VMA integration - declare interface only
 #define VMA_STATIC_VULKAN_FUNCTIONS 0
@@ -111,7 +110,7 @@ typedef struct VEBufferInternal {
     VmaAllocationInfo allocationInfo;
     VkDeviceAddress deviceAddress;
     size_t size;
-    VEBufferUsage usage;
+    VkBufferUsageFlags usage;
     bool persistentlyMapped;
     void* mappedData;
     char debugName[VE_MAX_DEBUG_NAME_LENGTH];
@@ -127,9 +126,9 @@ typedef struct VETextureInternal {
     uint32_t width, height, depth;
     uint32_t mipLevels;
     uint32_t arrayLayers;
-    VEFormat format;
-    VETextureUsage usage;
-    VESampleCount sampleCount;
+    VkFormat format;
+    VkImageUsageFlags usage;
+    VkSampleCountFlags sampleCount;
     VkImageLayout currentLayout;  // Track current layout for optimized transitions
     char debugName[VE_MAX_DEBUG_NAME_LENGTH];
     bool isValid;
@@ -182,7 +181,7 @@ typedef struct VEVertexConfigInternal {
     VEVertexBinding bindings[16];
     uint32_t attributeCount;
     VEVertexAttribute attributes[32];
-    VEPrimitiveTopology topology;
+    VkPrimitiveTopology topology;
     bool primitiveRestartEnable;
     
     char debugName[VE_MAX_DEBUG_NAME_LENGTH];
@@ -219,7 +218,7 @@ typedef struct VECommandBufferInternal {
 typedef struct VESwapchainInternal {
     VkSwapchainKHR swapchain;
     VkSurfaceKHR surface;
-    VEFormat format;
+    VkFormat format;
     uint32_t width, height;
     uint32_t imageCount;
     VkImage images[VE_MAX_SWAPCHAIN_IMAGES];
@@ -354,25 +353,15 @@ VEResult veUpdateTextureDescriptor(VEDeviceInternal* device, VETextureIndex inde
 VEResult veUpdateSamplerDescriptor(VEDeviceInternal* device, VESamplerIndex index);
 
 // Format conversion utilities
-VkImageUsageFlags veConvertTextureUsage(VETextureUsage usage);
 VkIndexType veIndexFormatToVk(VEIndexFormat format);
-VkBufferUsageFlags veConvertBufferUsage(VEBufferUsage usage);
-VkSampleCountFlagBits veConvertSampleCount(VESampleCount sampleCount);
-VkFormat veConvertFormat(VEFormat format);
-VkPrimitiveTopology veConvertPrimitiveTopology(VEPrimitiveTopology topology);
-VkVertexInputRate veConvertVertexInputRate(VEVertexInputRate inputRate);
-VkColorComponentFlags veConvertColorComponentFlags(VEColorComponentFlags flags);
 VkLogicOp veConvertLogicOp(VELogicOp logicOp);
 VkBlendOp veConvertBlendOp(VEBlendOp blendOp);
 VkBlendFactor veConvertBlendFactor(VEBlendFactor blendFactor);
-VkStencilOp veConvertStencilOp(VEStencilOp stencilOp);
-VkCompareOp veConvertCompareOp(VECompareOp compareOp);
 VkPolygonMode veConvertPolygonMode(VEPolygonMode polygonMode);
 VkFrontFace veConvertFrontFace(VEFrontFace frontFace);
 VkCullModeFlags veConvertCullMode(VECullMode cullMode);
 
-VkFormat veFormatToVk(VEFormat format);
-VEFormat veFormatFromVk(VkFormat format);
+
 VkIndexType veIndexFormatToVk(VEIndexFormat format);
 
 // Utility functions

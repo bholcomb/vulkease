@@ -519,12 +519,12 @@ void veTransitionTexture(VECommandBuffer* cmd, VETextureIndex texture,
     imageBarrier.subresourceRange.layerCount = textureInternal->arrayLayers;
     
     // Determine aspect mask based on format
-    if (textureInternal->format >= VE_FORMAT_D16_UNORM && textureInternal->format <= VE_FORMAT_D32_SFLOAT_S8_UINT) {
+    if (textureInternal->format >= VK_FORMAT_D16_UNORM && textureInternal->format <= VK_FORMAT_D32_SFLOAT_S8_UINT) {
         imageBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
         // Add stencil aspect for depth-stencil formats
-        if (textureInternal->format == VE_FORMAT_D16_UNORM_S8_UINT || 
-            textureInternal->format == VE_FORMAT_D24_UNORM_S8_UINT ||
-            textureInternal->format == VE_FORMAT_D32_SFLOAT_S8_UINT) {
+        if (textureInternal->format == VK_FORMAT_D16_UNORM_S8_UINT || 
+            textureInternal->format == VK_FORMAT_D24_UNORM_S8_UINT ||
+            textureInternal->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
             imageBarrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
         }
     } else {

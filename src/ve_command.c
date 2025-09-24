@@ -297,7 +297,7 @@ void veApplyRenderConfig(VECommandBuffer* cmd, VERenderConfig* config) {
     // 2. PRIMITIVE TOPOLOGY (REQUIRED)
     VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     if (configInternal->configTypes & VE_CONFIG_TYPE_VERTEX_INPUT) {
-        topology = veConvertPrimitiveTopology(configInternal->vertexInputConfig.topology);
+        topology = configInternal->vertexInputConfig.topology;
     }
     vkCmdSetPrimitiveTopology(vkCmd, topology);
     
@@ -372,10 +372,10 @@ void veApplyRenderConfig(VECommandBuffer* cmd, VERenderConfig* config) {
         if (depth->stencilTestEnable) {
             // Front face stencil operations
             vkCmdSetStencilOp(vkCmd, VK_STENCIL_FACE_FRONT_BIT,
-                veConvertStencilOp(depth->frontFailOp),
-                veConvertStencilOp(depth->frontPassOp), 
-                veConvertStencilOp(depth->frontDepthFailOp),
-                veConvertCompareOp(depth->frontCompareOp));
+                depth->frontFailOp,
+                depth->frontPassOp, 
+                depth->frontDepthFailOp,
+                depth->frontCompareOp);
                 
             vkCmdSetStencilCompareMask(vkCmd, VK_STENCIL_FACE_FRONT_BIT, depth->frontCompareMask);
             vkCmdSetStencilWriteMask(vkCmd, VK_STENCIL_FACE_FRONT_BIT, depth->frontWriteMask);
@@ -383,10 +383,10 @@ void veApplyRenderConfig(VECommandBuffer* cmd, VERenderConfig* config) {
             
             // Back face stencil operations  
             vkCmdSetStencilOp(vkCmd, VK_STENCIL_FACE_BACK_BIT,
-                veConvertStencilOp(depth->backFailOp),
-                veConvertStencilOp(depth->backPassOp),
-                veConvertStencilOp(depth->backDepthFailOp), 
-                veConvertCompareOp(depth->backCompareOp));
+                depth->backFailOp,
+                depth->backPassOp,
+                depth->backDepthFailOp, 
+                depth->backCompareOp);
                 
             vkCmdSetStencilCompareMask(vkCmd, VK_STENCIL_FACE_BACK_BIT, depth->backCompareMask);
             vkCmdSetStencilWriteMask(vkCmd, VK_STENCIL_FACE_BACK_BIT, depth->backWriteMask);
@@ -418,7 +418,7 @@ void veApplyRenderConfig(VECommandBuffer* cmd, VERenderConfig* config) {
         
         for (uint32_t i = 0; i < colorAttachmentCount; i++) {
             blendEnables[i] = blend->attachments[i].blendEnable ? VK_TRUE : VK_FALSE;
-            colorWriteMasks[i] = veConvertColorComponentFlags(blend->attachments[i].colorWriteMask);
+            colorWriteMasks[i] = blend->attachments[i].colorWriteMask;
             
             // Set blend equation for this attachment (even if blending is disabled)
             blendEquations[i] = (VkColorBlendEquationEXT){
@@ -477,7 +477,7 @@ void veApplyRenderConfig(VECommandBuffer* cmd, VERenderConfig* config) {
                 .sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT,
                 .binding = vertexInput->bindings[i].binding,
                 .stride = vertexInput->bindings[i].stride,
-                .inputRate = veConvertVertexInputRate(vertexInput->bindings[i].inputRate),
+                .inputRate = vertexInput->bindings[i].inputRate,
                 .divisor = vertexInput->bindings[i].divisor
             };
         }
@@ -488,7 +488,7 @@ void veApplyRenderConfig(VECommandBuffer* cmd, VERenderConfig* config) {
                 .sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT,
                 .location = vertexInput->attributes[i].location,
                 .binding = vertexInput->attributes[i].binding,
-                .format = veConvertFormat(vertexInput->attributes[i].format),
+                .format = vertexInput->attributes[i].format,
                 .offset = vertexInput->attributes[i].offset
             };
         }
@@ -509,12 +509,12 @@ void veApplyRenderConfig(VECommandBuffer* cmd, VERenderConfig* config) {
     if (configInternal->configTypes & VE_CONFIG_TYPE_MULTISAMPLE) {
         const VEMultisampleConfig* msaa = &configInternal->multisampleConfig;
         
-        veFuncs.vkCmdSetRasterizationSamplesEXT(vkCmd, veConvertSampleCount(msaa->rasterizationSamples));
+        veFuncs.vkCmdSetRasterizationSamplesEXT(vkCmd, msaa->rasterizationSamples);
         veFuncs.vkCmdSetAlphaToCoverageEnableEXT(vkCmd, msaa->alphaToCoverageEnable ? VK_TRUE : VK_FALSE);
         veFuncs.vkCmdSetAlphaToOneEnableEXT(vkCmd, msaa->alphaToOneEnable ? VK_TRUE : VK_FALSE);
 
         // Generate default sample mask (all samples enabled)
-        VkSampleCountFlagBits sampleCount = veConvertSampleCount(msaa->rasterizationSamples);
+        VkSampleCountFlags sampleCount = msaa->rasterizationSamples;
         uint32_t maskWords = (sampleCount + 31) / 32; // Calculate number of 32-bit words needed
         uint32_t sampleMask[16]; // Maximum reasonable sample count (512 samples = 16 words)
         
@@ -572,7 +572,7 @@ void veBindShader(VECommandBuffer* cmd, VEShader* shader) {
 
     internal->boundShaders = internal->boundShaders | shaderInternal->stage;
     
-    VkShaderStageFlagBits stage = veShaderStageToVk(shaderInternal->stage);
+    VkSampleCountFlags stage = veShaderStageToVk(shaderInternal->stage);
     
     veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, 1, &stage, &shaderInternal->shaderObject);
 }
@@ -580,7 +580,7 @@ void veBindShader(VECommandBuffer* cmd, VEShader* shader) {
 void veBindShaders(VECommandBuffer* cmd, uint32_t shaderCount, VEShader* const* shaders) {
     if (!cmd || shaderCount == 0 || !shaders) return;
     
-    VkShaderStageFlagBits stages[16];
+    VkSampleCountFlags stages[16];
     VkShaderEXT shaderObjects[16];
     uint32_t validCount = 0;
     
@@ -624,7 +624,7 @@ void veUnbindShaderStage(VECommandBuffer* cmd, VEShaderStage stage) {
     if (!cmd) return;
     
     VECommandBufferInternal* internal = (VECommandBufferInternal*)cmd;
-    VkShaderStageFlagBits vkStage = veShaderStageToVk(stage);
+    VkSampleCountFlags vkStage = veShaderStageToVk(stage);
     VkShaderEXT nullShader = VK_NULL_HANDLE;
     
     veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, 1, &vkStage, &nullShader);

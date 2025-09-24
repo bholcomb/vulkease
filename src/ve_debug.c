@@ -643,3 +643,18 @@ VEResult veValidateRenderConfig(VERenderConfig* config) {
     
     return VE_SUCCESS;
 }
+
+void veSetObjectDebugName(VEDeviceInternal* device, uint64_t objectHandle, 
+                                     VkObjectType objectType, const char* name) {
+    if (!device->context->validationEnabled || !name) {
+        return;
+    }
+        
+    VkDebugUtilsObjectNameInfoEXT nameInfo = {};
+    nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+    nameInfo.objectType = objectType;
+    nameInfo.objectHandle = objectHandle;
+    nameInfo.pObjectName = name;
+    
+    veFuncs.vkSetDebugUtilsObjectNameEXT(device->device, &nameInfo);
+}

@@ -111,21 +111,6 @@ extern "C" VkBuffer veGetVkBufferFromAddress(VEDeviceInternal* device, VEBufferA
 // Buffer Creation
 // =============================================================================
 
-static VkBufferUsageFlags veBufferUsageToVk(VEBufferUsage usage) {
-    VkBufferUsageFlags vkUsage = 0;
-    
-    if (usage & VE_BUFFER_USAGE_VERTEX) vkUsage |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-    if (usage & VE_BUFFER_USAGE_INDEX) vkUsage |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-    if (usage & VE_BUFFER_USAGE_UNIFORM) vkUsage |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-    if (usage & VE_BUFFER_USAGE_STORAGE) vkUsage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    if (usage & VE_BUFFER_USAGE_INDIRECT) vkUsage |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
-    if (usage & VE_BUFFER_USAGE_TRANSFER_SRC) vkUsage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    if (usage & VE_BUFFER_USAGE_TRANSFER_DST) vkUsage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    if (usage & VE_BUFFER_USAGE_CONDITIONAL_RENDERING) vkUsage |= VK_BUFFER_USAGE_CONDITIONAL_RENDERING_BIT_EXT;
-    
-    return vkUsage;
-}
-
 extern "C" VEBufferAddress veCreateBuffer(VEDevice* device, const VEBufferDesc* desc) {
     if (!device || !desc || desc->size == 0) {
         veSetError("Invalid parameters for buffer creation");
@@ -163,7 +148,7 @@ extern "C" VEBufferAddress veCreateBuffer(VEDevice* device, const VEBufferDesc* 
     VkBufferCreateInfo bufferInfo = {};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = desc->size;
-    bufferInfo.usage = veBufferUsageToVk(desc->usage) | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    bufferInfo.usage = desc->usage | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     
     VmaAllocationCreateInfo allocInfo = {};
@@ -463,25 +448,8 @@ static VEResult veUpdateBufferWithStaging(VEDeviceInternal* device, VEBufferInte
         memoryBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
         
         // Determine destination stage based on buffer usage
-        memoryBarrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
+        memoryBarrier.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
         memoryBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
-        
-        if (dstBuffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
-            memoryBarrier.dstStageMask |= VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT;
-            memoryBarrier.dstAccessMask |= VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
-        }
-        if (dstBuffer->usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) {
-            memoryBarrier.dstStageMask |= VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT;
-            memoryBarrier.dstAccessMask |= VK_ACCESS_2_INDEX_READ_BIT;
-        }
-        if (dstBuffer->usage & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT) {
-            memoryBarrier.dstStageMask |= VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
-            memoryBarrier.dstAccessMask |= VK_ACCESS_2_UNIFORM_READ_BIT;
-        }
-        if (dstBuffer->usage & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) {
-            memoryBarrier.dstStageMask |= VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-            memoryBarrier.dstAccessMask |= VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
-        }
         
         VkDependencyInfo dependencyInfo = {};
         dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -562,13 +530,13 @@ extern "C" size_t veGetBufferSize(VEDevice* device, VEBufferAddress address) {
     return (buffer && buffer->isValid) ? buffer->size : 0;
 }
 
-extern "C" VEBufferUsage veGetBufferUsage(VEDevice* device, VEBufferAddress address) {
-    if (!device || address == VE_INVALID_ADDRESS) return static_cast<VEBufferUsage>(0);
+extern "C" VkBufferUsageFlags veGetBufferUsage(VEDevice* device, VEBufferAddress address) {
+    if (!device || address == VE_INVALID_ADDRESS) return static_cast<VkBufferUsageFlags>(0);
     
     VEDeviceInternal* deviceInternal = reinterpret_cast<VEDeviceInternal*>(device);
     VEBufferInternal* buffer = veGetBufferFromAddress(deviceInternal, address);
     
-    return (buffer && buffer->isValid) ? buffer->usage : static_cast<VEBufferUsage>(0);
+    return (buffer && buffer->isValid) ? buffer->usage : static_cast<VkBufferUsageFlags>(0);
 }
 
 // =============================================================================
@@ -578,7 +546,7 @@ extern "C" VEBufferUsage veGetBufferUsage(VEDevice* device, VEBufferAddress addr
 extern "C" VEBufferAddress veCreateVertexBuffer(VEDevice* device, const void* vertices, size_t size, const char* debugName) {
     VEBufferDesc desc = {
         .size = size,
-        .usage = VE_BUFFER_USAGE_VERTEX,
+        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         .initialData = vertices,
         .initialDataSize = size,
         .persistentlyMapped = false,
@@ -591,7 +559,7 @@ extern "C" VEBufferAddress veCreateVertexBuffer(VEDevice* device, const void* ve
 extern "C" VEBufferAddress veCreateIndexBuffer(VEDevice* device, const void* indices, size_t size, const char* debugName) {
     VEBufferDesc desc = {
         .size = size,
-        .usage = VE_BUFFER_USAGE_INDEX,
+        .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
         .initialData = indices,
         .initialDataSize = size,
         .persistentlyMapped = false,
@@ -604,7 +572,7 @@ extern "C" VEBufferAddress veCreateIndexBuffer(VEDevice* device, const void* ind
 extern "C" VEBufferAddress veCreateUniformBuffer(VEDevice* device, size_t size, bool persistentlyMapped, const char* debugName) {
     VEBufferDesc desc = {
         .size = size,
-        .usage = VE_BUFFER_USAGE_UNIFORM,
+        .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
         .initialData = nullptr,
         .initialDataSize = 0,
         .persistentlyMapped = persistentlyMapped,
@@ -617,7 +585,7 @@ extern "C" VEBufferAddress veCreateUniformBuffer(VEDevice* device, size_t size, 
 extern "C" VEBufferAddress veCreateStorageBuffer(VEDevice* device, size_t size, const char* debugName) {
     VEBufferDesc desc = {
         .size = size,
-        .usage = VE_BUFFER_USAGE_STORAGE,
+        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
         .initialData = nullptr,
         .initialDataSize = 0,
         .persistentlyMapped = false,
@@ -630,7 +598,7 @@ extern "C" VEBufferAddress veCreateStorageBuffer(VEDevice* device, size_t size, 
 extern "C" VEBufferAddress veCreateIndirectBuffer(VEDevice* device, size_t size, const char* debugName) {
     VEBufferDesc desc = {
         .size = size,
-        .usage = static_cast<VEBufferUsage>(VE_BUFFER_USAGE_INDIRECT | VE_BUFFER_USAGE_STORAGE),
+        .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
         .initialData = nullptr,
         .initialDataSize = 0,
         .persistentlyMapped = false,
@@ -638,43 +606,4 @@ extern "C" VEBufferAddress veCreateIndirectBuffer(VEDevice* device, size_t size,
     };
     
     return veCreateBuffer(device, &desc);
-}
-
-// =============================================================================
-// Utility Functions  
-// =============================================================================
-
-extern "C" const char* veResultToString(VkResult result) {
-    switch (result) {
-        case VK_SUCCESS: return "VK_SUCCESS";
-        case VK_NOT_READY: return "VK_NOT_READY";
-        case VK_TIMEOUT: return "VK_TIMEOUT";
-        case VK_ERROR_OUT_OF_HOST_MEMORY: return "VK_ERROR_OUT_OF_HOST_MEMORY";
-        case VK_ERROR_OUT_OF_DEVICE_MEMORY: return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
-        case VK_ERROR_INITIALIZATION_FAILED: return "VK_ERROR_INITIALIZATION_FAILED";
-        case VK_ERROR_DEVICE_LOST: return "VK_ERROR_DEVICE_LOST";
-        case VK_ERROR_MEMORY_MAP_FAILED: return "VK_ERROR_MEMORY_MAP_FAILED";
-        default: return "Unknown VkResult";
-    }
-}
-
-extern "C" void vePrintVkResult(const char* operation, VkResult result) {
-    if (result != VK_SUCCESS) {
-        printf("VulkEase: %s failed with %s (%d)\n", operation, veResultToString(result), result);
-    }
-}
-
-extern "C" void veSetObjectDebugName(VEDeviceInternal* device, uint64_t objectHandle, 
-                                     VkObjectType objectType, const char* name) {
-    if (!device->context->validationEnabled || !name) {
-        return;
-    }
-        
-    VkDebugUtilsObjectNameInfoEXT nameInfo = {};
-    nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
-    nameInfo.objectType = objectType;
-    nameInfo.objectHandle = objectHandle;
-    nameInfo.pObjectName = name;
-    
-    veFuncs.vkSetDebugUtilsObjectNameEXT(device->device, &nameInfo);
 }

@@ -242,7 +242,7 @@ static bool initVulkEase(CubeApp* app) {
     void* windowData[] = {displayHandle, windowHandle};
 
     // Create swapchain using VulkEase's simple window handle approach
-    app->swapchain = veCreateSwapchain(app->device, windowData, WINDOW_WIDTH, WINDOW_HEIGHT, VE_FORMAT_BGRA8_SRGB, true);
+    app->swapchain = veCreateSwapchain(app->device, windowData, WINDOW_WIDTH, WINDOW_HEIGHT, VK_FORMAT_B8G8R8A8_SRGB, true);
 
 #elif defined(__APPLE__)
     void* windowHandle = NULL;    
@@ -334,12 +334,12 @@ static bool createGeometry(CubeApp* app) {
 static bool loadTexture(CubeApp* app) {
     // Load texture from file
     app->texture = veLoadTexture(app->device, "examples/data/testCard.png", 
-                                VE_TEXTURE_USAGE_SAMPLED, true);
+                                VK_IMAGE_USAGE_SAMPLED_BIT, true);
     if (app->texture == VE_INVALID_TEXTURE_INDEX) {
         fprintf(stderr, "Failed to load texture: %s\n", veGetLastError());
         // Create a simple fallback texture if file doesn't exist
-        app->texture = veCreateTexture2D(app->device, 2, 2, VE_FORMAT_RGBA8_UNORM,
-                                        VE_TEXTURE_USAGE_SAMPLED, "FallbackTexture");
+        app->texture = veCreateTexture2D(app->device, 2, 2, VK_FORMAT_R8G8B8A8_UNORM,
+                                        VK_IMAGE_USAGE_SAMPLED_BIT, "FallbackTexture");
         if (app->texture == VE_INVALID_TEXTURE_INDEX) {
             fprintf(stderr, "Failed to create fallback texture: %s\n", veGetLastError());
             return false;
@@ -370,7 +370,7 @@ static bool createRenderConfig(CubeApp* app) {
         {
             .binding = 0,
             .stride = sizeof(Vertex),
-            .inputRate = VE_VERTEX_INPUT_RATE_VERTEX,
+            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
             .divisor = 1
         }
     };
@@ -379,13 +379,13 @@ static bool createRenderConfig(CubeApp* app) {
         {
             .location = 0,  // Position
             .binding = 0,
-            .format = VE_FORMAT_RGB32_SFLOAT,
+            .format = VK_FORMAT_R32G32B32_SFLOAT,
             .offset = offsetof(Vertex, pos)
         },
         {
             .location = 1,  // Texture coordinates
             .binding = 0,
-            .format = VE_FORMAT_RG32_SFLOAT,
+            .format = VK_FORMAT_R32G32_SFLOAT,
             .offset = offsetof(Vertex, texCoord)
         }
     };
@@ -395,7 +395,7 @@ static bool createRenderConfig(CubeApp* app) {
         .bindings = bindings,
         .attributeCount = 2,
         .attributes = attributes,
-        .topology = VE_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
         .primitiveRestartEnable = false
     };
     

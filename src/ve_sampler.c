@@ -42,26 +42,6 @@ VESamplerInternal* veGetSampler(VEDeviceInternal* device, VESamplerIndex index) 
 }
 
 // =============================================================================
-// Sampler Conversion Utilities
-// =============================================================================
-
-static VkFilter veFilterToVk(VEFilter filter) {
-    return (VkFilter)filter;
-}
-
-static VkSamplerMipmapMode veMipmapModeToVk(VEFilter filter) {
-    return filter == VE_FILTER_NEAREST ? VK_SAMPLER_MIPMAP_MODE_NEAREST : VK_SAMPLER_MIPMAP_MODE_LINEAR;
-}
-
-static VkSamplerAddressMode veAddressModeToVk(VEAddressMode mode) {
-    return (VkSamplerAddressMode)mode;
-}
-
-static VkCompareOp veCompareOpToVk(VECompareOp op) {
-    return (VkCompareOp)op;
-}
-
-// =============================================================================
 // Sampler Creation
 // =============================================================================
 
@@ -92,17 +72,17 @@ VESamplerIndex veCreateSampler(VEDevice* device, const VESamplerDesc* desc) {
     
     VkSamplerCreateInfo samplerInfo = {0};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = veFilterToVk(desc->magFilter);
-    samplerInfo.minFilter = veFilterToVk(desc->minFilter);
-    samplerInfo.mipmapMode = veMipmapModeToVk(desc->mipmapFilter);
-    samplerInfo.addressModeU = veAddressModeToVk(desc->addressModeU);
-    samplerInfo.addressModeV = veAddressModeToVk(desc->addressModeV);
-    samplerInfo.addressModeW = veAddressModeToVk(desc->addressModeW);
+    samplerInfo.magFilter = desc->magFilter;
+    samplerInfo.minFilter = desc->minFilter;
+    samplerInfo.mipmapMode = desc->mipmapFilter;
+    samplerInfo.addressModeU = desc->addressModeU;
+    samplerInfo.addressModeV = desc->addressModeV;
+    samplerInfo.addressModeW = desc->addressModeW;
     samplerInfo.mipLodBias = 0.0f;
     samplerInfo.anisotropyEnable = desc->maxAnisotropy > 1.0f ? VK_TRUE : VK_FALSE;
     samplerInfo.maxAnisotropy = desc->maxAnisotropy;
     samplerInfo.compareEnable = desc->compareEnable ? VK_TRUE : VK_FALSE;
-    samplerInfo.compareOp = veCompareOpToVk(desc->compareOp);
+    samplerInfo.compareOp = desc->compareOp;
     samplerInfo.minLod = desc->minLod;
     samplerInfo.maxLod = desc->maxLod;
     samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
@@ -153,15 +133,15 @@ void veDestroySampler(VEDevice* device, VESamplerIndex index) {
 
 VESamplerIndex veCreateLinearSampler(VEDevice* device) {
     VESamplerDesc desc = {
-        .minFilter = VE_FILTER_LINEAR,
-        .magFilter = VE_FILTER_LINEAR,
-        .mipmapFilter = VE_FILTER_LINEAR,
-        .addressModeU = VE_ADDRESS_MODE_REPEAT,
-        .addressModeV = VE_ADDRESS_MODE_REPEAT,
-        .addressModeW = VE_ADDRESS_MODE_REPEAT,
+        .minFilter = VK_FILTER_LINEAR,
+        .magFilter = VK_FILTER_LINEAR,
+        .mipmapFilter = VK_FILTER_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
         .maxAnisotropy = 1.0f,
         .compareEnable = false,
-        .compareOp = VE_COMPARE_OP_ALWAYS,
+        .compareOp = VK_COMPARE_OP_ALWAYS,
         .minLod = 0.0f,
         .maxLod = 1000.0f,
         .debugName = "LinearSampler"
@@ -172,15 +152,15 @@ VESamplerIndex veCreateLinearSampler(VEDevice* device) {
 
 VESamplerIndex veCreateNearestSampler(VEDevice* device) {
     VESamplerDesc desc = {
-        .minFilter = VE_FILTER_NEAREST,
-        .magFilter = VE_FILTER_NEAREST,
-        .mipmapFilter = VE_FILTER_NEAREST,
-        .addressModeU = VE_ADDRESS_MODE_REPEAT,
-        .addressModeV = VE_ADDRESS_MODE_REPEAT,
-        .addressModeW = VE_ADDRESS_MODE_REPEAT,
+        .minFilter = VK_FILTER_NEAREST,
+        .magFilter = VK_FILTER_NEAREST,
+        .mipmapFilter = VK_FILTER_NEAREST,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
         .maxAnisotropy = 1.0f,
         .compareEnable = false,
-        .compareOp = VE_COMPARE_OP_ALWAYS,
+        .compareOp = VK_COMPARE_OP_ALWAYS,
         .minLod = 0.0f,
         .maxLod = 1000.0f,
         .debugName = "NearestSampler"
@@ -191,15 +171,15 @@ VESamplerIndex veCreateNearestSampler(VEDevice* device) {
 
 VESamplerIndex veCreateAnisotropicSampler(VEDevice* device, float maxAnisotropy) {
     VESamplerDesc desc = {
-        .minFilter = VE_FILTER_LINEAR,
-        .magFilter = VE_FILTER_LINEAR,
-        .mipmapFilter = VE_FILTER_LINEAR,
-        .addressModeU = VE_ADDRESS_MODE_REPEAT,
-        .addressModeV = VE_ADDRESS_MODE_REPEAT,
-        .addressModeW = VE_ADDRESS_MODE_REPEAT,
+        .minFilter = VK_FILTER_LINEAR,
+        .magFilter = VK_FILTER_LINEAR,
+        .mipmapFilter = VK_FILTER_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
         .maxAnisotropy = maxAnisotropy,
         .compareEnable = false,
-        .compareOp = VE_COMPARE_OP_ALWAYS,
+        .compareOp = VK_COMPARE_OP_ALWAYS,
         .minLod = 0.0f,
         .maxLod = 1000.0f,
         .debugName = "AnisotropicSampler"
@@ -210,15 +190,15 @@ VESamplerIndex veCreateAnisotropicSampler(VEDevice* device, float maxAnisotropy)
 
 VESamplerIndex veCreateShadowSampler(VEDevice* device) {
     VESamplerDesc desc = {
-        .minFilter = VE_FILTER_LINEAR,
-        .magFilter = VE_FILTER_LINEAR,
-        .mipmapFilter = VE_FILTER_NEAREST,
-        .addressModeU = VE_ADDRESS_MODE_CLAMP_TO_BORDER,
-        .addressModeV = VE_ADDRESS_MODE_CLAMP_TO_BORDER,
-        .addressModeW = VE_ADDRESS_MODE_CLAMP_TO_BORDER,
+        .minFilter = VK_FILTER_LINEAR,
+        .magFilter = VK_FILTER_LINEAR,
+        .mipmapFilter = VK_FILTER_NEAREST,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
         .maxAnisotropy = 1.0f,
         .compareEnable = true,
-        .compareOp = VE_COMPARE_OP_LESS_OR_EQUAL,
+        .compareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
         .minLod = 0.0f,
         .maxLod = 1000.0f,
         .debugName = "ShadowSampler"

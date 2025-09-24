@@ -152,7 +152,7 @@ static bool initVulkEase(GLFWwindow* window) {
     void* windowData[] = {displayHandle, windowHandle};
 
     // Create swapchain using VulkEase's simple window handle approach
-    g_swapchain = veCreateSwapchain(g_device, windowData, win_width, win_height, VE_FORMAT_BGRA8_SRGB, true);
+    g_swapchain = veCreateSwapchain(g_device, windowData, win_width, win_height, VK_FORMAT_B8G8R8A8_SRGB, true);
 
 #elif defined(__APPLE__)
     void* windowHandle = NULL;    
@@ -245,7 +245,7 @@ static bool createBuffers() {
     // Create particle storage buffer (read/write from compute shader)
     VEBufferDesc particleBufferDesc = {
         .size = sizeof(Particle) * PARTICLE_COUNT,
-        .usage = VE_BUFFER_USAGE_STORAGE,
+        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
         .initialData = particles,
         .initialDataSize = sizeof(Particle) * PARTICLE_COUNT,
         .persistentlyMapped = false,
@@ -264,7 +264,7 @@ static bool createBuffers() {
     // Create vertex buffer for quad geometry
     VEBufferDesc vertexBufferDesc = {
         .size = sizeof(quadVertices),
-        .usage = VE_BUFFER_USAGE_VERTEX,
+        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         .initialData = quadVertices,
         .initialDataSize = sizeof(quadVertices),
         .persistentlyMapped = false,
