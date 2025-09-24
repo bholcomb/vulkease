@@ -117,41 +117,7 @@ typedef enum VEConfigType {
     VE_CONFIG_TYPE_SCISSOR = 0x80,          // Scissor settings
     VE_CONFIG_TYPE_COMPLETE = 0xFF          // All categories combined
 } VEConfigType;
-
 typedef uint32_t VEConfigTypeFlags;
-
-// Rasterization state enums (VK_EXT_extended_dynamic_state3)
-typedef enum VECullMode {
-    VE_CULL_MODE_NONE = 0,
-    VE_CULL_MODE_FRONT = 1,
-    VE_CULL_MODE_BACK = 2,
-    VE_CULL_MODE_FRONT_AND_BACK = 3
-} VECullMode;
-
-typedef enum VEFrontFace {
-    VE_FRONT_FACE_COUNTER_CLOCKWISE = 0,
-    VE_FRONT_FACE_CLOCKWISE = 1
-} VEFrontFace;
-
-typedef enum VEPolygonMode {
-    VE_POLYGON_MODE_FILL = 0,
-    VE_POLYGON_MODE_LINE = 1,
-    VE_POLYGON_MODE_POINT = 2
-} VEPolygonMode;
-
-// Debug and profiling enums
-typedef enum VEObjectType {
-    VE_OBJECT_TYPE_BUFFER,
-    VE_OBJECT_TYPE_IMAGE,
-    VE_OBJECT_TYPE_IMAGE_VIEW,
-    VE_OBJECT_TYPE_SAMPLER,
-    VE_OBJECT_TYPE_SHADER,
-    VE_OBJECT_TYPE_COMMAND_BUFFER,
-    VE_OBJECT_TYPE_QUEUE,
-    VE_OBJECT_TYPE_DEVICE,
-    VE_OBJECT_TYPE_INSTANCE,
-    VE_OBJECT_TYPE_PHYSICAL_DEVICE
-} VEObjectType;
 
 typedef enum VEMessageSeverity {
     VE_MESSAGE_SEVERITY_VERBOSE,
@@ -230,9 +196,9 @@ typedef struct VESamplerDesc {
 // Rasterization configuration (VK_EXT_extended_dynamic_state3)
 typedef struct VERasterConfig {
     // Basic rasterization
-    VECullMode cullMode;                    // VK_DYNAMIC_STATE_CULL_MODE
-    VEFrontFace frontFace;                  // VK_DYNAMIC_STATE_FRONT_FACE
-    VEPolygonMode polygonMode;              // VK_DYNAMIC_STATE_POLYGON_MODE_EXT
+    VkCullModeFlags cullMode;               // VK_DYNAMIC_STATE_CULL_MODE
+    VkFrontFace frontFace;                  // VK_DYNAMIC_STATE_FRONT_FACE
+    VkPolygonMode polygonMode;              // VK_DYNAMIC_STATE_POLYGON_MODE_EXT
     float lineWidth;                        // VK_DYNAMIC_STATE_LINE_WIDTH
     
     // Depth bias
@@ -762,7 +728,7 @@ VULKEASE_API void veOverrideBlendState(VECommandBuffer* cmd, const VEBlendConfig
 VULKEASE_API void veSetWireframe(VECommandBuffer* cmd, bool enabled);
 VULKEASE_API void veSetAlphaBlending(VECommandBuffer* cmd, bool enabled);
 VULKEASE_API void veSetDepthTesting(VECommandBuffer* cmd, bool testEnabled, bool writeEnabled);
-VULKEASE_API void veSetCulling(VECommandBuffer* cmd, VECullMode cullMode);
+VULKEASE_API void veSetCulling(VECommandBuffer* cmd, VkCullModeFlags cullMode);
 
 /**
  * Push constants for bindless resource access

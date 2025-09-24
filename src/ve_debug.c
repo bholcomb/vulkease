@@ -15,7 +15,7 @@
 // Debug Utilities
 // =============================================================================
 
-void veSetDebugName(VEDevice* device, uint64_t objectHandle, VEObjectType objectType, const char* name) {
+void veSetDebugName(VEDevice* device, uint64_t objectHandle, VkObjectType objectType, const char* name) {
     if (!device || !name) return;
     
     VEDeviceInternal* deviceInternal = (VEDeviceInternal*)device;
@@ -24,22 +24,7 @@ void veSetDebugName(VEDevice* device, uint64_t objectHandle, VEObjectType object
         return;
     }
     
-    VkObjectType vkObjectType;
-    switch (objectType) {
-        case VE_OBJECT_TYPE_BUFFER: vkObjectType = VK_OBJECT_TYPE_BUFFER; break;
-        case VE_OBJECT_TYPE_IMAGE: vkObjectType = VK_OBJECT_TYPE_IMAGE; break;
-        case VE_OBJECT_TYPE_IMAGE_VIEW: vkObjectType = VK_OBJECT_TYPE_IMAGE_VIEW; break;
-        case VE_OBJECT_TYPE_SAMPLER: vkObjectType = VK_OBJECT_TYPE_SAMPLER; break;
-        case VE_OBJECT_TYPE_SHADER: vkObjectType = VK_OBJECT_TYPE_SHADER_EXT; break;
-        case VE_OBJECT_TYPE_COMMAND_BUFFER: vkObjectType = VK_OBJECT_TYPE_COMMAND_BUFFER; break;
-        case VE_OBJECT_TYPE_QUEUE: vkObjectType = VK_OBJECT_TYPE_QUEUE; break;
-        case VE_OBJECT_TYPE_DEVICE: vkObjectType = VK_OBJECT_TYPE_DEVICE; break;
-        case VE_OBJECT_TYPE_INSTANCE: vkObjectType = VK_OBJECT_TYPE_INSTANCE; break;
-        case VE_OBJECT_TYPE_PHYSICAL_DEVICE: vkObjectType = VK_OBJECT_TYPE_PHYSICAL_DEVICE; break;
-        default: return;
-    }
-    
-    veSetObjectDebugName(deviceInternal, objectHandle, vkObjectType, name);
+    veSetObjectDebugName(deviceInternal, objectHandle, objectType, name);
 }
 
 // =============================================================================
