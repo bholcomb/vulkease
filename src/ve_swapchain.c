@@ -211,7 +211,7 @@ VESwapchain* veCreateSwapchain(VEDevice* device, void* windowHandle,
     swapchain->format = format;
     swapchain->width = width;
     swapchain->height = height;
-    swapchain->device = device;
+    swapchain->device = deviceInternal;
 
     // Create surface
     VkResult result = veCreateSurface(deviceInternal->context, windowHandle, &swapchain->surface);

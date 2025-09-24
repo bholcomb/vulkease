@@ -30,6 +30,12 @@
 #define WINDOW_HEIGHT 600
 #define WINDOW_TITLE "VulkEase - Spinning Cube"
 
+#if DEBUG
+bool vsync = true;
+#else
+bool vsync = false;
+#endif
+
 // Math constants
 #define PI 3.14159265359f
 
@@ -242,7 +248,7 @@ static bool initVulkEase(CubeApp* app) {
     void* windowData[] = {displayHandle, windowHandle};
 
     // Create swapchain using VulkEase's simple window handle approach
-    app->swapchain = veCreateSwapchain(app->device, windowData, WINDOW_WIDTH, WINDOW_HEIGHT, VK_FORMAT_B8G8R8A8_SRGB, true);
+    app->swapchain = veCreateSwapchain(app->device, windowData, WINDOW_WIDTH, WINDOW_HEIGHT, VK_FORMAT_B8G8R8A8_SRGB, vsync);
 
 #elif defined(__APPLE__)
     void* windowHandle = NULL;    
@@ -543,7 +549,11 @@ static void renderFrame(CubeApp* app) {
 static void mainLoop(CubeApp* app) {
     app->lastTime = glfwGetTime();
     
-    while (!glfwWindowShouldClose(app->window)) {
+    uint64_t frameCount = 0;
+    bool shouldQuit = false;
+    double frameTime = 0.0;
+    while (!glfwWindowShouldClose(app->window) && !shouldQuit) {
+        double start = glfwGetTime();
         glfwPollEvents();
         
         // Handle window minimize
@@ -556,6 +566,18 @@ static void mainLoop(CubeApp* app) {
         
         updateUniforms(app);
         renderFrame(app);
+
+        frameCount++;
+        if(frameCount % 1000 == 0) printf("Average Framerate: %4.2fms\n", (frameTime / (double)frameCount) * 1000.0);
+        if(frameCount % 10000 == 0) vePrintDebugInfo(app->device);
+
+        if(glfwGetKey(app->window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+        {
+            shouldQuit = true;
+        }
+
+        double end = glfwGetTime();
+        frameTime += (end - start);
     }
     
     veDeviceWaitIdle(app->device);
