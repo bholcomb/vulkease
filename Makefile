@@ -23,12 +23,29 @@ EXAMPLE_TRIANGLE = 01_triangle
 EXAMPLE_PARTICLES = 02_compute_particles
 EXAMPLE_CUBE = 03_cube
 
+# Build config: debug (default) or release
+CONFIG ?= debug
+
 # Compilers and flags
 CC = gcc
 CXX = g++
-CFLAGS = -std=c11 -fPIC -Wall -Wextra -O0 -DDEBUG -g
-CXXFLAGS = -std=c++14 -fPIC -Wall -Wextra -std=c++17 -O0 -DDEBUG -g
-EXAMPLE_CFLAGS = -std=c11 -Wall -Wextra -O0 -DDEBUG -g
+
+CFLAGS = -std=c11 -fPIC -Wall -Wextra
+CXXFLAGS = -std=c++14 -fPIC -Wall -Wextra -std=c++17
+EXAMPLE_CFLAGS = -std=c11 -Wall -Wextra
+
+
+# Per-config flags
+ifeq ($(CONFIG),debug)
+  CFLAGS   += -O0 -DDEBUG -g
+  CXXFLAGS += -O0 -DDEBUG -g
+else ifeq ($(CONFIG),release)
+  CFLAGS   += -O3
+  CXXFLAGS += -O3
+else
+  $(error Unknown CONFIG '$(CONFIG)'; use CONFIG=debug or CONFIG=release)
+endif
+
 
 # Include directories
 INCLUDES = -I$(SRC_DIR) -I$(EXTERNAL_DIR) -I/usr/include/vulkan
