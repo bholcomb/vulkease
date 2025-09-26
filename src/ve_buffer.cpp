@@ -35,7 +35,8 @@ extern "C" VEResult veInitializeVMA(VEDeviceInternal *device)
    allocatorInfo.physicalDevice = device->physicalDevice;
    allocatorInfo.device = device->device;
    allocatorInfo.instance = device->context->instance;
-   allocatorInfo.vulkanApiVersion = device->deviceProperties.apiVersion;
+   //allocatorInfo.vulkanApiVersion = device->deviceProperties.apiVersion;
+   allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3; //TODO: move to 1.4
    allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
    allocatorInfo.pVulkanFunctions = &vulkanFunctions;
 
