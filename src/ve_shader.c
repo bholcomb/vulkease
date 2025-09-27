@@ -136,6 +136,27 @@ static bool compileGLSLToSPIRV(const char *glslSource, VkShaderStageFlags stage,
 // Shader Creation
 // =============================================================================
 
+static VkShaderStageFlags getPossibleNextStages(VkShaderStageFlags stage)
+{
+   switch (stage)
+   {
+   case VK_SHADER_STAGE_VERTEX_BIT:
+      return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT | VK_SHADER_STAGE_GEOMETRY_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+   case VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT:
+      return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+   case VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT:
+      return VK_SHADER_STAGE_GEOMETRY_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+   case VK_SHADER_STAGE_GEOMETRY_BIT:
+      return VK_SHADER_STAGE_FRAGMENT_BIT;
+   case VK_SHADER_STAGE_FRAGMENT_BIT:
+      return 0;
+   case VK_SHADER_STAGE_COMPUTE_BIT:
+      return 0;
+   default:
+      return 0;
+   }
+}
+
 VEShader *veCreateShaderFromSPIRV(VEDevice *device, VkShaderStageFlags stage, const uint32_t *code, size_t codeSize,
                                   const char *entryPoint, const char *debugName)
 {
@@ -173,12 +194,14 @@ VEShader *veCreateShaderFromSPIRV(VEDevice *device, VkShaderStageFlags stage, co
        deviceInternal->samplerDescriptorSetLayout  // will be set = 1 in shaders
    };
 
-   VkPushConstantRange shaderPushRange = {.stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS, .offset = 0, .size = 128};
+   VkPushConstantRange shaderPushRange = {
+       .stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS, .offset = 0, .size = VE_MAX_PUSH_CONSTANT_BYTES};
 
    // Create shader object using VK_EXT_shader_object
    VkShaderCreateInfoEXT shaderCreateInfo = {0};
    shaderCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT;
    shaderCreateInfo.stage = stage;
+   shaderCreateInfo.nextStage = getPossibleNextStages(stage);
    shaderCreateInfo.codeType = VK_SHADER_CODE_TYPE_SPIRV_EXT;
    shaderCreateInfo.codeSize = codeSize;
    shaderCreateInfo.pCode = code;

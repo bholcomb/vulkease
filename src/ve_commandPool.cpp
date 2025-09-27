@@ -73,45 +73,52 @@ extern "C" VEResult veAllocateCommandBuffer(VEDeviceInternal *device, VECommandP
                                             VECommandBufferInternal **outCmd)
 {
    // Find free command buffer
-   for (uint32_t i = 0; i < VE_MAX_COMMAND_BUFFERS; i++)
+   uint32_t checkCount = 0;
+   uint32_t nextBuffer = pool->nextFreeCommandBuffer;
+   while (pool->commandBufferInUse[nextBuffer])
    {
-      if (!pool->commandBufferInUse[i])
+      nextBuffer = (nextBuffer++) % VE_MAX_COMMAND_BUFFERS; // wrap around looking for a free one
+      checkCount++;
+      if (checkCount > VE_MAX_COMMAND_BUFFERS)
       {
-         if (!pool->commandBuffers[i].commandBuffer)
-         {
-            // Allocate new command buffer
-            VkCommandBufferAllocateInfo allocInfo = {};
-            allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-            allocInfo.commandPool = pool->commandPool;
-            allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-            allocInfo.commandBufferCount = 1;
-
-            VkResult result =
-                vkAllocateCommandBuffers(device->device, &allocInfo, &pool->commandBuffers[i].commandBuffer);
-            if (result != VK_SUCCESS)
-            {
-               veSetError("Failed to allocate command buffer (VkResult: %d)", result);
-               return VE_ERROR_OUT_OF_MEMORY;
-            }
-
-            pool->commandBuffers[i].commandPool = pool;
-            pool->commandBuffers[i].index = i;
-         }
-
-         pool->commandBufferInUse[i] = true;
-         pool->commandBuffers[i].device = device; // Store device reference
-         pool->commandBuffers[i].isRecording = false;
-         pool->commandBuffers[i].isOneTime = false;
-
-         *outCmd = &pool->commandBuffers[i];
-
-         pool->commandBufferCount++;
-         return VE_SUCCESS;
+         veSetError("Failed to allocate command buffer");
+         return VE_ERROR_OUT_OF_MEMORY;
       }
    }
 
-   veSetError("No free command buffers available");
-   return VE_ERROR_OUT_OF_MEMORY;
+   // next free buffer is the next one
+   pool->nextFreeCommandBuffer = (nextBuffer + 1) % VE_MAX_COMMAND_BUFFERS; // wrap around
+
+   if (!pool->commandBuffers[nextBuffer].commandBuffer)
+   {
+      // Allocate new command buffer
+      VkCommandBufferAllocateInfo allocInfo = {};
+      allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+      allocInfo.commandPool = pool->commandPool;
+      allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+      allocInfo.commandBufferCount = 1;
+
+      VkResult result =
+          vkAllocateCommandBuffers(device->device, &allocInfo, &pool->commandBuffers[nextBuffer].commandBuffer);
+      if (result != VK_SUCCESS)
+      {
+         veSetError("Failed to allocate command buffer (VkResult: %d)", result);
+         return VE_ERROR_OUT_OF_MEMORY;
+      }
+
+      pool->commandBuffers[nextBuffer].commandPool = pool;
+      pool->commandBuffers[nextBuffer].index = nextBuffer;
+   }
+
+   pool->commandBufferInUse[nextBuffer] = true;
+   pool->commandBuffers[nextBuffer].device = device; // Store device reference
+   pool->commandBuffers[nextBuffer].isRecording = false;
+   pool->commandBuffers[nextBuffer].isOneTime = false;
+
+   *outCmd = &pool->commandBuffers[nextBuffer];
+
+   pool->commandBufferCount++;
+   return VE_SUCCESS;
 }
 
 extern "C" void veFreeCommandBuffer(VECommandBufferInternal *cmd)

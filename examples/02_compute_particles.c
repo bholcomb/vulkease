@@ -23,6 +23,12 @@
 #define VERTEX_SHADER_PATH "examples/shaders/particles.vert.spv"
 #define FRAGMENT_SHADER_PATH "examples/shaders/particles.frag.spv"
 
+#if DEBUG
+bool vsync = true;
+#else
+bool vsync = false;
+#endif
+
 // Particle structure (used in both CPU and GPU)
 typedef struct {
     float position[2];
@@ -152,7 +158,7 @@ static bool initVulkEase(GLFWwindow* window) {
     void* windowData[] = {displayHandle, windowHandle};
 
     // Create swapchain using VulkEase's simple window handle approach
-    g_swapchain = veCreateSwapchain(g_device, windowData, win_width, win_height, VK_FORMAT_B8G8R8A8_SRGB, true);
+    g_swapchain = veCreateSwapchain(g_device, windowData, win_width, win_height, VK_FORMAT_B8G8R8A8_SRGB, vsync);
 
 #elif defined(__APPLE__)
     void* windowHandle = NULL;    
@@ -424,18 +430,6 @@ static void render(float deltaTime, float time) {
     }
 }
 
-static void printPerformanceStats() {
-    VEPerformanceStats stats = {0};
-    VEMemoryStats memStats = {0};
-    
-    veGetPerformanceStats(g_device, &stats);
-    veGetMemoryStats(g_device, &memStats);
-    
-    printf("\rFrame: %lu ns | Draws: %u | Memory: %lu bytes", 
-           (unsigned long)stats.frameTime, stats.drawCalls, (unsigned long)memStats.totalAllocated);
-    fflush(stdout);
-}
-
 static void cleanup() {
     if (g_device) {
         veDeviceWaitIdle(g_device);
@@ -501,33 +495,31 @@ int main() {
     printf("Move mouse to attract particles\n");
     
     double lastTime = glfwGetTime();
-    double statsTime = lastTime;
     
-    while (!glfwWindowShouldClose(window)) {
+    uint64_t frameCount = 0;
+    bool shouldQuit = false;
+    double frameTime = 0.0;
+    while (!glfwWindowShouldClose(window) && !shouldQuit) {
+        double start = glfwGetTime();
         glfwPollEvents();
         
-        double currentTime = glfwGetTime();
-        float deltaTime = (float)(currentTime - lastTime);
-        float time = (float)currentTime;
-        lastTime = currentTime;
-        
+        float deltaTime = (float)(start - lastTime);
+        float time = (float)start;
+        lastTime = start;
+    
         render(deltaTime, time);
         
-        // Note: Frame stats update not implemented yet
-        
-        // Print performance stats every second
-        if (currentTime - statsTime >= 1.0) {
-            printPerformanceStats();
-            statsTime = currentTime;
+        frameCount++;
+        if(frameCount % 1000 == 0) printf("Average Framerate: %f:4.2ms\n", (frameTime / (double)frameCount) * 1000.0);
+        if(frameCount % 10000 == 0) vePrintDebugInfo(g_device);
+
+        if(glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+        {
+            shouldQuit = true;
         }
-        
-        // Cap frame rate to prevent excessive GPU usage
-        if (deltaTime < 1.0f / 120.0f) {
-            double sleepTime = (1.0f / 120.0f) - deltaTime;
-            if (sleepTime > 0) {
-                glfwWaitEventsTimeout(sleepTime);
-            }
-        }
+
+        double end = glfwGetTime();
+        frameTime += (end - start);
     }
     
     printf("\nShutting down...\n");
