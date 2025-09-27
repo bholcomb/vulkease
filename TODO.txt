@@ -1,5 +1,6 @@
 [X] Staging buffer for uploading data to GPU only buffers.
-[ ] External syncronization for 
+[ ] Move to C++ for implementation files
+[ ] Thread safety and syncronization for 
 [ ]     vkQueueSubmit
 [ ]     vkQueuePresentKHR
 [ ]     vkQueueWaitIdle
@@ -10,4 +11,4 @@
 [ ]     vkResetCommandPool
 [ ]     vkCreateDevice
 [ ]     vkDestroyDevicev
-[ ] Upgrade to vulkan 1.4 (blocked by driver version only supporting 1.3)
+[X] Upgrade to vulkan 1.4 (blocked by driver version only supporting 1.3)
