@@ -37,6 +37,12 @@ static VERenderConfig* g_renderConfig = NULL;
 int win_width = 800;
 int win_height = 600;
 
+#if DEBUG
+bool vsync = true;
+#else
+bool vsync = false;
+#endif
+
 // Animation state
 static double g_startTime = 0.0;
 
@@ -125,7 +131,7 @@ static bool initVulkEase(GLFWwindow* window) {
     void* windowData[] = {displayHandle, windowHandle};
 
     // Create swapchain using VulkEase's simple window handle approach
-    g_swapchain = veCreateSwapchain(g_device, windowData, win_width, win_height, VK_FORMAT_B8G8R8A8_SRGB, true);
+    g_swapchain = veCreateSwapchain(g_device, windowData, win_width, win_height, VK_FORMAT_B8G8R8A8_SRGB, vsync);
 
 #elif defined(__APPLE__)
     void* windowHandle = NULL;    
@@ -372,8 +378,8 @@ int main() {
         render();
 
         frameCount++;
-        if(frameCount % 100 == 0) printf("Average Framerate: %f:4.2ms\n", (frameTime / (double)frameCount) * 1000.0);
-        if(frameCount % 1000 == 0) vePrintDebugInfo(g_device);
+        if(frameCount % 1000 == 0) printf("Average Framerate: %f:4.2ms\n", (frameTime / (double)frameCount) * 1000.0);
+        if(frameCount % 10000 == 0) vePrintDebugInfo(g_device);
 
         if(glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         {

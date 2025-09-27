@@ -37,13 +37,14 @@ extern "C"
 #define VE_MAX_BUFFERS 65536
 #define VE_MAX_TEXTURES 65536
 #define VE_MAX_SAMPLERS 4096
-#define VE_MAX_COMMAND_BUFFERS 64
+#define VE_MAX_COMMAND_BUFFERS 128
 #define VE_MAX_DEBUG_NAME_LENGTH 256
 #define VE_MAX_RENDER_CONFIGS 1024
 #define VE_MAX_VERTEX_CONFIGS 1024
 #define VE_MAX_SHADER_CONFIGS 1024
 #define VE_MAX_SHADERS 4096
 #define VE_MAX_SWAPCHAIN_IMAGES 8
+#define VE_MAX_FRAMES_IN_FLIGHT 3
 #define VE_MAX_COLOR_ATTACHMENTS 4
 #define VE_MAX_VERTEX_BINDINGS 16
 #define VE_MAX_VERTEX_ATTRIBUTES 16
@@ -80,7 +81,7 @@ extern "C"
    // Device features
    typedef struct VEDeviceFeatures
    {
-      // Core features
+      // Core Vulkan 1.0 features
       bool samplerAnisotropy;
       bool fillModeNonSolid;
       bool wideLines;
@@ -89,13 +90,18 @@ extern "C"
       // Modern features (Vulkan 1.2+)
       bool bufferDeviceAddress;
       bool descriptorIndexing;
-      bool dynamicRendering;
+      bool scalarBlockLayout;
       bool updateAfterBind;
+      bool shaderInt8;
+      bool shaderInt16;
 
-      // Extension features
-      bool extendedDynamicState3;
-      bool vertexInputDynamicState;
-      bool shaderObject;
+      // Core Vulkan 1.3 features (mandatory)
+      bool dynamicRendering;
+
+      // Extension features 
+      bool extendedDynamicState3;   // VK_EXT_extended_dynamic_state3
+      bool vertexInputDynamicState; // VK_EXT_vertex_input_dynamic_state
+      bool shaderObject;            // VK_EXT_shader_object
    } VEDeviceFeatures;
 
    // Command pool management
@@ -104,6 +110,7 @@ extern "C"
       VkCommandPool commandPool;
       VECommandBufferInternal *commandBuffers;
       bool *commandBufferInUse;
+      uint32_t nextFreeCommandBuffer;
       uint32_t commandBufferCount;
       uint32_t queueFamily;
    } VECommandPool;
@@ -239,9 +246,16 @@ extern "C"
       VkImageView imageViews[VE_MAX_SWAPCHAIN_IMAGES];
       VETextureIndex textureIndices[VE_MAX_SWAPCHAIN_IMAGES];
       uint32_t currentImageIndex;
-      VkSemaphore imageAvailableSemaphore;
-      VkSemaphore renderFinishedSemaphore;
-      VkFence inFlightFence;
+
+      // Per-frame resources (based on frames in flight)
+      uint32_t maxFramesInFlight;
+      uint32_t currentFrame;
+      VkSemaphore imageAvailableSemaphores[VE_MAX_FRAMES_IN_FLIGHT];
+      VkFence inFlightFences[VE_MAX_FRAMES_IN_FLIGHT];
+
+      // Per-swapchain-image resources
+      VkSemaphore renderFinishedSemaphores[VE_MAX_SWAPCHAIN_IMAGES];
+
       bool needsRecreation;
       VEDeviceInternal *device;
    } VESwapchainInternal;
@@ -373,7 +387,6 @@ extern "C"
 
    typedef struct VEFuncs
    {
-      // Device Functions to initialize
       // VK_EXT_shader_object
       PFN_vkCreateShadersEXT vkCreateShadersEXT;
       PFN_vkCmdBindShadersEXT vkCmdBindShadersEXT;
@@ -386,13 +399,11 @@ extern "C"
       PFN_vkCmdSetColorBlendEnableEXT vkCmdSetColorBlendEnableEXT;
       PFN_vkCmdSetColorBlendEquationEXT vkCmdSetColorBlendEquationEXT;
       PFN_vkCmdSetColorWriteMaskEXT vkCmdSetColorWriteMaskEXT;
-      PFN_vkCmdSetVertexInputEXT vkCmdSetVertexInputEXT;
       PFN_vkCmdSetRasterizationSamplesEXT vkCmdSetRasterizationSamplesEXT;
       PFN_vkCmdSetSampleMaskEXT vkCmdSetSampleMaskEXT;
       PFN_vkCmdSetAlphaToCoverageEnableEXT vkCmdSetAlphaToCoverageEnableEXT;
       PFN_vkCmdSetAlphaToOneEnableEXT vkCmdSetAlphaToOneEnableEXT;
       PFN_vkCmdSetPatchControlPointsEXT vkCmdSetPatchControlPointsEXT;
-
       PFN_vkCmdSetConservativeRasterizationModeEXT vkCmdSetConservativeRasterizationModeEXT;
       PFN_vkCmdSetLineRasterizationModeEXT vkCmdSetLineRasterizationModeEXT;
       PFN_vkCmdSetProvokingVertexModeEXT vkCmdSetProvokingVertexModeEXT;
@@ -400,6 +411,9 @@ extern "C"
       // extended dynamic state 2 logic op
       PFN_vkCmdSetLogicOpEnableEXT vkCmdSetLogicOpEnableEXT;
       PFN_vkCmdSetLogicOpEXT vkCmdSetLogicOpEXT;
+
+      // VK_EXT_vertex_input_dynamic_state (still required)
+      PFN_vkCmdSetVertexInputEXT vkCmdSetVertexInputEXT;
 
       // Instance functions to initialize
       PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;
@@ -409,7 +423,6 @@ extern "C"
       PFN_vkCmdBeginDebugUtilsLabelEXT vkCmdBeginDebugUtilsLabelEXT;
       PFN_vkCmdInsertDebugUtilsLabelEXT vkCmdInsertDebugUtilsLabelEXT;
       PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabelEXT;
-
    } VEFuncs;
 
    extern VEFuncs veFuncs;

@@ -375,35 +375,33 @@ VESwapchain *veCreateSwapchain(VEDevice *device, void *windowHandle, uint32_t wi
    }
 
    // Create synchronization objects
-   VkSemaphoreCreateInfo semaphoreInfo = {0};
-   semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+   swapchain->maxFramesInFlight = VE_MAX_FRAMES_IN_FLIGHT;
+   swapchain->currentFrame = 0;
 
-   VkFenceCreateInfo fenceInfo = {0};
-   fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-   fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-   result = vkCreateSemaphore(deviceInternal->device, &semaphoreInfo, NULL, &swapchain->imageAvailableSemaphore);
-   if (result != VK_SUCCESS)
+   // Create per-frame synchronization objects
+   for (uint32_t i = 0; i < VE_MAX_FRAMES_IN_FLIGHT; i++)
    {
-      veSetError("Failed to create image available semaphore (VkResult: %d)", result);
-      veDestroySwapchain((VESwapchain *)swapchain);
-      return NULL;
+      VkSemaphoreCreateInfo semInfo = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+      VkFenceCreateInfo fenceInfo = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+      fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // Start signaled
+
+      if (vkCreateSemaphore(deviceInternal->device, &semInfo, NULL, &swapchain->imageAvailableSemaphores[i]) !=
+              VK_SUCCESS ||
+          vkCreateFence(deviceInternal->device, &fenceInfo, NULL, &swapchain->inFlightFences[i]) != VK_SUCCESS)
+      {
+         return VE_ERROR_UNKNOWN;
+      }
    }
 
-   result = vkCreateSemaphore(deviceInternal->device, &semaphoreInfo, NULL, &swapchain->renderFinishedSemaphore);
-   if (result != VK_SUCCESS)
+   // Create per-swapchain-image semaphores
+   for (uint32_t i = 0; i < swapchain->imageCount; i++)
    {
-      veSetError("Failed to create render finished semaphore (VkResult: %d)", result);
-      veDestroySwapchain((VESwapchain *)swapchain);
-      return NULL;
-   }
-
-   result = vkCreateFence(deviceInternal->device, &fenceInfo, NULL, &swapchain->inFlightFence);
-   if (result != VK_SUCCESS)
-   {
-      veSetError("Failed to create in-flight fence (VkResult: %d)", result);
-      veDestroySwapchain((VESwapchain *)swapchain);
-      return NULL;
+      VkSemaphoreCreateInfo semInfo = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+      if (vkCreateSemaphore(deviceInternal->device, &semInfo, NULL, &swapchain->renderFinishedSemaphores[i]) !=
+          VK_SUCCESS)
+      {
+         return VE_ERROR_UNKNOWN;
+      }
    }
 
    swapchain->currentImageIndex = UINT32_MAX;
@@ -437,17 +435,20 @@ void veDestroySwapchain(VESwapchain *swapchain)
       }
 
       // Destroy synchronization objects
-      if (internal->inFlightFence)
+      // Destroy per-frame synchronization objects
+      for (uint32_t i = 0; i < VE_MAX_FRAMES_IN_FLIGHT; i++)
       {
-         vkDestroyFence(device->device, internal->inFlightFence, NULL);
+         if (internal->imageAvailableSemaphores[i])
+            vkDestroySemaphore(device->device, internal->imageAvailableSemaphores[i], NULL);
+         if (internal->inFlightFences[i])
+            vkDestroyFence(device->device, internal->inFlightFences[i], NULL);
       }
-      if (internal->renderFinishedSemaphore)
+
+      // Destroy per-swapchain-image semaphores
+      for (uint32_t i = 0; i < internal->imageCount; i++)
       {
-         vkDestroySemaphore(device->device, internal->renderFinishedSemaphore, NULL);
-      }
-      if (internal->imageAvailableSemaphore)
-      {
-         vkDestroySemaphore(device->device, internal->imageAvailableSemaphore, NULL);
+         if (internal->renderFinishedSemaphores[i])
+            vkDestroySemaphore(device->device, internal->renderFinishedSemaphores[i], NULL);
       }
 
       // Destroy image views
@@ -484,30 +485,36 @@ VETextureIndex veAcquireNextImage(VESwapchain *swapchain)
    }
 
    VESwapchainInternal *internal = (VESwapchainInternal *)swapchain;
-
-   // Get device from context (limitation of current design)
    VEDeviceInternal *device = internal->device;
+
    if (!device)
    {
       veSetError("Cannot acquire image - device reference not available");
       return VE_INVALID_TEXTURE_INDEX;
    }
 
-   // Wait for previous frame
-   VkResult status = vkGetFenceStatus(device->device, internal->inFlightFence);
+   // Wait for the current frame's fence (CPU-GPU sync)
+   VkFence currentFrameFence = internal->inFlightFences[internal->currentFrame];
+   VkResult status = vkGetFenceStatus(device->device, currentFrameFence);
+
    if (status != VK_SUCCESS && status != VK_NOT_READY)
    {
-      veSetError("Failed to get swapchain fence status (VkResult: %d)", status);
-      exit(-1);
+      veSetError("Failed to get fence status (VkResult: %d)", status);
+      return VE_INVALID_TEXTURE_INDEX;
    }
+
    if (status == VK_NOT_READY)
    {
-      vkWaitForFences(device->device, 1, &internal->inFlightFence, VK_TRUE, UINT64_MAX);
+      vkWaitForFences(device->device, 1, &currentFrameFence, VK_TRUE, UINT64_MAX);
    }
+
+   // Use current frame's acquire semaphore
+   VkSemaphore acquireSemaphore = internal->imageAvailableSemaphores[internal->currentFrame];
 
    uint32_t imageIndex;
    VkResult result = vkAcquireNextImageKHR(device->device, internal->swapchain, UINT64_MAX,
-                                           internal->imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+                                           acquireSemaphore, // Per-frame acquire semaphore
+                                           VK_NULL_HANDLE, &imageIndex);
 
    if (result == VK_ERROR_OUT_OF_DATE_KHR)
    {
@@ -520,9 +527,9 @@ VETextureIndex veAcquireNextImage(VESwapchain *swapchain)
       return VE_INVALID_TEXTURE_INDEX;
    }
 
-   vkResetFences(device->device, 1, &internal->inFlightFence);
-
+   vkResetFences(device->device, 1, &currentFrameFence);
    internal->currentImageIndex = imageIndex;
+
    return internal->textureIndices[imageIndex];
 }
 
@@ -568,58 +575,66 @@ VEResult vePresentImage(VESwapchain *swapchain, VECommandBuffer *cmd)
              "recording\n");
    }
 
+   // Get semaphores: per-frame acquire, per-image render finished
+   VkSemaphore acquireSemaphore = internal->imageAvailableSemaphores[internal->currentFrame];
+   VkSemaphore renderSemaphore = internal->renderFinishedSemaphores[internal->currentImageIndex]; // Key change!
+   VkFence frameFence = internal->inFlightFences[internal->currentFrame];
+
    // Submit command buffer
    VkSubmitInfo submitInfo = {0};
    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-   VkSemaphore waitSemaphores[] = {internal->imageAvailableSemaphore};
    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
    submitInfo.waitSemaphoreCount = 1;
-   submitInfo.pWaitSemaphores = waitSemaphores;
+   submitInfo.pWaitSemaphores = &acquireSemaphore;
    submitInfo.pWaitDstStageMask = waitStages;
    submitInfo.commandBufferCount = 1;
    submitInfo.pCommandBuffers = &cmdInternal->commandBuffer;
-
-   VkSemaphore signalSemaphores[] = {internal->renderFinishedSemaphore};
    submitInfo.signalSemaphoreCount = 1;
-   submitInfo.pSignalSemaphores = signalSemaphores;
+   submitInfo.pSignalSemaphores = &renderSemaphore; // Per-image semaphore
 
-   VkResult result = vkQueueSubmit(device->graphicsQueue, 1, &submitInfo, internal->inFlightFence);
+   VkResult result = vkQueueSubmit(device->graphicsQueue, 1, &submitInfo, frameFence);
    if (result != VK_SUCCESS)
    {
       veSetError("Failed to submit draw command buffer (VkResult: %d)", result);
       return VE_ERROR_UNKNOWN;
    }
 
-   // Present
+   // Present using per-image semaphore
    VkPresentInfoKHR presentInfo = {0};
    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
    presentInfo.waitSemaphoreCount = 1;
-   presentInfo.pWaitSemaphores = signalSemaphores;
-
-   VkSwapchainKHR swapchains[] = {internal->swapchain};
+   presentInfo.pWaitSemaphores = &renderSemaphore; // Same per-image semaphore
    presentInfo.swapchainCount = 1;
-   presentInfo.pSwapchains = swapchains;
+   presentInfo.pSwapchains = &internal->swapchain;
    presentInfo.pImageIndices = &internal->currentImageIndex;
-   presentInfo.pResults = NULL;
 
    result = vkQueuePresentKHR(device->graphicsQueue, &presentInfo);
 
    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
    {
       internal->needsRecreation = true;
+      internal->currentImageIndex = UINT32_MAX;
+      // Advance to next frame
+      internal->currentFrame = (internal->currentFrame + 1) % internal->maxFramesInFlight;
+      veFreeCommandBuffer(cmdInternal);
       return VE_ERROR_SWAPCHAIN_OUT_OF_DATE;
    }
    else if (result != VK_SUCCESS)
    {
       veSetError("Failed to present swapchain image (VkResult: %d)", result);
+      internal->currentImageIndex = UINT32_MAX;
+      internal->currentFrame = (internal->currentFrame + 1) % internal->maxFramesInFlight;
+      veFreeCommandBuffer(cmdInternal);
       return VE_ERROR_UNKNOWN;
    }
 
    internal->currentImageIndex = UINT32_MAX;
 
-   veFreeCommandBuffer(cmdInternal);
+   // Advance to next frame
+   internal->currentFrame = (internal->currentFrame + 1) % internal->maxFramesInFlight;
 
+   veFreeCommandBuffer(cmdInternal);
    return VE_SUCCESS;
 }
 

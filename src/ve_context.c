@@ -1101,11 +1101,13 @@ bool initializeInstanceFunctions(VkInstance instance)
 
 bool initializeDeviceFunctions(VkDevice device)
 {
+   // Shader objects (still extension)
    GET_DEVICE_FUNC(vkCreateShadersEXT);
    GET_DEVICE_FUNC(vkCmdBindShadersEXT);
    GET_DEVICE_FUNC(vkGetShaderBinaryDataEXT);
    GET_DEVICE_FUNC(vkDestroyShaderEXT);
 
+   // Extended dynamic state 3 (still extension)
    GET_DEVICE_FUNC(vkCmdSetPolygonModeEXT);
    GET_DEVICE_FUNC(vkCmdSetDepthClampEnableEXT);
    GET_DEVICE_FUNC(vkCmdSetColorBlendEnableEXT);
@@ -1117,11 +1119,11 @@ bool initializeDeviceFunctions(VkDevice device)
    GET_DEVICE_FUNC(vkCmdSetAlphaToCoverageEnableEXT);
    GET_DEVICE_FUNC(vkCmdSetAlphaToOneEnableEXT);
    GET_DEVICE_FUNC(vkCmdSetPatchControlPointsEXT);
-
    GET_DEVICE_FUNC(vkCmdSetConservativeRasterizationModeEXT);
    GET_DEVICE_FUNC(vkCmdSetLineRasterizationModeEXT);
    GET_DEVICE_FUNC(vkCmdSetProvokingVertexModeEXT);
 
+   // extended dynamic state 2 logic op
    GET_DEVICE_FUNC(vkCmdSetLogicOpEnableEXT);
    GET_DEVICE_FUNC(vkCmdSetLogicOpEXT);
 
