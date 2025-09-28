@@ -10,7 +10,7 @@
 // =============================================================================
 
 static bool compileGLSLToSPIRV(const char *glslSource, VkShaderStageFlags stage, uint32_t **spirvCode,
-                               size_t *spirvSize)
+                               uint64_t *spirvSize)
 {
    if (!glslSource || !spirvCode || !spirvSize)
    {
@@ -70,7 +70,7 @@ static bool compileGLSLToSPIRV(const char *glslSource, VkShaderStageFlags stage,
    }
 
    // Compile GLSL to SPIR-V using glslangValidator
-   char command[512];
+   char command[1024];
    snprintf(command, sizeof(command), "glslangValidator %s -V --target-env vulkan1.3 -o %s %s 2>/dev/null", stageFlag,
             tempSPIRV, tempGLSL);
 
@@ -95,7 +95,7 @@ static bool compileGLSLToSPIRV(const char *glslSource, VkShaderStageFlags stage,
 
    // Get file size
    fseek(spirvFile, 0, SEEK_END);
-   long fileSize = ftell(spirvFile);
+   size_t fileSize = (size_t)ftell(spirvFile);
    fseek(spirvFile, 0, SEEK_SET);
 
    if (fileSize <= 0 || fileSize % 4 != 0)
@@ -157,7 +157,7 @@ static VkShaderStageFlags getPossibleNextStages(VkShaderStageFlags stage)
    }
 }
 
-VEShader *veCreateShaderFromSPIRV(VEDevice *device, VkShaderStageFlags stage, const uint32_t *code, size_t codeSize,
+VEShader *veCreateShaderFromSPIRV(VEDevice *device, VkShaderStageFlags stage, const uint32_t *code, uint64_t codeSize,
                                   const char *entryPoint, const char *debugName)
 {
    if (!device || !code || codeSize == 0 || !entryPoint)
@@ -241,7 +241,7 @@ VEShader *veCreateShaderFromGLSL(VEDevice *device, VkShaderStageFlags stage, con
    }
 
    uint32_t *spirvCode;
-   size_t spirvSize;
+   uint64_t spirvSize;
 
    if (!compileGLSLToSPIRV(source, stage, &spirvCode, &spirvSize))
    {
@@ -271,7 +271,7 @@ VEShader *veLoadShader(VEDevice *device, const char *filename, VkShaderStageFlag
    }
 
    fseek(file, 0, SEEK_END);
-   long fileSize = ftell(file);
+   size_t fileSize = (size_t)ftell(file);
    fseek(file, 0, SEEK_SET);
 
    if (fileSize <= 0 || fileSize % 4 != 0)
@@ -418,7 +418,7 @@ VEShaderConfig *veCreateShaderConfig(VEDevice *device, const VEShaderConfigDesc 
       snprintf(config->debugName, sizeof(config->debugName), "ShaderConfig_%u", index);
    }
 
-   config->device = device;
+   config->device = deviceInternal;
    config->isValid = true;
    deviceInternal->shaderConfigCount++;
 

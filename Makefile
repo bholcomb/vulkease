@@ -30,9 +30,9 @@ CONFIG ?= debug
 CC = gcc
 CXX = g++
 
-CFLAGS = -std=c11 -fPIC -Wall -Wextra
-CXXFLAGS = -std=c++14 -fPIC -Wall -Wextra -std=c++17
-EXAMPLE_CFLAGS = -std=c11 -Wall -Wextra
+CFLAGS = -std=c11 -fPIC -Wall -Wextra -Wconversion -Werror
+CXXFLAGS = -std=c++14 -fPIC -Wall -Wextra -std=c++17 -Wconversion -Werror
+EXAMPLE_CFLAGS = -std=c11 -Wall -Wextra -Wconversion -Werror
 
 
 # Per-config flags

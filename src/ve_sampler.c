@@ -153,7 +153,7 @@ VESamplerIndex veCreateLinearSampler(VEDevice *device)
 {
    VESamplerDesc desc = {.minFilter = VK_FILTER_LINEAR,
                          .magFilter = VK_FILTER_LINEAR,
-                         .mipmapFilter = VK_FILTER_LINEAR,
+                         .mipmapFilter = VK_SAMPLER_MIPMAP_MODE_LINEAR,
                          .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
                          .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
                          .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
@@ -171,7 +171,7 @@ VESamplerIndex veCreateNearestSampler(VEDevice *device)
 {
    VESamplerDesc desc = {.minFilter = VK_FILTER_NEAREST,
                          .magFilter = VK_FILTER_NEAREST,
-                         .mipmapFilter = VK_FILTER_NEAREST,
+                         .mipmapFilter = VK_SAMPLER_MIPMAP_MODE_NEAREST,
                          .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
                          .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
                          .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
@@ -189,7 +189,7 @@ VESamplerIndex veCreateAnisotropicSampler(VEDevice *device, float maxAnisotropy)
 {
    VESamplerDesc desc = {.minFilter = VK_FILTER_LINEAR,
                          .magFilter = VK_FILTER_LINEAR,
-                         .mipmapFilter = VK_FILTER_LINEAR,
+                         .mipmapFilter = VK_SAMPLER_MIPMAP_MODE_LINEAR,
                          .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
                          .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
                          .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
@@ -207,7 +207,7 @@ VESamplerIndex veCreateShadowSampler(VEDevice *device)
 {
    VESamplerDesc desc = {.minFilter = VK_FILTER_LINEAR,
                          .magFilter = VK_FILTER_LINEAR,
-                         .mipmapFilter = VK_FILTER_NEAREST,
+                         .mipmapFilter = VK_SAMPLER_MIPMAP_MODE_NEAREST,
                          .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
                          .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
                          .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,

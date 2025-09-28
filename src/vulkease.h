@@ -159,10 +159,10 @@ extern "C"
    // Buffer creation descriptor
    typedef struct VEBufferDesc
    {
-      size_t size;
+      uint64_t size;
       VkBufferUsageFlags usage;
       const void *initialData; // Optional initial data
-      size_t initialDataSize;
+      uint64_t initialDataSize;
       bool persistentlyMapped; // Keep CPU-mapped for frequent updates
       const char *debugName;   // Debug name (optional)
    } VEBufferDesc;
@@ -179,7 +179,7 @@ extern "C"
       VkImageUsageFlags usage;
       VkSampleCountFlags sampleCount; // For multisampled textures
       const void *initialData;        // Optional initial data
-      size_t initialDataSize;
+      uint64_t initialDataSize;
       const char *debugName; // Debug name (optional)
    } VETextureDesc;
 
@@ -188,7 +188,7 @@ extern "C"
    {
       VkFilter minFilter;
       VkFilter magFilter;
-      VkFilter mipmapFilter;
+      VkSamplerMipmapMode mipmapFilter;
       VkSamplerAddressMode addressModeU;
       VkSamplerAddressMode addressModeV;
       VkSamplerAddressMode addressModeW;
@@ -375,7 +375,7 @@ extern "C"
    // Dynamic rendering info (replaces render passes)
    typedef struct VERenderingInfo
    {
-      uint32_t renderAreaX, renderAreaY;
+      int32_t renderAreaX, renderAreaY;
       uint32_t renderAreaWidth, renderAreaHeight;
 
       uint32_t colorAttachmentCount;
@@ -498,26 +498,26 @@ extern "C"
    /**
     * Update buffer data (works with both mapped and unmapped buffers)
     */
-   VULKEASE_API VEResult veUpdateBuffer(VEDevice *device, VEBufferAddress address, const void *data, size_t size,
-                                        size_t offset);
+   VULKEASE_API VEResult veUpdateBuffer(VEDevice *device, VEBufferAddress address, const void *data, uint64_t size,
+                                        uint64_t offset);
 
    /**
     * Get buffer size and properties
     */
-   VULKEASE_API size_t veGetBufferSize(VEDevice *device, VEBufferAddress address);
+   VULKEASE_API uint64_t veGetBufferSize(VEDevice *device, VEBufferAddress address);
    VULKEASE_API VkBufferUsageFlags veGetBufferUsage(VEDevice *device, VEBufferAddress address);
 
    /**
     * Convenience functions for common buffer types
     */
-   VULKEASE_API VEBufferAddress veCreateVertexBuffer(VEDevice *device, const void *vertices, size_t size,
+   VULKEASE_API VEBufferAddress veCreateVertexBuffer(VEDevice *device, const void *vertices, uint64_t size,
                                                      const char *debugName);
-   VULKEASE_API VEBufferAddress veCreateIndexBuffer(VEDevice *device, const void *indices, size_t size,
+   VULKEASE_API VEBufferAddress veCreateIndexBuffer(VEDevice *device, const void *indices, uint64_t size,
                                                     const char *debugName);
-   VULKEASE_API VEBufferAddress veCreateUniformBuffer(VEDevice *device, size_t size, bool persistentlyMapped,
+   VULKEASE_API VEBufferAddress veCreateUniformBuffer(VEDevice *device, uint64_t size, bool persistentlyMapped,
                                                       const char *debugName);
-   VULKEASE_API VEBufferAddress veCreateStorageBuffer(VEDevice *device, size_t size, const char *debugName);
-   VULKEASE_API VEBufferAddress veCreateIndirectBuffer(VEDevice *device, size_t size, const char *debugName);
+   VULKEASE_API VEBufferAddress veCreateStorageBuffer(VEDevice *device, uint64_t size, const char *debugName);
+   VULKEASE_API VEBufferAddress veCreateIndirectBuffer(VEDevice *device, uint64_t size, const char *debugName);
 
    // =============================================================================
    // Texture Management (Bindless)
@@ -615,7 +615,7 @@ extern "C"
     * Create shader object from SPIR-V code
     */
    VULKEASE_API VEShader *veCreateShaderFromSPIRV(VEDevice *device, VkShaderStageFlags stage, const uint32_t *code,
-                                                  size_t codeSize, const char *entryPoint, const char *debugName);
+                                                  uint64_t codeSize, const char *entryPoint, const char *debugName);
 
    /**
     * Create shader object from GLSL source (compile to SPIR-V automatically)
@@ -756,7 +756,7 @@ extern "C"
     * Push constants for bindless resource access
     * Contains buffer addresses and texture/sampler indices
     */
-   VULKEASE_API void vePushConstants(VECommandBuffer *cmd, const void *data, size_t size, size_t offset);
+   VULKEASE_API void vePushConstants(VECommandBuffer *cmd, const void *data, uint64_t size, uint64_t offset);
 
    /**
     * Bind an index buffer fro indexed calls
@@ -775,19 +775,19 @@ extern "C"
    /**
     * Indirect drawing (GPU-driven)
     */
-   VULKEASE_API void veDrawIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, size_t offset,
+   VULKEASE_API void veDrawIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t offset,
                                     uint32_t drawCount, uint32_t stride);
-   VULKEASE_API void veDrawIndexedIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, size_t offset,
+   VULKEASE_API void veDrawIndexedIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t offset,
                                            uint32_t drawCount, uint32_t stride);
 
    /**
     * Multi-draw indirect with count buffer (GPU determines draw count)
     */
-   VULKEASE_API void veDrawIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, size_t indirectOffset,
-                                         VEBufferAddress countBuffer, size_t countOffset, uint32_t maxDrawCount,
+   VULKEASE_API void veDrawIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t indirectOffset,
+                                         VEBufferAddress countBuffer, uint64_t countOffset, uint32_t maxDrawCount,
                                          uint32_t stride);
    VULKEASE_API void veDrawIndexedIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer,
-                                                size_t indirectOffset, VEBufferAddress countBuffer, size_t countOffset,
+                                                uint64_t indirectOffset, VEBufferAddress countBuffer, uint64_t countOffset,
                                                 uint32_t maxDrawCount, uint32_t stride);
 
    // =============================================================================
@@ -802,7 +802,7 @@ extern "C"
    /**
     * Indirect compute dispatch
     */
-   VULKEASE_API void veDispatchIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, size_t offset);
+   VULKEASE_API void veDispatchIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t offset);
 
    // =============================================================================
    // Synchronization and Memory Barriers
