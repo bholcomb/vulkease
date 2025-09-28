@@ -243,7 +243,7 @@ void veDraw(VECommandBuffer *cmd, uint32_t vertexCount, uint32_t instanceCount, 
    vkCmdDraw(internal->commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
 }
 
-void veBindIndexBuffer(VECommandBuffer *cmd, VEBufferAddress indexBuffer, uint32_t offset, VkIndexType format)
+void veBindIndexBuffer(VECommandBuffer *cmd, VEBufferAddress indexBuffer, uint64_t offset, VkIndexType format)
 {
    if (!cmd || indexBuffer == 0)
       return;
@@ -438,7 +438,7 @@ void veBarrierGraphicsToPresent(VECommandBuffer *cmd)
    vkCmdPipelineBarrier2(internal->commandBuffer, &dependencyInfo);
 }
 
-void veTransitionTexture(VECommandBuffer *cmd, VETextureIndex texture, uint32_t oldLayout, uint32_t newLayout)
+void veTransitionTexture(VECommandBuffer *cmd, VETextureIndex texture, VkImageLayout oldLayout, VkImageLayout newLayout)
 {
    if (!cmd || texture == VE_INVALID_TEXTURE_INDEX)
    {
@@ -632,7 +632,7 @@ void veTransitionTextureForPresent(VECommandBuffer *cmd, VETextureIndex texture)
    veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 }
 
-void veTransitionTextureToLayout(VECommandBuffer *cmd, VETextureIndex texture, uint32_t newLayout)
+void veTransitionTextureToLayout(VECommandBuffer *cmd, VETextureIndex texture, VkImageLayout newLayout)
 {
    if (!cmd || texture == VE_INVALID_TEXTURE_INDEX)
    {
@@ -657,5 +657,5 @@ void veTransitionTextureToLayout(VECommandBuffer *cmd, VETextureIndex texture, u
 
    // Use the tracked current layout, or UNDEFINED if not set
    VkImageLayout currentLayout = textureInternal->currentLayout;
-   veTransitionTexture(cmd, texture, (uint32_t)currentLayout, newLayout);
+   veTransitionTexture(cmd, texture, currentLayout, newLayout);
 }

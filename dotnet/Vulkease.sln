@@ -1,0 +1,40 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VulkEase", "src\VulkEase.csproj", "{7541B978-E825-4254-BE48-655CE6D41811}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "01_Triangle", "examples\01_Triangle.csproj", "{FD2876DE-8F33-4006-A06D-361816EAF6D6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "02_ComputeParticles", "examples\02_ComputeParticles.csproj", "{AA0C94D7-7B47-4967-86FE-A3251DFEC083}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "03_Cube", "examples\03_Cube.csproj", "{C164E9CA-5B84-4657-B013-B216DC7EA041}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7541B978-E825-4254-BE48-655CE6D41811}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7541B978-E825-4254-BE48-655CE6D41811}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7541B978-E825-4254-BE48-655CE6D41811}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7541B978-E825-4254-BE48-655CE6D41811}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FD2876DE-8F33-4006-A06D-361816EAF6D6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FD2876DE-8F33-4006-A06D-361816EAF6D6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FD2876DE-8F33-4006-A06D-361816EAF6D6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FD2876DE-8F33-4006-A06D-361816EAF6D6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AA0C94D7-7B47-4967-86FE-A3251DFEC083}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AA0C94D7-7B47-4967-86FE-A3251DFEC083}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AA0C94D7-7B47-4967-86FE-A3251DFEC083}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AA0C94D7-7B47-4967-86FE-A3251DFEC083}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C164E9CA-5B84-4657-B013-B216DC7EA041}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C164E9CA-5B84-4657-B013-B216DC7EA041}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C164E9CA-5B84-4657-B013-B216DC7EA041}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C164E9CA-5B84-4657-B013-B216DC7EA041}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

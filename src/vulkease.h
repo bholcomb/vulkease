@@ -761,7 +761,7 @@ extern "C"
    /**
     * Bind an index buffer fro indexed calls
     */
-   VULKEASE_API void veBindIndexBuffer(VECommandBuffer *cmd, VEBufferAddress indexBuffer, uint32_t offset,
+   VULKEASE_API void veBindIndexBuffer(VECommandBuffer *cmd, VEBufferAddress indexBuffer, uint64_t offset,
                                        VkIndexType format);
 
    /**
@@ -819,8 +819,8 @@ extern "C"
    /**
     * Texture layout transitions
     */
-   VULKEASE_API void veTransitionTexture(VECommandBuffer *cmd, VETextureIndex texture, uint32_t oldLayout,
-                                         uint32_t newLayout);
+   VULKEASE_API void veTransitionTexture(VECommandBuffer *cmd, VETextureIndex texture, VkImageLayout oldLayout,
+                                         VkImageLayout newLayout);
 
    /**
     * Common texture layout transition helpers
@@ -835,7 +835,7 @@ extern "C"
    /**
     * Smart layout transition - automatically detects current layout
     */
-   VULKEASE_API void veTransitionTextureToLayout(VECommandBuffer *cmd, VETextureIndex texture, uint32_t newLayout);
+   VULKEASE_API void veTransitionTextureToLayout(VECommandBuffer *cmd, VETextureIndex texture, VkImageLayout newLayout);
 
    // =============================================================================
    // Swapchain and Presentation
