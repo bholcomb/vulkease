@@ -11,7 +11,10 @@ namespace VulkEase
     [StructLayout(LayoutKind.Sequential)] public struct VEShader { public IntPtr native; }
     [StructLayout(LayoutKind.Sequential)] public struct VERenderConfig { public IntPtr native; }
     [StructLayout(LayoutKind.Sequential)] public struct VEVertexConfig { public IntPtr native; }
-    [StructLayout(LayoutKind.Sequential)] public struct VEShaderConfig { public IntPtr native; } 
+    [StructLayout(LayoutKind.Sequential)] public struct VEShaderConfig { public IntPtr native; }
+    [StructLayout(LayoutKind.Sequential)] public struct VEBufferAddress { public UInt64 native; }
+    [StructLayout(LayoutKind.Sequential)] public struct VETextureIndex { public UInt32 native; }
+    [StructLayout(LayoutKind.Sequential)] public struct VESamplerIndex { public UInt32 native; }
 
     // Basic structures
     [StructLayout(LayoutKind.Sequential)]
@@ -280,11 +283,11 @@ namespace VulkEase
     [StructLayout(LayoutKind.Sequential)]
     public struct VERenderingAttachment
     {
-        public UInt32 texture; // VETextureIndex
+        public VETextureIndex texture;
         public VkAttachmentLoadOp loadOp;
         public VkAttachmentStoreOp storeOp;
         public VEColor clearValue;
-        public UInt32 resolveTexture; // VETextureIndex
+        public VETextureIndex resolveTexture;
     }
 
     // Rendering info

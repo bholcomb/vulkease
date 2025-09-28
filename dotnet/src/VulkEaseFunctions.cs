@@ -3,17 +3,12 @@ using System.Runtime.InteropServices;
 
 namespace VulkEase
 {
-    // Type aliases
-    using VEBufferAddress = System.UInt64;
-    using VETextureIndex = System.UInt32;
-    using VESamplerIndex = System.UInt32;
-
     // Constants
     public static class VEConstants
     {
-        public const UInt64 VE_INVALID_ADDRESS = 0UL;
-        public const UInt32 VE_INVALID_TEXTURE_INDEX = 0xFFFFFFFF;
-        public const UInt32 VE_INVALID_SAMPLER_INDEX = 0xFFFFFFFF;
+        public static VEBufferAddress VE_INVALID_ADDRESS = new VEBufferAddress { native = 0UL };
+        public static VETextureIndex VE_INVALID_TEXTURE_INDEX = new VETextureIndex { native = 0xFFFFFFFF };
+        public static VESamplerIndex VE_INVALID_SAMPLER_INDEX = new VESamplerIndex { native = 0xFFFFFFFF };
 
         public const UInt32 VULKEASE_VERSION_MAJOR = 2;
         public const UInt32 VULKEASE_VERSION_MINOR = 0;
@@ -102,37 +97,37 @@ namespace VulkEase
         // Buffer Management
         public static VEBufferAddress CreateBuffer(VEDevice device, VEBufferDesc desc)
         {
-            return VulkEaseDll.veCreateBuffer(device.native, ref desc);
+            return new VEBufferAddress { native = VulkEaseDll.veCreateBuffer(device.native, ref desc)};
         }
 
         public static void DestroyBuffer(VEDevice device, VEBufferAddress address)
         {
-            VulkEaseDll.veDestroyBuffer(device.native, address);
+            VulkEaseDll.veDestroyBuffer(device.native, address.native);
         }
 
         public static VEResult MapBuffer(VEDevice device, VEBufferAddress address, out IntPtr mappedData)
         {
-            return VulkEaseDll.veMapBuffer(device.native, address, out mappedData);
+            return VulkEaseDll.veMapBuffer(device.native, address.native, out mappedData);
         }
 
         public static void UnmapBuffer(VEDevice device, VEBufferAddress address)
         {
-            VulkEaseDll.veUnmapBuffer(device.native, address);
+            VulkEaseDll.veUnmapBuffer(device.native, address.native);
         }
 
         public static VEResult UpdateBuffer(VEDevice device, VEBufferAddress address, IntPtr data, UInt64 size, UInt64 offset = default)
         {
-            return VulkEaseDll.veUpdateBuffer(device.native, address, data, size, offset);
+            return VulkEaseDll.veUpdateBuffer(device.native, address.native, data, size, offset);
         }
 
         public static UIntPtr GetBufferSize(VEDevice device, VEBufferAddress address)
         {
-            return VulkEaseDll.veGetBufferSize(device.native, address);
+            return VulkEaseDll.veGetBufferSize(device.native, address.native);
         }
 
         public static VkBufferUsageFlags GetBufferUsage(VEDevice device, VEBufferAddress address)
         {
-            return VulkEaseDll.veGetBufferUsage(device.native, address);
+            return VulkEaseDll.veGetBufferUsage(device.native, address.native);
         }
 
         // Convenience buffer functions
@@ -141,7 +136,7 @@ namespace VulkEase
             var namePtr = StringToHGlobalAnsi(debugName);
             try
             {
-                return VulkEaseDll.veCreateVertexBuffer(device.native, vertices, size, namePtr);
+                return new VEBufferAddress { native = VulkEaseDll.veCreateVertexBuffer(device.native, vertices, size, namePtr) };
             }
             finally
             {
@@ -155,7 +150,7 @@ namespace VulkEase
             var namePtr = StringToHGlobalAnsi(debugName);
             try
             {
-                return VulkEaseDll.veCreateIndexBuffer(device.native, indices, size, namePtr);
+                return new VEBufferAddress { native = VulkEaseDll.veCreateIndexBuffer(device.native, indices, size, namePtr) };
             }
             finally
             {
@@ -169,7 +164,7 @@ namespace VulkEase
             var namePtr = StringToHGlobalAnsi(debugName);
             try
             {
-                return VulkEaseDll.veCreateUniformBuffer(device.native, size, persistentlyMapped, namePtr);
+                return new VEBufferAddress { native = VulkEaseDll.veCreateUniformBuffer(device.native, size, persistentlyMapped, namePtr) };
             }
             finally
             {
@@ -183,7 +178,7 @@ namespace VulkEase
             var namePtr = StringToHGlobalAnsi(debugName);
             try
             {
-                return VulkEaseDll.veCreateStorageBuffer(device.native, size, namePtr);
+                return new VEBufferAddress { native = VulkEaseDll.veCreateStorageBuffer(device.native, size, namePtr) };
             }
             finally
             {
@@ -197,7 +192,7 @@ namespace VulkEase
             var namePtr = StringToHGlobalAnsi(debugName);
             try
             {
-                return VulkEaseDll.veCreateIndirectBuffer(device.native, size, namePtr);
+                return new VEBufferAddress { native = VulkEaseDll.veCreateIndirectBuffer(device.native, size, namePtr) };
             }
             finally
             {
@@ -209,22 +204,22 @@ namespace VulkEase
         // Texture Management
         public static VETextureIndex CreateTexture(VEDevice device, VETextureDesc desc)
         {
-            return VulkEaseDll.veCreateTexture(device.native, ref desc);
+            return new VETextureIndex { native = VulkEaseDll.veCreateTexture(device.native, ref desc) };
         }
 
         public static void DestroyTexture(VEDevice device, VETextureIndex index)
         {
-            VulkEaseDll.veDestroyTexture(device.native, index);
+            VulkEaseDll.veDestroyTexture(device.native, index.native);
         }
 
         public static VEResult GetTextureSize(VEDevice device, VETextureIndex index, out UInt32 width, out UInt32 height, out UInt32 depth)
         {
-            return VulkEaseDll.veGetTextureSize(device.native, index, out width, out height, out depth);
+            return VulkEaseDll.veGetTextureSize(device.native, index.native, out width, out height, out depth);
         }
 
         public static VkFormat GetTextureFormat(VEDevice device, VETextureIndex index)
         {
-            return VulkEaseDll.veGetTextureFormat(device.native, index);
+            return VulkEaseDll.veGetTextureFormat(device.native, index.native);
         }
 
         // Convenience texture functions
@@ -233,7 +228,7 @@ namespace VulkEase
             var namePtr = StringToHGlobalAnsi(debugName);
             try
             {
-                return VulkEaseDll.veCreateTexture1D(device.native, width, format, usage, namePtr);
+                return new VETextureIndex { native = VulkEaseDll.veCreateTexture1D(device.native, width, format, usage, namePtr)};
             }
             finally
             {
@@ -247,7 +242,7 @@ namespace VulkEase
             var namePtr = StringToHGlobalAnsi(debugName);
             try
             {
-                return VulkEaseDll.veCreateTexture2D(device.native, width, height, format, usage, namePtr);
+                return new VETextureIndex { native = VulkEaseDll.veCreateTexture2D(device.native, width, height, format, usage, namePtr)};
             }
             finally
             {
@@ -261,7 +256,7 @@ namespace VulkEase
             var namePtr = StringToHGlobalAnsi(debugName);
             try
             {
-                return VulkEaseDll.veCreateTexture3D(device.native, width, height, depth, format, usage, namePtr);
+                return new VETextureIndex { native = VulkEaseDll.veCreateTexture3D(device.native, width, height, depth, format, usage, namePtr)};
             }
             finally
             {
@@ -275,7 +270,7 @@ namespace VulkEase
             var namePtr = StringToHGlobalAnsi(debugName);
             try
             {
-                return VulkEaseDll.veCreateTexture2DArray(device.native, width, height, layers, format, usage, namePtr);
+                return new VETextureIndex { native = VulkEaseDll.veCreateTexture2DArray(device.native, width, height, layers, format, usage, namePtr) };
             }
             finally
             {
@@ -289,7 +284,7 @@ namespace VulkEase
             var namePtr = StringToHGlobalAnsi(debugName);
             try
             {
-                return VulkEaseDll.veCreateTextureCube(device.native, size, format, usage, namePtr);
+                return new VETextureIndex { native = VulkEaseDll.veCreateTextureCube(device.native, size, format, usage, namePtr) };
             }
             finally
             {
@@ -303,7 +298,7 @@ namespace VulkEase
             var namePtr = StringToHGlobalAnsi(debugName);
             try
             {
-                return VulkEaseDll.veCreateTexture2DMultisample(device.native, width, height, format, sampleCount, usage, namePtr);
+                return new VETextureIndex { native = VulkEaseDll.veCreateTexture2DMultisample(device.native, width, height, format, sampleCount, usage, namePtr) };
             }
             finally
             {
@@ -317,7 +312,7 @@ namespace VulkEase
             var namePtr = StringToHGlobalAnsi(filename);
             try
             {
-                return VulkEaseDll.veLoadTexture(device.native, namePtr, usage, generateMips);
+                return new VETextureIndex { native = VulkEaseDll.veLoadTexture(device.native, namePtr, usage, generateMips) };
             }
             finally
             {
@@ -331,7 +326,7 @@ namespace VulkEase
             var namePtr = StringToHGlobalAnsi(filename);
             try
             {
-                return VulkEaseDll.veLoadHDRTexture(device.native, namePtr, usage, generateMips);
+                return new VETextureIndex { native = VulkEaseDll.veLoadHDRTexture(device.native, namePtr, usage, generateMips) };
             }
             finally
             {
@@ -357,7 +352,7 @@ namespace VulkEase
                 try
                 {
                     Marshal.Copy(namePtrs, 0, arrayPtr, 6);
-                    return VulkEaseDll.veLoadCubeTexture(device.native, arrayPtr, usage, generateMips);
+                    return new VETextureIndex { native = VulkEaseDll.veLoadCubeTexture(device.native, arrayPtr, usage, generateMips) };
                 }
                 finally
                 {
@@ -376,12 +371,12 @@ namespace VulkEase
 
         public static VEResult GenerateMipmaps(VEDevice device, VECommandBuffer cmd, VETextureIndex texture)
         {
-            return VulkEaseDll.veGenerateMipmaps(device.native, cmd.native, texture);
+            return VulkEaseDll.veGenerateMipmaps(device.native, cmd.native, texture.native);
         }
 
         public static VEResult GenerateMipmapsImmediate(VEDevice device, VETextureIndex texture)
         {
-            return VulkEaseDll.veGenerateMipmapsImmediate(device.native, texture);
+            return VulkEaseDll.veGenerateMipmapsImmediate(device.native, texture.native);
         }
 
         public static VEResult SaveTexture(VEDevice device, VETextureIndex texture, string filename)
@@ -389,7 +384,7 @@ namespace VulkEase
             var namePtr = StringToHGlobalAnsi(filename);
             try
             {
-                return VulkEaseDll.veSaveTexture(device.native, texture, namePtr);
+                return VulkEaseDll.veSaveTexture(device.native, texture.native, namePtr);
             }
             finally
             {
@@ -401,32 +396,32 @@ namespace VulkEase
         // Sampler Management
         public static VESamplerIndex CreateSampler(VEDevice device, VESamplerDesc desc)
         {
-            return VulkEaseDll.veCreateSampler(device.native, ref desc);
+            return new VESamplerIndex { native = VulkEaseDll.veCreateSampler(device.native, ref desc) };
         }
 
         public static void DestroySampler(VEDevice device, VESamplerIndex index)
         {
-            VulkEaseDll.veDestroySampler(device.native, index);
+            VulkEaseDll.veDestroySampler(device.native, index.native);
         }
 
         public static VESamplerIndex CreateLinearSampler(VEDevice device)
         {
-            return VulkEaseDll.veCreateLinearSampler(device.native);
+            return new VESamplerIndex { native = VulkEaseDll.veCreateLinearSampler(device.native) };
         }
 
         public static VESamplerIndex CreateNearestSampler(VEDevice device)
         {
-            return VulkEaseDll.veCreateNearestSampler(device.native);
+            return new VESamplerIndex { native = VulkEaseDll.veCreateNearestSampler(device.native) };
         }
 
         public static VESamplerIndex CreateAnisotropicSampler(VEDevice device, float maxAnisotropy)
         {
-            return VulkEaseDll.veCreateAnisotropicSampler(device.native, maxAnisotropy);
+            return new VESamplerIndex { native = VulkEaseDll.veCreateAnisotropicSampler(device.native, maxAnisotropy) };
         }
 
         public static VESamplerIndex CreateShadowSampler(VEDevice device)
         {
-            return VulkEaseDll.veCreateShadowSampler(device.native);
+            return new VESamplerIndex { native = VulkEaseDll.veCreateShadowSampler(device.native) };
         }
 
         // Shader Objects
@@ -819,7 +814,7 @@ namespace VulkEase
 
         public static void BindIndexBuffer(VECommandBuffer cmd, VEBufferAddress indexBuffer, UInt32 offset, VkIndexType format)
         {
-            VulkEaseDll.veBindIndexBuffer(cmd.native, indexBuffer, offset, format);
+            VulkEaseDll.veBindIndexBuffer(cmd.native, indexBuffer.native, offset, format);
         }
 
         // Drawing
@@ -835,22 +830,22 @@ namespace VulkEase
 
         public static void DrawIndirect(VECommandBuffer cmd, VEBufferAddress indirectBuffer, UIntPtr offset, UInt32 drawCount, UInt32 stride)
         {
-            VulkEaseDll.veDrawIndirect(cmd.native, indirectBuffer, offset, drawCount, stride);
+            VulkEaseDll.veDrawIndirect(cmd.native, indirectBuffer.native, offset, drawCount, stride);
         }
 
         public static void DrawIndexedIndirect(VECommandBuffer cmd, VEBufferAddress indirectBuffer, UIntPtr offset, UInt32 drawCount, UInt32 stride)
         {
-            VulkEaseDll.veDrawIndexedIndirect(cmd.native, indirectBuffer, offset, drawCount, stride);
+            VulkEaseDll.veDrawIndexedIndirect(cmd.native, indirectBuffer.native, offset, drawCount, stride);
         }
 
-        public static void DrawIndirectCount(VECommandBuffer cmd, VEBufferAddress indirectBuffer, UIntPtr indirectOffset, VEBufferAddress countBuffer, UIntPtr countOffset, UInt32 maxDrawCount, UInt32 stride)
+        public static void DrawIndirectCount(VECommandBuffer cmd, VEBufferAddress indirectBuffer, UIntPtr indirectOffset, VEBufferAddress countBuffer, UInt64 countOffset, UInt32 maxDrawCount, UInt32 stride)
         {
-            VulkEaseDll.veDrawIndirectCount(cmd.native, indirectBuffer, indirectOffset, countBuffer, countOffset, maxDrawCount, stride);
+            VulkEaseDll.veDrawIndirectCount(cmd.native, indirectBuffer.native, indirectOffset, countBuffer.native, countOffset, maxDrawCount, stride);
         }
 
-        public static void DrawIndexedIndirectCount(VECommandBuffer cmd, VEBufferAddress indirectBuffer, UIntPtr indirectOffset, VEBufferAddress countBuffer, UIntPtr countOffset, UInt32 maxDrawCount, UInt32 stride)
+        public static void DrawIndexedIndirectCount(VECommandBuffer cmd, VEBufferAddress indirectBuffer, UIntPtr indirectOffset, VEBufferAddress countBuffer, UInt64 countOffset, UInt32 maxDrawCount, UInt32 stride)
         {
-            VulkEaseDll.veDrawIndexedIndirectCount(cmd.native, indirectBuffer, indirectOffset, countBuffer, countOffset, maxDrawCount, stride);
+            VulkEaseDll.veDrawIndexedIndirectCount(cmd.native, indirectBuffer.native, indirectOffset, countBuffer.native, countOffset, maxDrawCount, stride);
         }
 
         // Compute
@@ -861,7 +856,7 @@ namespace VulkEase
 
         public static void DispatchIndirect(VECommandBuffer cmd, VEBufferAddress indirectBuffer, UIntPtr offset)
         {
-            VulkEaseDll.veDispatchIndirect(cmd.native, indirectBuffer, offset);
+            VulkEaseDll.veDispatchIndirect(cmd.native, indirectBuffer.native, offset);
         }
 
         // Barriers
@@ -871,32 +866,32 @@ namespace VulkEase
         public static void BarrierGraphicsToPresent(VECommandBuffer cmd) => VulkEaseDll.veBarrierGraphicsToPresent(cmd.native);
 
         // Texture transitions
-        public static void TransitionTexture(VECommandBuffer cmd, VETextureIndex texture, UInt32 oldLayout, UInt32 newLayout)
+        public static void TransitionTexture(VECommandBuffer cmd, VETextureIndex texture, VkImageLayout oldLayout, VkImageLayout newLayout)
         {
-            VulkEaseDll.veTransitionTexture(cmd.native, texture, oldLayout, newLayout);
+            VulkEaseDll.veTransitionTexture(cmd.native, texture.native, oldLayout, newLayout);
         }
 
         public static void TransitionTextureForShaderRead(VECommandBuffer cmd, VETextureIndex texture) =>
-            VulkEaseDll.veTransitionTextureForShaderRead(cmd.native, texture);
+            VulkEaseDll.veTransitionTextureForShaderRead(cmd.native, texture.native);
 
         public static void TransitionTextureForColorAttachment(VECommandBuffer cmd, VETextureIndex texture) =>
-            VulkEaseDll.veTransitionTextureForColorAttachment(cmd.native, texture);
+            VulkEaseDll.veTransitionTextureForColorAttachment(cmd.native, texture.native);
 
         public static void TransitionTextureForDepthAttachment(VECommandBuffer cmd, VETextureIndex texture) =>
-            VulkEaseDll.veTransitionTextureForDepthAttachment(cmd.native, texture);
+            VulkEaseDll.veTransitionTextureForDepthAttachment(cmd.native, texture.native);
 
         public static void TransitionTextureForTransferSrc(VECommandBuffer cmd, VETextureIndex texture) =>
-            VulkEaseDll.veTransitionTextureForTransferSrc(cmd.native, texture);
+            VulkEaseDll.veTransitionTextureForTransferSrc(cmd.native, texture.native);
 
         public static void TransitionTextureForTransferDst(VECommandBuffer cmd, VETextureIndex texture) =>
-            VulkEaseDll.veTransitionTextureForTransferDst(cmd.native, texture);
+            VulkEaseDll.veTransitionTextureForTransferDst(cmd.native, texture.native);
 
         public static void TransitionTextureForPresent(VECommandBuffer cmd, VETextureIndex texture) =>
-            VulkEaseDll.veTransitionTextureForPresent(cmd.native, texture);
+            VulkEaseDll.veTransitionTextureForPresent(cmd.native, texture.native);
 
-        public static void TransitionTextureToLayout(VECommandBuffer cmd, VETextureIndex texture, UInt32 newLayout)
+        public static void TransitionTextureToLayout(VECommandBuffer cmd, VETextureIndex texture, VkImageLayout newLayout)
         {
-            VulkEaseDll.veTransitionTextureToLayout(cmd.native, texture, newLayout);
+            VulkEaseDll.veTransitionTextureToLayout(cmd.native, texture.native, newLayout);
         }
 
         // Swapchain
@@ -912,12 +907,12 @@ namespace VulkEase
 
         public static VETextureIndex AcquireNextImage(VESwapchain swapchain)
         {
-            return VulkEaseDll.veAcquireNextImage(swapchain.native);
+            return new VETextureIndex { native = VulkEaseDll.veAcquireNextImage(swapchain.native) };
         }
 
         public static VEResult PresentImage(VESwapchain swapchain, VECommandBuffer cmd)
         {
-            return VulkEaseDll.vePresentImage(swapchain.native, cmd.native);
+            return  VulkEaseDll.vePresentImage(swapchain.native, cmd.native);
         }
 
         public static VEResult ResizeSwapchain(VESwapchain swapchain, UInt32 width, UInt32 height)
@@ -974,7 +969,7 @@ namespace VulkEase
             var namePtr = StringToHGlobalAnsi(name);
             try
             {
-                return VulkEaseDll.veSetBufferDebugName(device.native, address, namePtr);
+                return VulkEaseDll.veSetBufferDebugName(device.native, address.native, namePtr);
             }
             finally
             {
@@ -988,7 +983,7 @@ namespace VulkEase
             var namePtr = StringToHGlobalAnsi(name);
             try
             {
-                return VulkEaseDll.veSetTextureDebugName(device.native, texture, namePtr);
+                return VulkEaseDll.veSetTextureDebugName(device.native, texture.native, namePtr);
             }
             finally
             {
@@ -1002,7 +997,7 @@ namespace VulkEase
             var namePtr = StringToHGlobalAnsi(name);
             try
             {
-                return VulkEaseDll.veSetSamplerDebugName(device.native, sampler, namePtr);
+                return VulkEaseDll.veSetSamplerDebugName(device.native, sampler.native, namePtr);
             }
             finally
             {

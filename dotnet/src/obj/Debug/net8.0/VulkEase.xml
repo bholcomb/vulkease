@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>VulkEase</name>
+    </assembly>
+    <members>
+        <member name="T:VulkEase.VulkEase">
+            <summary>
+            VulkEase main API class - Modern Vulkan 1.3+ Bindless Graphics API
+            </summary>
+        </member>
+        <member name="T:VulkEase.VulkEaseDll">
+            <summary>
+            Dynamic library loader for VulkEase native libraries
+            Automatically handles x86/x64 platform detection and loading
+            </summary>
+        </member>
+    </members>
+</doc>

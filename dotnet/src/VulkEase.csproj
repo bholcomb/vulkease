@@ -50,6 +50,12 @@
     <Optimize>false</Optimize>
   </PropertyGroup>
 
+  <!-- turn off specific warnings-->
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+    <NoWarn>$(NoWarn);8625</NoWarn>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(Configuration)'=='Release'">
     <DefineConstants>TRACE</DefineConstants>
     <DebugType>pdbonly</DebugType>
