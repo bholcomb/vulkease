@@ -48,7 +48,7 @@ extern "C"
 #define VE_MAX_COLOR_ATTACHMENTS 4
 #define VE_MAX_VERTEX_BINDINGS 16
 #define VE_MAX_VERTEX_ATTRIBUTES 16
-#define VE_MAX_PUSH_CONSTANT_BYTES 128 // TODO: bump this up to 256 once moved to vulkan 1.4
+#define VE_MAX_PUSH_CONSTANT_BYTES 256
 
    // =============================================================================
    // Forward Declarations
@@ -87,18 +87,25 @@ extern "C"
       bool wideLines;
       bool depthClamp;
 
-      // Modern features (Vulkan 1.2+)
+      // Core Vulkan 1.2 features (mandatory in 1.4)
       bool bufferDeviceAddress;
       bool descriptorIndexing;
-      bool scalarBlockLayout;
+      bool scalarBlockLayout; // Mandatory in 1.4
       bool updateAfterBind;
-      bool shaderInt8;
-      bool shaderInt16;
+      bool shaderInt8;  // Mandatory in 1.4
+      bool shaderInt16; // Mandatory in 1.4
 
       // Core Vulkan 1.3 features (mandatory)
       bool dynamicRendering;
 
-      // Extension features 
+      // Core Vulkan 1.4 features (new mandatory features)
+      bool pushDescriptor;            // Mandatory in 1.4 - replaces VK_KHR_push_descriptor
+      bool dynamicRenderingLocalRead; // Optional but highly recommended
+
+      // Optional Vulkan 1.4 features
+      bool hostImageCopy; // Optional - VK_EXT_host_image_copy
+
+      // Extension features (still required in 1.4)
       bool extendedDynamicState3;   // VK_EXT_extended_dynamic_state3
       bool vertexInputDynamicState; // VK_EXT_vertex_input_dynamic_state
       bool shaderObject;            // VK_EXT_shader_object
@@ -414,6 +421,15 @@ extern "C"
 
       // VK_EXT_vertex_input_dynamic_state (still required)
       PFN_vkCmdSetVertexInputEXT vkCmdSetVertexInputEXT;
+
+      // Push Descriptors (now core in 1.4 - use core function names)
+      PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR;
+      PFN_vkCmdPushDescriptorSetWithTemplateKHR vkCmdPushDescriptorSetWithTemplateKHR;
+
+      // Host Image Copy (optional extension)
+      PFN_vkCopyMemoryToImageEXT vkCopyMemoryToImageEXT;
+      PFN_vkCopyImageToMemoryEXT vkCopyImageToMemoryEXT;
+      PFN_vkCopyImageToImageEXT vkCopyImageToImageEXT;
 
       // Instance functions to initialize
       PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;
