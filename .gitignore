@@ -50,3 +50,6 @@ tags
 TAGS
 .clangd/
 compile_commands.json
+
+dotnet/*/obj
+dotnet/*/bin
