@@ -286,7 +286,7 @@ VkImageView veGetImageViewFromTexture(VEDeviceInternal *device, VETextureIndex i
 // =============================================================================
 
 static VEResult veUploadTextureData(VEDeviceInternal *device, VETextureInternal *texture, const void *data,
-                                    size_t dataSize)
+                                    uint64_t dataSize)
 {
    if (!device || !texture || !data || dataSize == 0)
    {
@@ -765,7 +765,7 @@ VETextureIndex veLoadTexture(VEDevice *device, const char *filename, VkImageUsag
                          .usage = usage,
                          .sampleCount = VK_SAMPLE_COUNT_1_BIT,
                          .initialData = pixels,
-                         .initialDataSize = width * height * 4,
+                         .initialDataSize = (uint64_t)(width * height * 4),
                          .debugName = filename};
 
    VETextureIndex result = veCreateTexture(device, &desc);
@@ -813,7 +813,7 @@ VETextureIndex veLoadHDRTexture(VEDevice *device, const char *filename, VkImageU
                          .usage = usage,
                          .sampleCount = VK_SAMPLE_COUNT_1_BIT,
                          .initialData = pixels,
-                         .initialDataSize = width * height * 4 * sizeof(float),
+                         .initialDataSize = (uint64_t)(width * height * 4) * (uint64_t)sizeof(float),
                          .debugName = filename};
 
    VETextureIndex result = veCreateTexture(device, &desc);
@@ -837,6 +837,11 @@ VETextureIndex veLoadHDRTexture(VEDevice *device, const char *filename, VkImageU
 
 VETextureIndex veLoadCubeTexture(VEDevice *device, const char *filenames[6], VkImageUsageFlags usage, bool generateMips)
 {
+   (void)device;
+   (void)filenames;
+   (void)usage;
+   (void)generateMips;
+
    veSetError("Cube texture loading not implemented");
    return VE_INVALID_TEXTURE_INDEX;
 }
@@ -1074,6 +1079,9 @@ VEResult veGenerateMipmapsImmediate(VEDevice *device, VETextureIndex texture)
 
 VEResult veSaveTexture(VEDevice *device, VETextureIndex texture, const char *filename)
 {
+   (void)device;
+   (void)texture;
+   (void)filename;
    veSetError("Texture saving not implemented");
    return VE_ERROR_FEATURE_NOT_SUPPORTED;
 }

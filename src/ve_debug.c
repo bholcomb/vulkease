@@ -287,7 +287,7 @@ static double getCurrentTimeSeconds(void)
 {
    struct timespec ts;
    clock_gettime(CLOCK_MONOTONIC, &ts);
-   return ts.tv_sec + ts.tv_nsec / 1e9;
+   return (double)ts.tv_sec + (double)ts.tv_nsec / (double)1e9;
 }
 
 VEResult veGetPerformanceStats(VEDevice *device, VEPerformanceStats *stats)
@@ -382,13 +382,15 @@ VEResult veGetRenderConfigStats(VEDevice *device, VERenderConfigStats *stats)
 
 VEResult veBeginGPUTiming(VECommandBuffer *cmd, uint32_t queryIndex)
 {
+   (void)queryIndex;
+
    if (!cmd)
    {
       veSetError("Command buffer cannot be NULL");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   //VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
    // In a full implementation, we would:
    // 1. Create timestamp query pool if not exists
@@ -396,7 +398,7 @@ VEResult veBeginGPUTiming(VECommandBuffer *cmd, uint32_t queryIndex)
    // 3. Write timestamp at pipeline stage
 
    // For now, record the CPU time as a fallback
-   double currentTime = getCurrentTimeSeconds();
+   //double currentTime = getCurrentTimeSeconds();
 
    // Store timing data in command buffer (would need to extend internal
    // structure) internal->timingData[queryIndex].startTime = currentTime;
@@ -406,19 +408,21 @@ VEResult veBeginGPUTiming(VECommandBuffer *cmd, uint32_t queryIndex)
 
 VEResult veEndGPUTiming(VECommandBuffer *cmd, uint32_t queryIndex)
 {
+   (void)queryIndex;
+   
    if (!cmd)
    {
       veSetError("Command buffer cannot be NULL");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   //VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
    // In a full implementation, we would:
    // 1. Write end timestamp
    // 2. Calculate duration when results are available
 
-   double currentTime = getCurrentTimeSeconds();
+   //double currentTime = getCurrentTimeSeconds();
    // internal->timingData[queryIndex].endTime = currentTime;
 
    return VE_SUCCESS;
@@ -426,13 +430,15 @@ VEResult veEndGPUTiming(VECommandBuffer *cmd, uint32_t queryIndex)
 
 VEResult veGetGPUTimingResults(VEDevice *device, uint32_t queryIndex, double *timeInMilliseconds)
 {
+   (void)queryIndex;
+   
    if (!device || !timeInMilliseconds)
    {
       veSetError("Invalid parameters for GPU timing results");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+   //VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
 
    // In a full implementation, we would:
    // 1. Get query results from timestamp query pool
@@ -454,8 +460,10 @@ uint32_t veGetBufferCount(VEDevice *device)
    if (!device)
       return 0;
 
-   // Would need proper buffer tracking in device
-   return 0;
+   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+   return deviceInternal->graphicsCommandPool->commandBufferCount + 
+          deviceInternal->computeCommandPool->commandBufferCount +
+          deviceInternal->transferCommandPool->commandBufferCount;
 }
 
 uint32_t veGetTextureCount(VEDevice *device)
@@ -631,9 +639,9 @@ void vePrintDebugInfo(VEDevice *device)
    {
       printf("\nMemory Usage:\n");
       printf("  Total Allocated: %llu bytes (%.2f MB)\n", (unsigned long long)memStats.totalAllocated,
-             memStats.totalAllocated / (1024.0 * 1024.0));
+             (double)memStats.totalAllocated / (1024.0 * 1024.0));
       printf("  Total Used: %llu bytes (%.2f MB)\n", (unsigned long long)memStats.totalUsed,
-             memStats.totalUsed / (1024.0 * 1024.0));
+             (double)memStats.totalUsed / (1024.0 * 1024.0));
    }
 
    // Performance stats
@@ -642,7 +650,7 @@ void vePrintDebugInfo(VEDevice *device)
    {
       printf("\nPerformance Stats:\n");
       printf("  Frame Time: %llu ns (%.2f ms)\n", (unsigned long long)perfStats.frameTime,
-             perfStats.frameTime / 1000000.0);
+             (double)perfStats.frameTime / 1000000.0);
       printf("  Draw Calls: %u\n", perfStats.drawCalls);
       printf("  Compute Dispatches: %u\n", perfStats.computeDispatches);
       printf("  Vertices Rendered: %llu\n", (unsigned long long)perfStats.verticesRendered);

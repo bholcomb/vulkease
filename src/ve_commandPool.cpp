@@ -77,7 +77,8 @@ extern "C" VEResult veAllocateCommandBuffer(VEDeviceInternal *device, VECommandP
    uint32_t nextBuffer = pool->nextFreeCommandBuffer;
    while (pool->commandBufferInUse[nextBuffer])
    {
-      nextBuffer = (nextBuffer++) % VE_MAX_COMMAND_BUFFERS; // wrap around looking for a free one
+      nextBuffer++;
+      nextBuffer = nextBuffer % VE_MAX_COMMAND_BUFFERS; // wrap around looking for a free one
       checkCount++;
       if (checkCount > VE_MAX_COMMAND_BUFFERS)
       {

@@ -185,7 +185,7 @@ static VkShaderStageFlags veGetBoundShaderStages(VECommandBufferInternal *cmd)
    return stages;
 }
 
-void vePushConstants(VECommandBuffer *cmd, const void *data, size_t size, size_t offset)
+void vePushConstants(VECommandBuffer *cmd, const void *data, uint64_t size, uint64_t offset)
 {
    if (!cmd || !data || size == 0)
       return;
@@ -206,15 +206,6 @@ void vePushConstants(VECommandBuffer *cmd, const void *data, size_t size, size_t
    { // Standard guaranteed minimum
       veSetError("Push constant size exceeds limit (max 128 bytes, requested %zu+%zu)", offset, size);
       return;
-   }
-
-   VkShaderStageFlags stages = 0;
-   if (internal->boundShaders & VK_SHADER_STAGE_COMPUTE_BIT)
-   {
-      stages = VK_SHADER_STAGE_COMPUTE_BIT;
-   }
-   else if (internal->boundShaders & VK_SHADER_STAGE_ALL_GRAPHICS)
-   {
    }
 
    // With VK_EXT_shader_object: Push constants are specified per-shader, not
@@ -279,7 +270,7 @@ void veDrawIndexed(VECommandBuffer *cmd, uint32_t indexCount, uint32_t instanceC
    vkCmdDrawIndexed(internal->commandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
-void veDrawIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, size_t offset, uint32_t drawCount,
+void veDrawIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t offset, uint32_t drawCount,
                     uint32_t stride)
 {
    if (!cmd || indirectBuffer == VE_INVALID_ADDRESS || drawCount == 0)
@@ -297,7 +288,7 @@ void veDrawIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, size_t
    vkCmdDrawIndirect(internal->commandBuffer, buffer, offset, drawCount, stride);
 }
 
-void veDrawIndexedIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, size_t offset, uint32_t drawCount,
+void veDrawIndexedIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t offset, uint32_t drawCount,
                            uint32_t stride)
 {
    if (!cmd || indirectBuffer == VE_INVALID_ADDRESS || drawCount == 0)
@@ -315,8 +306,8 @@ void veDrawIndexedIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer,
    vkCmdDrawIndexedIndirect(internal->commandBuffer, buffer, offset, drawCount, stride);
 }
 
-void veDrawIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, size_t indirectOffset,
-                         VEBufferAddress countBuffer, size_t countOffset, uint32_t maxDrawCount, uint32_t stride)
+void veDrawIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t indirectOffset,
+                         VEBufferAddress countBuffer, uint64_t countOffset, uint32_t maxDrawCount, uint32_t stride)
 {
    if (!cmd || indirectBuffer == VE_INVALID_ADDRESS || countBuffer == VE_INVALID_ADDRESS)
       return;
@@ -335,8 +326,8 @@ void veDrawIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, s
                           stride);
 }
 
-void veDrawIndexedIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, size_t indirectOffset,
-                                VEBufferAddress countBuffer, size_t countOffset, uint32_t maxDrawCount, uint32_t stride)
+void veDrawIndexedIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t indirectOffset,
+                                VEBufferAddress countBuffer, uint64_t countOffset, uint32_t maxDrawCount, uint32_t stride)
 {
    if (!cmd || indirectBuffer == VE_INVALID_ADDRESS || countBuffer == VE_INVALID_ADDRESS)
       return;

@@ -64,7 +64,7 @@ static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
     }
     
     if (g_swapchain && width > 0 && height > 0) {
-        veResizeSwapchain(g_swapchain, width, height);
+        veResizeSwapchain(g_swapchain, (uint32_t)width, (uint32_t)height);
     }
 }
 
@@ -131,7 +131,7 @@ static bool initVulkEase(GLFWwindow* window) {
     void* windowData[] = {displayHandle, windowHandle};
 
     // Create swapchain using VulkEase's simple window handle approach
-    g_swapchain = veCreateSwapchain(g_device, windowData, win_width, win_height, VK_FORMAT_B8G8R8A8_SRGB, vsync);
+    g_swapchain = veCreateSwapchain(g_device, windowData, (uint32_t)win_width, (uint32_t)win_height, VK_FORMAT_B8G8R8A8_SRGB, vsync);
 
 #elif defined(__APPLE__)
     void* windowHandle = NULL;    

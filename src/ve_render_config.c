@@ -180,12 +180,12 @@ VERect2D veDefaultScissorConfig()
 // Render Configuration Management
 // =============================================================================
 
-VEVertexInputConfig copyVertexInputConfig(VEVertexInputConfig *orig)
+VEVertexInputConfig copyVertexInputConfig(const VEVertexInputConfig *orig)
 {
    VEVertexInputConfig config = {0};
    config.bindingCount = orig->bindingCount;
    config.bindings = calloc(orig->bindingCount, sizeof(VEVertexBinding));
-   for (int i = 0; i < orig->bindingCount; i++)
+   for (uint32_t i = 0; i < orig->bindingCount; i++)
    {
       config.bindings[i].binding = orig->bindings[i].binding;
       config.bindings[i].stride = orig->bindings[i].stride;
@@ -194,7 +194,7 @@ VEVertexInputConfig copyVertexInputConfig(VEVertexInputConfig *orig)
    }
    config.attributeCount = orig->attributeCount;
    config.attributes = calloc(orig->attributeCount, sizeof(VEVertexAttribute));
-   for (int i = 0; i < orig->attributeCount; i++)
+   for (uint32_t i = 0; i < orig->attributeCount; i++)
    {
       config.attributes[i].binding = orig->attributes[i].binding;
       config.attributes[i].format = orig->attributes[i].format;
@@ -512,15 +512,15 @@ VERenderConfig *veCreateConfigVariant(VERenderConfig *baseConfig, const VERender
    desc.shaders = overrides->shaders ? overrides->shaders : base->shaders;
    desc.debugName = overrides->debugName ? overrides->debugName : "ConfigVariant";
 
-   // Find the device from the base config (this is a limitation of the current
-   // design) In a real implementation, we'd need a better way to get the device
-   veSetError("Config variant creation not fully implemented - need device reference");
-   return NULL;
+   VERenderConfig* ret = veCreateRenderConfig((VEDevice*)base->device, &desc);
+
+   return ret;
 }
 
 VERenderConfig *veMergeRenderConfigs(VEDevice *device, uint32_t configCount, VERenderConfig *const *configs,
                                      const char *debugName)
 {
+   (void)debugName; //suppress unused parameter warning
    if (!device || configCount == 0 || !configs)
    {
       veSetError("Invalid parameters for config merging");
@@ -534,6 +534,7 @@ VERenderConfig *veMergeRenderConfigs(VEDevice *device, uint32_t configCount, VER
 
 VERenderConfig *veCloneRenderConfig(VERenderConfig *config, const char *debugName)
 {
+   (void)debugName; //suppress unused parameter warning
    if (!config)
    {
       veSetError("Config cannot be NULL");

@@ -122,7 +122,7 @@ extern "C"
       VmaAllocation allocation;
       VmaAllocationInfo allocationInfo;
       VkDeviceAddress deviceAddress;
-      size_t size;
+      uint64_t size;
       VkBufferUsageFlags usage;
       bool persistentlyMapped;
       void *mappedData;
@@ -429,6 +429,12 @@ extern "C"
 
    bool initializeInstanceFunctions(VkInstance instance);
    bool initializeDeviceFunctions(VkDevice device);
+
+   bool veSupportsBufferDeviceAddress(VEDevice *device);
+   bool veSupportsDescriptorIndexing(VEDevice *device);
+   bool veSupportsShaderObjects(VEDevice *device);
+   bool veSupportsExtendedDynamicState3(VEDevice *device);
+   bool veSupportsVertexInputDynamicState(VEDevice *device);
 
 #ifdef __cplusplus
 }

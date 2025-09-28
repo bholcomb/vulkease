@@ -190,6 +190,16 @@ static VkPresentModeKHR chooseSwapPresentMode(VkPhysicalDevice device, VkSurface
    return ret;
 }
 
+#ifndef MIN
+#define UNDEFMIN
+#define MIN(a,b) (((a)<(b))?(a):(b))
+#endif
+
+#ifndef MAX
+#define UNDEFMAX
+#define MAX(a,b) (((a)>(b))?(a):(b))
+#endif
+
 static VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR *capabilities, uint32_t width, uint32_t height)
 {
    if (capabilities->currentExtent.width != UINT32_MAX)
@@ -200,12 +210,19 @@ static VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR *capabilities,
    VkExtent2D actualExtent = {width, height};
 
    actualExtent.width =
-       fmax(capabilities->minImageExtent.width, fmin(capabilities->maxImageExtent.width, actualExtent.width));
+       MAX(capabilities->minImageExtent.width, MIN(capabilities->maxImageExtent.width, actualExtent.width));
    actualExtent.height =
-       fmax(capabilities->minImageExtent.height, fmin(capabilities->maxImageExtent.height, actualExtent.height));
+       MAX(capabilities->minImageExtent.height, MIN(capabilities->maxImageExtent.height, actualExtent.height));
 
    return actualExtent;
 }
+
+#ifdef UNDEFMIN
+#undef MIN
+#endif
+#ifdef UNDEFMAX
+#undef MAX
+#endif
 
 // =============================================================================
 // Swapchain Implementation
@@ -381,26 +398,37 @@ VESwapchain *veCreateSwapchain(VEDevice *device, void *windowHandle, uint32_t wi
    // Create per-frame synchronization objects
    for (uint32_t i = 0; i < VE_MAX_FRAMES_IN_FLIGHT; i++)
    {
-      VkSemaphoreCreateInfo semInfo = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-      VkFenceCreateInfo fenceInfo = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+      VkSemaphoreCreateInfo semInfo = {0};
+      semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+      semInfo.flags = 0;
+      semInfo.pNext = NULL;
+
+      VkFenceCreateInfo fenceInfo = {0};
+      fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
       fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // Start signaled
+      fenceInfo.pNext = NULL;
 
       if (vkCreateSemaphore(deviceInternal->device, &semInfo, NULL, &swapchain->imageAvailableSemaphores[i]) !=
               VK_SUCCESS ||
           vkCreateFence(deviceInternal->device, &fenceInfo, NULL, &swapchain->inFlightFences[i]) != VK_SUCCESS)
       {
-         return VE_ERROR_UNKNOWN;
+         veSetError("Cannot create sync objects");
+         return NULL;
       }
    }
 
    // Create per-swapchain-image semaphores
    for (uint32_t i = 0; i < swapchain->imageCount; i++)
    {
-      VkSemaphoreCreateInfo semInfo = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+      VkSemaphoreCreateInfo semInfo = {0};
+      semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+      semInfo.flags = 0;
+      semInfo.pNext = NULL;
       if (vkCreateSemaphore(deviceInternal->device, &semInfo, NULL, &swapchain->renderFinishedSemaphores[i]) !=
           VK_SUCCESS)
       {
-         return VE_ERROR_UNKNOWN;
+         veSetError("Cannot create sync objects");
+         return NULL;
       }
    }
 

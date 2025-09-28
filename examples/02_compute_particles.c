@@ -90,7 +90,7 @@ static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
     }
     
     if (g_swapchain && width > 0 && height > 0) {
-        veResizeSwapchain(g_swapchain, width, height);
+        veResizeSwapchain(g_swapchain, (uint32_t)width, (uint32_t)height);
     }
 }
 
@@ -158,7 +158,7 @@ static bool initVulkEase(GLFWwindow* window) {
     void* windowData[] = {displayHandle, windowHandle};
 
     // Create swapchain using VulkEase's simple window handle approach
-    g_swapchain = veCreateSwapchain(g_device, windowData, win_width, win_height, VK_FORMAT_B8G8R8A8_SRGB, vsync);
+    g_swapchain = veCreateSwapchain(g_device, windowData, (uint32_t)win_width, (uint32_t)win_height, VK_FORMAT_B8G8R8A8_SRGB, vsync);
 
 #elif defined(__APPLE__)
     void* windowHandle = NULL;    
@@ -214,24 +214,24 @@ static void initializeParticles(Particle* particles, uint32_t count) {
     
     for (uint32_t i = 0; i < count; i++) {
         // Random position in circle
-        float angle = ((float)rand() / RAND_MAX) * 2.0f * 3.14159265359f;
-        float radius = ((float)rand() / RAND_MAX) * 0.5f;
+        float angle = ((float)rand() / (float)RAND_MAX) * 2.0f * 3.14159265359f;
+        float radius = ((float)rand() / (float)RAND_MAX) * 0.5f;
         
         particles[i].position[0] = cosf(angle) * radius;
         particles[i].position[1] = sinf(angle) * radius;
         
         // Random velocity
-        particles[i].velocity[0] = (((float)rand() / RAND_MAX) - 0.5f) * 0.1f;
-        particles[i].velocity[1] = (((float)rand() / RAND_MAX) - 0.5f) * 0.1f;
+        particles[i].velocity[0] = (((float)rand() /(float)RAND_MAX) - 0.5f) * 0.1f;
+        particles[i].velocity[1] = (((float)rand() / (float)RAND_MAX) - 0.5f) * 0.1f;
         
         // Random properties
-        particles[i].life = ((float)rand() / RAND_MAX) * 5.0f + 1.0f;
-        particles[i].size = ((float)rand() / RAND_MAX) * 0.02f + 0.005f;
+        particles[i].life = ((float)rand() / (float)RAND_MAX) * 5.0f + 1.0f;
+        particles[i].size = ((float)rand() / (float)RAND_MAX) * 0.02f + 0.005f;
         
         // Random color
-        particles[i].color[0] = ((float)rand() / RAND_MAX);
-        particles[i].color[1] = ((float)rand() / RAND_MAX);
-        particles[i].color[2] = ((float)rand() / RAND_MAX);
+        particles[i].color[0] = ((float)rand() / (float)RAND_MAX);
+        particles[i].color[1] = ((float)rand() / (float)RAND_MAX);
+        particles[i].color[2] = ((float)rand() / (float)RAND_MAX);
         particles[i].color[3] = 1.0f;
         
         particles[i].padding = 0.0f;
@@ -395,8 +395,8 @@ static void renderParticles(VECommandBuffer* cmd, VETextureIndex backbuffer) {
 
 static void render(float deltaTime, float time) {
     // Convert to normalized coordinates [-1, 1]
-    float normalizedMouseX = sin(time); //(float)(mouseX / win_width) * 2.0f - 1.0f;
-    float normalizedMouseY = cos(time); //1.0f - (float)(mouseY / win_height) * 2.0f;
+    float normalizedMouseX = (float)sin(time); //(float)(mouseX / win_width) * 2.0f - 1.0f;
+    float normalizedMouseY = (float)cos(time); //1.0f - (float)(mouseY / win_height) * 2.0f;
     
     // Acquire next swapchain image
     VETextureIndex backbuffer = veAcquireNextImage(g_swapchain);

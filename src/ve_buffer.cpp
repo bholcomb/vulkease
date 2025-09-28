@@ -451,7 +451,7 @@ extern "C" void veUnmapBuffer(VEDevice *device, VEBufferAddress address)
 }
 
 static VEResult veUpdateBufferWithStaging(VEDeviceInternal *device, VEBufferInternal *dstBuffer, const void *data,
-                                          size_t size, size_t offset)
+                                          uint64_t size, uint64_t offset)
 {
    // Create staging buffer
    VkBufferCreateInfo stagingBufferInfo = {};
@@ -528,8 +528,8 @@ static VEResult veUpdateBufferWithStaging(VEDeviceInternal *device, VEBufferInte
    return submitResult;
 }
 
-extern "C" VEResult veUpdateBuffer(VEDevice *device, VEBufferAddress address, const void *data, size_t size,
-                                   size_t offset)
+extern "C" VEResult veUpdateBuffer(VEDevice *device, VEBufferAddress address, const void *data, uint64_t size,
+                                   uint64_t offset)
 {
    if (!device || address == VE_INVALID_ADDRESS || !data || size == 0)
    {
@@ -588,7 +588,7 @@ extern "C" VEResult veUpdateBuffer(VEDevice *device, VEBufferAddress address, co
 // Buffer Property Queries
 // =============================================================================
 
-extern "C" size_t veGetBufferSize(VEDevice *device, VEBufferAddress address)
+extern "C" uint64_t veGetBufferSize(VEDevice *device, VEBufferAddress address)
 {
    if (!device || address == VE_INVALID_ADDRESS)
       return 0;
@@ -614,7 +614,7 @@ extern "C" VkBufferUsageFlags veGetBufferUsage(VEDevice *device, VEBufferAddress
 // Convenience Buffer Creation Functions
 // =============================================================================
 
-extern "C" VEBufferAddress veCreateVertexBuffer(VEDevice *device, const void *vertices, size_t size,
+extern "C" VEBufferAddress veCreateVertexBuffer(VEDevice *device, const void *vertices, uint64_t size,
                                                 const char *debugName)
 {
    VEBufferDesc desc = {.size = size,
@@ -627,7 +627,7 @@ extern "C" VEBufferAddress veCreateVertexBuffer(VEDevice *device, const void *ve
    return veCreateBuffer(device, &desc);
 }
 
-extern "C" VEBufferAddress veCreateIndexBuffer(VEDevice *device, const void *indices, size_t size,
+extern "C" VEBufferAddress veCreateIndexBuffer(VEDevice *device, const void *indices, uint64_t size,
                                                const char *debugName)
 {
    VEBufferDesc desc = {.size = size,
@@ -640,7 +640,7 @@ extern "C" VEBufferAddress veCreateIndexBuffer(VEDevice *device, const void *ind
    return veCreateBuffer(device, &desc);
 }
 
-extern "C" VEBufferAddress veCreateUniformBuffer(VEDevice *device, size_t size, bool persistentlyMapped,
+extern "C" VEBufferAddress veCreateUniformBuffer(VEDevice *device, uint64_t size, bool persistentlyMapped,
                                                  const char *debugName)
 {
    VEBufferDesc desc = {.size = size,
@@ -653,7 +653,7 @@ extern "C" VEBufferAddress veCreateUniformBuffer(VEDevice *device, size_t size, 
    return veCreateBuffer(device, &desc);
 }
 
-extern "C" VEBufferAddress veCreateStorageBuffer(VEDevice *device, size_t size, const char *debugName)
+extern "C" VEBufferAddress veCreateStorageBuffer(VEDevice *device, uint64_t size, const char *debugName)
 {
    VEBufferDesc desc = {.size = size,
                         .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -665,7 +665,7 @@ extern "C" VEBufferAddress veCreateStorageBuffer(VEDevice *device, size_t size, 
    return veCreateBuffer(device, &desc);
 }
 
-extern "C" VEBufferAddress veCreateIndirectBuffer(VEDevice *device, size_t size, const char *debugName)
+extern "C" VEBufferAddress veCreateIndirectBuffer(VEDevice *device, uint64_t size, const char *debugName)
 {
    VEBufferDesc desc = {.size = size,
                         .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,

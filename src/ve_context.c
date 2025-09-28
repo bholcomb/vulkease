@@ -79,12 +79,26 @@ void veSetError(const char *format, ...)
 
 const char *veGetLastError(void) { return g_lastError[0] ? g_lastError : "No error"; }
 
+const char* getMessageTypeString(VkDebugUtilsMessageTypeFlagsEXT messageType)
+{
+   switch(messageType)
+   {
+      case VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT: return "General";
+      case VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT: return "Validation";
+      case VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT: return "Performance";
+      case VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT: return "Device Address Binding";
+   }
+
+   return "Unknown";
+}
+
 // Debug messenger callback
 static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
                                                     VkDebugUtilsMessageTypeFlagsEXT messageType,
                                                     const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
                                                     void *pUserData)
 {
+   (void)pUserData; //suppresses unused parameter warning
 
    const char *severity = "INFO";
    if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
@@ -96,7 +110,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityF
       severity = "WARNING";
    }
 
-   printf("[VulkEase %s] %s\n", severity, pCallbackData->pMessage);
+   printf("[VulkEase %s]-%s: %s\n", severity, getMessageTypeString(messageType), pCallbackData->pMessage);
    return VK_FALSE;
 }
 
@@ -169,6 +183,7 @@ static bool checkInstanceExtensionSupport(const char **requiredExtensions, uint3
    return allSupported;
 }
 
+#ifdef DEBUG
 static bool checkValidationLayerSupport(void)
 {
    uint32_t layerCount;
@@ -190,6 +205,7 @@ static bool checkValidationLayerSupport(void)
    free(layers);
    return found;
 }
+#endif
 
 static bool checkDeviceExtensionSupport(VkPhysicalDevice device, const char **requiredExtensions,
                                         uint32_t requiredCount)
@@ -295,7 +311,7 @@ static bool validateMinimumGPUCapabilities(VkInstance instance)
 // Device Selection
 // =============================================================================
 
-static int scorePhysicalDevice(VkPhysicalDevice device, VEContextInternal *context)
+static int scorePhysicalDevice(VkPhysicalDevice device)
 {
    VkPhysicalDeviceProperties properties;
    VkPhysicalDeviceFeatures features;
@@ -383,7 +399,7 @@ static VkPhysicalDevice selectBestPhysicalDevice(VEContextInternal *context)
 
    for (uint32_t i = 0; i < deviceCount; i++)
    {
-      int score = scorePhysicalDevice(devices[i], context);
+      int score = scorePhysicalDevice(devices[i]);
       if (score > bestScore)
       {
          bestScore = score;

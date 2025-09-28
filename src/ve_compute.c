@@ -20,7 +20,7 @@ void veDispatch(VECommandBuffer *cmd, uint32_t groupCountX, uint32_t groupCountY
    vkCmdDispatch(internal->commandBuffer, groupCountX, groupCountY, groupCountZ);
 }
 
-void veDispatchIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, size_t offset)
+void veDispatchIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t offset)
 {
    if (!cmd || indirectBuffer == VE_INVALID_ADDRESS)
    {
