@@ -2,7 +2,7 @@ using System;
 
 namespace VulkEase
 {
-    public enum VEResult : int
+    public enum VEResult : Int32
     {
         VE_SUCCESS = 0,
         VE_ERROR_OUT_OF_MEMORY = 1,
@@ -17,7 +17,7 @@ namespace VulkEase
     }
 
     [Flags]
-    public enum VEConfigType : uint
+    public enum VEConfigTypeFlags : UInt32
     {
         VE_CONFIG_TYPE_VERTEX_INPUT = 0x1,
         VE_CONFIG_TYPE_RASTERIZATION = 0x2,
@@ -30,7 +30,7 @@ namespace VulkEase
         VE_CONFIG_TYPE_COMPLETE = 0xFF
     }
 
-    public enum VEMessageSeverity : int
+    public enum VEMessageSeverity : Int32
     {
         VE_MESSAGE_SEVERITY_VERBOSE = 0,
         VE_MESSAGE_SEVERITY_INFO = 1,
@@ -39,7 +39,7 @@ namespace VulkEase
     }
 
     // Vulkan enums used by VulkEase
-    public enum VkFormat : int
+    public enum VkFormat : Int32
     {
         VK_FORMAT_UNDEFINED = 0,
         VK_FORMAT_R4G4_UNORM_PACK8 = 1,
@@ -175,7 +175,7 @@ namespace VulkEase
     }
 
     [Flags]
-    public enum VkImageUsageFlags : uint
+    public enum VkImageUsageFlags : UInt32
     {
         VK_IMAGE_USAGE_TRANSFER_SRC_BIT = 0x00000001,
         VK_IMAGE_USAGE_TRANSFER_DST_BIT = 0x00000002,
@@ -188,7 +188,7 @@ namespace VulkEase
     }
 
     [Flags]
-    public enum VkBufferUsageFlags : uint
+    public enum VkBufferUsageFlags : UInt32
     {
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT = 0x00000001,
         VK_BUFFER_USAGE_TRANSFER_DST_BIT = 0x00000002,
@@ -203,7 +203,7 @@ namespace VulkEase
     }
 
     [Flags]
-    public enum VkSampleCountFlags : uint
+    public enum VkSampleCountFlags : UInt32
     {
         VK_SAMPLE_COUNT_1_BIT = 0x00000001,
         VK_SAMPLE_COUNT_2_BIT = 0x00000002,
@@ -214,14 +214,14 @@ namespace VulkEase
         VK_SAMPLE_COUNT_64_BIT = 0x00000040
     }
 
-    public enum VkFilter : int
+    public enum VkFilter : Int32
     {
         VK_FILTER_NEAREST = 0,
         VK_FILTER_LINEAR = 1,
         VK_FILTER_CUBIC_IMG = 1000015000
     }
 
-    public enum VkSamplerAddressMode : int
+    public enum VkSamplerAddressMode : Int32
     {
         VK_SAMPLER_ADDRESS_MODE_REPEAT = 0,
         VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT = 1,
@@ -230,7 +230,7 @@ namespace VulkEase
         VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE = 4
     }
 
-    public enum VkCompareOp : int
+    public enum VkCompareOp : Int32
     {
         VK_COMPARE_OP_NEVER = 0,
         VK_COMPARE_OP_LESS = 1,
@@ -243,7 +243,7 @@ namespace VulkEase
     }
 
     [Flags]
-    public enum VkCullModeFlags : uint
+    public enum VkCullModeFlags : UInt32
     {
         VK_CULL_MODE_NONE = 0,
         VK_CULL_MODE_FRONT_BIT = 0x00000001,
@@ -251,13 +251,13 @@ namespace VulkEase
         VK_CULL_MODE_FRONT_AND_BACK = 0x00000003
     }
 
-    public enum VkFrontFace : int
+    public enum VkFrontFace : Int32
     {
         VK_FRONT_FACE_COUNTER_CLOCKWISE = 0,
         VK_FRONT_FACE_CLOCKWISE = 1
     }
 
-    public enum VkPolygonMode : int
+    public enum VkPolygonMode : Int32
     {
         VK_POLYGON_MODE_FILL = 0,
         VK_POLYGON_MODE_LINE = 1,
@@ -265,7 +265,7 @@ namespace VulkEase
         VK_POLYGON_MODE_FILL_RECTANGLE_NV = 1000153000
     }
 
-    public enum VkStencilOp : int
+    public enum VkStencilOp : Int32
     {
         VK_STENCIL_OP_KEEP = 0,
         VK_STENCIL_OP_ZERO = 1,
@@ -277,7 +277,7 @@ namespace VulkEase
         VK_STENCIL_OP_DECREMENT_AND_WRAP = 7
     }
 
-    public enum VkBlendFactor : int
+    public enum VkBlendFactor : Int32
     {
         VK_BLEND_FACTOR_ZERO = 0,
         VK_BLEND_FACTOR_ONE = 1,
@@ -300,7 +300,7 @@ namespace VulkEase
         VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA = 18
     }
 
-    public enum VkBlendOp : int
+    public enum VkBlendOp : Int32
     {
         VK_BLEND_OP_ADD = 0,
         VK_BLEND_OP_SUBTRACT = 1,
@@ -310,7 +310,7 @@ namespace VulkEase
     }
 
     [Flags]
-    public enum VkColorComponentFlags : uint
+    public enum VkColorComponentFlags : UInt32
     {
         VK_COLOR_COMPONENT_R_BIT = 0x00000001,
         VK_COLOR_COMPONENT_G_BIT = 0x00000002,
@@ -318,7 +318,7 @@ namespace VulkEase
         VK_COLOR_COMPONENT_A_BIT = 0x00000008
     }
 
-    public enum VkLogicOp : int
+    public enum VkLogicOp : Int32
     {
         VK_LOGIC_OP_CLEAR = 0,
         VK_LOGIC_OP_AND = 1,
@@ -338,13 +338,13 @@ namespace VulkEase
         VK_LOGIC_OP_SET = 15
     }
 
-    public enum VkVertexInputRate : int
+    public enum VkVertexInputRate : Int32
     {
         VK_VERTEX_INPUT_RATE_VERTEX = 0,
         VK_VERTEX_INPUT_RATE_INSTANCE = 1
     }
 
-    public enum VkPrimitiveTopology : int
+    public enum VkPrimitiveTopology : Int32
     {
         VK_PRIMITIVE_TOPOLOGY_POINT_LIST = 0,
         VK_PRIMITIVE_TOPOLOGY_LINE_LIST = 1,
@@ -359,7 +359,7 @@ namespace VulkEase
         VK_PRIMITIVE_TOPOLOGY_PATCH_LIST = 10
     }
 
-    public enum VkAttachmentLoadOp : int
+    public enum VkAttachmentLoadOp : Int32
     {
         VK_ATTACHMENT_LOAD_OP_LOAD = 0,
         VK_ATTACHMENT_LOAD_OP_CLEAR = 1,
@@ -367,7 +367,7 @@ namespace VulkEase
         VK_ATTACHMENT_LOAD_OP_NONE_EXT = 1000400000
     }
 
-    public enum VkAttachmentStoreOp : int
+    public enum VkAttachmentStoreOp : Int32
     {
         VK_ATTACHMENT_STORE_OP_STORE = 0,
         VK_ATTACHMENT_STORE_OP_DONT_CARE = 1,
@@ -375,7 +375,7 @@ namespace VulkEase
     }
 
     [Flags]
-    public enum VkShaderStageFlags : uint
+    public enum VkShaderStageFlags : UInt32
     {
         VK_SHADER_STAGE_VERTEX_BIT = 0x00000001,
         VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT = 0x00000002,
@@ -386,7 +386,7 @@ namespace VulkEase
         VK_SHADER_STAGE_ALL_GRAPHICS = 0x0000001F
     }
 
-    public enum VkIndexType : int
+    public enum VkIndexType : Int32
     {
         VK_INDEX_TYPE_UINT16 = 0,
         VK_INDEX_TYPE_UINT32 = 1,
