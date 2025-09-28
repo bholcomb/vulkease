@@ -568,6 +568,58 @@ extern "C"
    VULKEASE_API VETextureIndex veLoadCubeTexture(VEDevice *device, const char *filenames[6], VkImageUsageFlags usage,
                                                  bool generateMips);
 
+   // =============================================================================
+   // Host Image Copy Functions (VK_EXT_host_image_copy)
+   // =============================================================================
+
+   /**
+    * Copy data from host memory to texture using VK_EXT_host_image_copy
+    *
+    * Provides CPU-side texture updates without GPU pipeline stalls.
+    * Requires texture to be created with VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT.
+    *
+    * @param device         Device handle
+    * @param textureIndex   Texture to copy data to
+    * @param srcData        Source data in host memory
+    * @param dataSize       Size of source data in bytes
+    * @param offsetX        X offset in texture
+    * @param offsetY        Y offset in texture
+    * @param offsetZ        Z offset in texture (for 3D textures)
+    * @param width          Width of region to copy
+    * @param height         Height of region to copy
+    * @param depth          Depth of region to copy (1 for 2D textures)
+    * @return VE_SUCCESS on success, error code on failure
+    */
+   VULKEASE_API VEResult veHostCopyToTexture(VEDevice *device, VETextureIndex textureIndex, const void *srcData,
+                                             size_t dataSize, uint32_t offsetX, uint32_t offsetY, uint32_t offsetZ,
+                                             uint32_t width, uint32_t height, uint32_t depth);
+
+   /**
+    * Copy data from texture to host memory using VK_EXT_host_image_copy
+    *
+    * Provides CPU-side texture readback without GPU pipeline stalls.
+    * Requires texture to be created with VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT.
+    *
+    * @param device         Device handle
+    * @param textureIndex   Texture to copy data from
+    * @param dstData        Destination buffer in host memory
+    * @param dataSize       Size of destination buffer in bytes
+    * @param offsetX        X offset in texture
+    * @param offsetY        Y offset in texture
+    * @param offsetZ        Z offset in texture (for 3D textures)
+    * @param width          Width of region to copy
+    * @param height         Height of region to copy
+    * @param depth          Depth of region to copy (1 for 2D textures)
+    * @return VE_SUCCESS on success, error code on failure
+    */
+   VULKEASE_API VEResult veHostCopyFromTexture(VEDevice *device, VETextureIndex textureIndex, void *dstData,
+                                               size_t dataSize, uint32_t offsetX, uint32_t offsetY, uint32_t offsetZ,
+                                               uint32_t width, uint32_t height, uint32_t depth);
+
+   VULKEASE_API VEResult veHostUpdateEntireTexture(VEDevice *device, VETextureIndex textureIndex, const void *srcData,
+                                                   size_t dataSize);
+   VULKEASE_API VEResult veHostCopyEntireTexture(VEDevice *device, VETextureIndex textureIndex, void *dstData,
+                                                 size_t dataSize);
    /**
     * Generate mipmaps for texture
     */
@@ -905,86 +957,92 @@ extern "C"
    // Utility Macros and Helper Functions
    // =============================================================================
 
-   /**
-    * Common push constants structures
-    */
+   // =============================================================================
+   // Push Constants Structures
+   // =============================================================================
 
-   // Standard push constants structure for graphics shaders
+   // Standard push constants structure for graphics shaders - Now 256 bytes
    typedef struct VEGraphicsPushConstants
    {
       VEBufferAddress vertexBuffer;      // 8 bytes - vertex data address
       VEBufferAddress indexBuffer;       // 8 bytes - index data address (optional)
-      VEBufferAddress uniformBuffers[4]; // 32 bytes - up to 4 uniform buffer addresses
-      VETextureIndex textures[8];        // 32 bytes - up to 8 bindless texture indices
-      VESamplerIndex samplers[8];        // 32 bytes - up to 8 bindless sampler indices
+      VEBufferAddress uniformBuffers[8]; // 64 bytes - up to 8 uniform buffer addresses (increased from 4)
+      VETextureIndex textures[16];       // 64 bytes - up to 16 bindless texture indices (increased from 8)
+      VESamplerIndex samplers[16];       // 64 bytes - up to 16 bindless sampler indices (increased from 8)
       float objectScale;                 // 4 bytes - per-object scale
-      uint32_t activeTextureCount;       // 4 bytes - number of active textures (0-8)
-      uint32_t activeSamplerCount;       // 4 bytes - number of active samplers (0-8)
-      uint32_t activeUniformCount;       // 4 bytes - number of active uniform buffers (0-4)
-   } VEGraphicsPushConstants;            // Total: 128 bytes
+      uint32_t activeTextureCount;       // 4 bytes - number of active textures (0-16)
+      uint32_t activeSamplerCount;       // 4 bytes - number of active samplers (0-16)
+      uint32_t activeUniformCount;       // 4 bytes - number of active uniform buffers (0-8)
+      uint32_t reserved[7];              // 28 bytes - reserved for future use
+   } VEGraphicsPushConstants;            // Total: 256 bytes
 
-   // Standard push constants for compute shaders
+   // Standard push constants for compute shaders - Now 256 bytes
    typedef struct VEComputePushConstants
    {
-      VEBufferAddress buffers[8];  // 64 bytes - up to 8 buffer addresses (input/output/params)
-      VETextureIndex textures[8];  // 32 bytes - up to 8 texture indices
-      VESamplerIndex samplers[4];  // 16 bytes - up to 4 sampler indices (usually
-                                   // fewer needed for compute)
+      VEBufferAddress buffers[16]; // 128 bytes - up to 16 buffer addresses (increased from 8)
+      VETextureIndex textures[16]; // 64 bytes - up to 16 texture indices (increased from 8)
+      VESamplerIndex samplers[8];  // 32 bytes - up to 8 sampler indices (compute typically needs fewer)
       uint32_t elementCount;       // 4 bytes - number of elements to process
-      uint32_t activeBufferCount;  // 4 bytes - number of active buffers (0-8)
-      uint32_t activeTextureCount; // 4 bytes - number of active textures (0-8)
-      uint32_t activeSamplerCount; // 4 bytes - number of active samplers (0-4)
-   } VEComputePushConstants;       // Total: 128 bytes
+      uint32_t activeBufferCount;  // 4 bytes - number of active buffers (0-16)
+      uint32_t activeTextureCount; // 4 bytes - number of active textures (0-16)
+      uint32_t activeSamplerCount; // 4 bytes - number of active samplers (0-8)
+      uint32_t reserved[4];        // 16 bytes - reserved for future use
+   } VEComputePushConstants;       // Total: 256 bytes
 
-/**
- * Helper macros
- */
+// =============================================================================
+// Helper Macros - Updated for new push constant sizes
+// =============================================================================
 
 // Initialize push constant structures with safe defaults
 #define VE_INIT_GRAPHICS_PUSH_CONSTANTS()                                                                              \
    {                                                                                                                   \
       .vertexBuffer = VE_INVALID_ADDRESS, .indexBuffer = VE_INVALID_ADDRESS,                                           \
-      .uniformBuffers = {VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS},              \
+      .uniformBuffers = {VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,               \
+                         VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS},              \
       .textures = {VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
                    VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
-                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX},                                                \
+                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
+                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
+                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
+                   VE_INVALID_TEXTURE_INDEX},                                                                          \
       .samplers = {VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
                    VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
-                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX},                                                \
-      .objectScale = 1.0f, .activeTextureCount = 0, .activeSamplerCount = 0, .activeUniformCount = 0                   \
+                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
+                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
+                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
+                   VE_INVALID_SAMPLER_INDEX},                                                                          \
+      .objectScale = 1.0f, .activeTextureCount = 0, .activeSamplerCount = 0, .activeUniformCount = 0, .reserved = {    \
+         0,                                                                                                            \
+         0,                                                                                                            \
+         0,                                                                                                            \
+         0,                                                                                                            \
+         0,                                                                                                            \
+         0,                                                                                                            \
+         0                                                                                                             \
+      }                                                                                                                \
    }
 
 #define VE_INIT_COMPUTE_PUSH_CONSTANTS()                                                                               \
    {                                                                                                                   \
       .buffers = {VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,                      \
+                  VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,                      \
+                  VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,                      \
                   VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS},                     \
       .textures = {VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
                    VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
-                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX},                                                \
+                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
+                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
+                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
+                   VE_INVALID_TEXTURE_INDEX},                                                                          \
       .samplers = {VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
-                   VE_INVALID_SAMPLER_INDEX},                                                                          \
-      .elementCount = 0, .activeBufferCount = 0, .activeTextureCount = 0, .activeSamplerCount = 0                      \
-   }
-
-// Create default descriptors with common settings
-#define VE_DEFAULT_BUFFER_DESC()                                                                                       \
-   {                                                                                                                   \
-      .size = 0, .usage = 0, .initialData = NULL, .initialDataSize = 0, .persistentlyMapped = false, .debugName = NULL \
-   }
-
-#define VE_DEFAULT_TEXTURE_DESC()                                                                                      \
-   {                                                                                                                   \
-      .width = 0, .height = 0, .depth = 1, .mipLevels = 1, .arrayLayers = 1, .format = VE_FORMAT_RGBA8_UNORM,          \
-      .usage = VE_TEXTURE_USAGE_SAMPLED, .sampleCount = VK_SAMPLE_COUNT_1_BIT, .initialData = NULL,                    \
-      .initialDataSize = 0, .debugName = NULL                                                                          \
-   }
-
-#define VE_DEFAULT_SAMPLER_DESC()                                                                                      \
-   {                                                                                                                   \
-      .minFilter = VK_FILTER_LINEAR, .magFilter = VK_FILTER_LINEAR, .mipmapFilter = VK_FILTER_LINEAR,                  \
-      .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT, .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,                  \
-      .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT, .maxAnisotropy = 1.0f, .compareEnable = false,                   \
-      .compareOp = VK_COMPARE_OP_ALWAYS, .minLod = 0.0f, .maxLod = 1000.0f, .debugName = NULL                          \
+                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
+                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX},                                                \
+      .elementCount = 0, .activeBufferCount = 0, .activeTextureCount = 0, .activeSamplerCount = 0, .reserved = {       \
+         0,                                                                                                            \
+         0,                                                                                                            \
+         0,                                                                                                            \
+         0                                                                                                             \
+      }                                                                                                                \
    }
 
 // Color constants
