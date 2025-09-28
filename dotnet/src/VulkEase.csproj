@@ -1,0 +1,135 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Target Framework -->
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    
+    <!-- Assembly Information -->
+    <AssemblyTitle>VulkEase .NET Bindings</AssemblyTitle>
+    <AssemblyDescription>Modern Vulkan 1.3+ Bindless Graphics API - .NET Bindings for VulkEase 2.0</AssemblyDescription>
+    <AssemblyCompany>VulkEase</AssemblyCompany>
+    <AssemblyProduct>VulkEase</AssemblyProduct>
+    <AssemblyCopyright>Copyright © 2025</AssemblyCopyright>
+    
+    <!-- Package Information -->
+    <PackageId>VulkEase</PackageId>
+    <PackageVersion>2.0.0</PackageVersion>
+    <PackageDescription>Modern Vulkan 1.3+ Bindless Graphics API featuring buffer device address, bindless textures, dynamic rendering, shader objects, and GPU-driven rendering with VMA integration.</PackageDescription>
+    <PackageTags>vulkan;graphics;rendering;gpu;bindless;shader-objects;dynamic-rendering</PackageTags>
+    <PackageProjectUrl>https://github.com/your-org/vulkease</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/your-org/vulkease</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    
+    <!-- Build Configuration -->
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    
+    <!-- Platform Support -->
+    <RuntimeIdentifiers>win-x64;win-x86;linux-x64;osx-x64;osx-arm64</RuntimeIdentifiers>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    
+    <!-- Output Configuration -->
+    <OutputType>Library</OutputType>
+    <RootNamespace>VulkEase</RootNamespace>
+    <AssemblyName>VulkEase</AssemblyName>
+  </PropertyGroup>
+
+  <!-- Compiler Settings -->
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <DebugType>full</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <Optimize>false</Optimize>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <DefineConstants>TRACE</DefineConstants>
+    <DebugType>pdbonly</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <Optimize>true</Optimize>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsAsErrors />
+    <WarningsNotAsErrors>CS1591</WarningsNotAsErrors> <!-- Missing XML documentation -->
+  </PropertyGroup>
+
+  <!-- Package Dependencies -->
+  <ItemGroup>
+    <PackageReference Include="System.Runtime.InteropServices" Version="4.3.0" />
+  </ItemGroup>
+
+  <!-- Source Files -->
+  <ItemGroup>
+    <Compile Include="VulkEaseEnums.cs" />
+    <Compile Include="VulkEaseStructs.cs" />
+    <Compile Include="VulkEaseFunctions.cs" />
+    <Compile Include="VulkEaseDll.cs" />
+  </ItemGroup>
+
+  <!-- Native Libraries -->
+  <ItemGroup>
+    <!-- Windows -->
+    <Content Include="runtimes\win-x64\native\vulkease.dll" Condition="Exists('runtimes\win-x64\native\vulkease.dll')">
+      <PackagePath>runtimes\win-x64\native\vulkease.dll</PackagePath>
+      <Pack>true</Pack>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="runtimes\win-x86\native\vulkease.dll" Condition="Exists('runtimes\win-x86\native\vulkease.dll')">
+      <PackagePath>runtimes\win-x86\native\vulkease.dll</PackagePath>
+      <Pack>true</Pack>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+
+    <!-- Linux -->
+    <Content Include="runtimes\linux-x64\native\libvulkease.so" Condition="Exists('runtimes\linux-x64\native\libvulkease.so')">
+      <PackagePath>runtimes\linux-x64\native\libvulkease.so</PackagePath>
+      <Pack>true</Pack>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+
+    <!-- macOS -->
+    <Content Include="runtimes\osx-x64\native\vulkease.dylib" Condition="Exists('runtimes\osx-x64\native\vulkease.dylib')">
+      <PackagePath>runtimes\osx-x64\native\vulkease.dylib</PackagePath>
+      <Pack>true</Pack>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="runtimes\osx-arm64\native\vulkease.dylib" Condition="Exists('runtimes\osx-arm64\native\vulkease.dylib')">
+      <PackagePath>runtimes\osx-arm64\native\vulkease.dylib</PackagePath>
+      <Pack>true</Pack>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- Documentation -->
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="CHANGELOG.md" Pack="true" PackagePath="\" Condition="Exists('CHANGELOG.md')" />
+    <None Include="LICENSE" Pack="true" PackagePath="\" Condition="Exists('LICENSE')" />
+  </ItemGroup>
+
+  <!-- Build Targets -->
+  <Target Name="ValidateNativeLibraries" BeforeTargets="Build">
+    <Message Text="Checking for native libraries..." Importance="high" />
+    <Warning Text="Native library not found: runtimes\win-x64\native\vulkease.dll" 
+             Condition="!Exists('runtimes\win-x64\native\vulkease.dll')" />
+    <Warning Text="Native library not found: runtimes\linux-x64\native\libvulkease.so" 
+             Condition="!Exists('runtimes\linux-x64\native\libvulkease.so')" />
+    <Warning Text="Native library not found: runtimes\osx-x64\native\vulkease.dylib" 
+             Condition="!Exists('runtimes\osx-x64\native\vulkease.dylib')" />
+  </Target>
+
+  <!-- Post-build Event -->
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Message Text="VulkEase .NET bindings built successfully!" Importance="high" />
+    <Message Text="Assembly: $(TargetPath)" Importance="high" />
+    <Message Text="Documentation: $(DocumentationFile)" Importance="high" Condition="Exists('$(DocumentationFile)')" />
+  </Target>
+
+</Project>

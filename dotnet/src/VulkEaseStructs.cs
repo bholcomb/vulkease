@@ -4,53 +4,14 @@ using System.Runtime.InteropServices;
 namespace VulkEase
 {
     // Handle structures
-    [StructLayout(LayoutKind.Sequential)]
-    public struct VEContext
-    {
-        public IntPtr native;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct VEDevice
-    {
-        public IntPtr native;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct VECommandBuffer
-    {
-        public IntPtr native;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct VESwapchain
-    {
-        public IntPtr native;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct VEShader
-    {
-        public IntPtr native;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct VERenderConfig
-    {
-        public IntPtr native;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct VEVertexConfig
-    {
-        public IntPtr native;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct VEShaderConfig
-    {
-        public IntPtr native;
-    }
+    [StructLayout(LayoutKind.Sequential)] public struct VEContext { public IntPtr native; }
+    [StructLayout(LayoutKind.Sequential)] public struct VEDevice { public IntPtr native; }
+    [StructLayout(LayoutKind.Sequential)] public struct VECommandBuffer { public IntPtr native; }
+    [StructLayout(LayoutKind.Sequential)] public struct VESwapchain { public IntPtr native; }
+    [StructLayout(LayoutKind.Sequential)] public struct VEShader { public IntPtr native; }
+    [StructLayout(LayoutKind.Sequential)] public struct VERenderConfig { public IntPtr native; }
+    [StructLayout(LayoutKind.Sequential)] public struct VEVertexConfig { public IntPtr native; }
+    [StructLayout(LayoutKind.Sequential)] public struct VEShaderConfig { public IntPtr native; } 
 
     // Basic structures
     [StructLayout(LayoutKind.Sequential)]
@@ -80,9 +41,9 @@ namespace VulkEase
     public struct VERect2D
     {
         public int x, y;
-        public uint width, height;
+        public UInt32 width, height;
 
-        public VERect2D(int x, int y, uint width, uint height)
+        public VERect2D(int x, int y, UInt32 width, UInt32 height)
         {
             this.x = x;
             this.y = y;
@@ -113,10 +74,10 @@ namespace VulkEase
     [StructLayout(LayoutKind.Sequential)]
     public struct VEBufferDesc
     {
-        public UIntPtr size;
+        public UInt64 size;
         public VkBufferUsageFlags usage;
         public IntPtr initialData;
-        public UIntPtr initialDataSize;
+        public UInt64 initialDataSize;
         [MarshalAs(UnmanagedType.U1)]
         public bool persistentlyMapped;
         public IntPtr debugName;
@@ -126,16 +87,16 @@ namespace VulkEase
     [StructLayout(LayoutKind.Sequential)]
     public struct VETextureDesc
     {
-        public uint width;
-        public uint height;
-        public uint depth;
-        public uint mipLevels;
-        public uint arrayLayers;
+        public UInt32 width;
+        public UInt32 height;
+        public UInt32 depth;
+        public UInt32 mipLevels;
+        public UInt32 arrayLayers;
         public VkFormat format;
         public VkImageUsageFlags usage;
         public VkSampleCountFlags sampleCount;
         public IntPtr initialData;
-        public UIntPtr initialDataSize;
+        public UInt64 initialDataSize;
         public IntPtr debugName;
     }
 
@@ -196,16 +157,16 @@ namespace VulkEase
         public VkStencilOp frontPassOp;
         public VkStencilOp frontDepthFailOp;
         public VkCompareOp frontCompareOp;
-        public uint frontCompareMask;
-        public uint frontWriteMask;
-        public uint frontReference;
+        public UInt32 frontCompareMask;
+        public UInt32 frontWriteMask;
+        public UInt32 frontReference;
         public VkStencilOp backFailOp;
         public VkStencilOp backPassOp;
         public VkStencilOp backDepthFailOp;
         public VkCompareOp backCompareOp;
-        public uint backCompareMask;
-        public uint backWriteMask;
-        public uint backReference;
+        public UInt32 backCompareMask;
+        public UInt32 backWriteMask;
+        public UInt32 backReference;
     }
 
     // Blend attachment
@@ -230,7 +191,7 @@ namespace VulkEase
         [MarshalAs(UnmanagedType.U1)]
         public bool logicOpEnable;
         public VkLogicOp logicOp;
-        public uint attachmentCount;
+        public UInt32 attachmentCount;
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
         public VEBlendAttachment[] attachments;
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 4)]
@@ -255,34 +216,34 @@ namespace VulkEase
     [StructLayout(LayoutKind.Sequential)]
     public struct VEVertexBinding
     {
-        public uint binding;
-        public uint stride;
+        public UInt32 binding;
+        public UInt32 stride;
         public VkVertexInputRate inputRate;
-        public uint divisor;
+        public UInt32 divisor;
     }
 
     // Vertex attribute
     [StructLayout(LayoutKind.Sequential)]
     public struct VEVertexAttribute
     {
-        public uint location;
-        public uint binding;
+        public UInt32 location;
+        public UInt32 binding;
         public VkFormat format;
-        public uint offset;
+        public UInt32 offset;
     }
 
     // Vertex input configuration
     [StructLayout(LayoutKind.Sequential)]
     public struct VEVertexInputConfig
     {
-        public uint bindingCount;
+        public UInt32 bindingCount;
         public IntPtr bindings; // VEVertexBinding*
-        public uint attributeCount;
+        public UInt32 attributeCount;
         public IntPtr attributes; // VEVertexAttribute*
         public VkPrimitiveTopology topology;
         [MarshalAs(UnmanagedType.U1)]
         public bool primitiveRestartEnable;
-        public uint patchControlPoints;
+        public UInt32 patchControlPoints;
     }
 
     // Render config descriptor
@@ -297,7 +258,7 @@ namespace VulkEase
         public IntPtr blendConfig; // const VEBlendConfig*
         public IntPtr multisampleConfig; // const VEMultisampleConfig*
         public IntPtr vertexInputConfig; // const VEVertexInputConfig*
-        public uint shaderCount;
+        public UInt32 shaderCount;
         public IntPtr shaders; // VEShader* const*
         public IntPtr debugName;
     }
@@ -319,20 +280,20 @@ namespace VulkEase
     [StructLayout(LayoutKind.Sequential)]
     public struct VERenderingAttachment
     {
-        public uint texture; // VETextureIndex
+        public UInt32 texture; // VETextureIndex
         public VkAttachmentLoadOp loadOp;
         public VkAttachmentStoreOp storeOp;
         public VEColor clearValue;
-        public uint resolveTexture; // VETextureIndex
+        public UInt32 resolveTexture; // VETextureIndex
     }
 
     // Rendering info
     [StructLayout(LayoutKind.Sequential)]
     public struct VERenderingInfo
     {
-        public uint renderAreaX, renderAreaY;
-        public uint renderAreaWidth, renderAreaHeight;
-        public uint colorAttachmentCount;
+        public UInt32 renderAreaX, renderAreaY;
+        public UInt32 renderAreaWidth, renderAreaHeight;
+        public UInt32 colorAttachmentCount;
         public IntPtr colorAttachments; // const VERenderingAttachment*
         public IntPtr depthAttachment; // const VERenderingAttachment*
         public IntPtr stencilAttachment; // const VERenderingAttachment*
@@ -342,31 +303,31 @@ namespace VulkEase
     [StructLayout(LayoutKind.Sequential)]
     public struct VEPerformanceStats
     {
-        public ulong frameTime;
-        public uint drawCalls;
-        public uint computeDispatches;
-        public ulong verticesRendered;
-        public ulong trianglesRendered;
-        public uint pipelineBinds;
-        public uint descriptorBinds;
+        public UInt64 frameTime;
+        public UInt32 drawCalls;
+        public UInt32 computeDispatches;
+        public UInt64 verticesRendered;
+        public UInt64 trianglesRendered;
+        public UInt32 pipelineBinds;
+        public UInt32 descriptorBinds;
     }
 
     [StructLayout(LayoutKind.Sequential)]
     public struct VEMemoryHeapStats
     {
-        public ulong size;
-        public ulong used;
-        public ulong budget;
+        public UInt64 size;
+        public UInt64 used;
+        public UInt64 budget;
     }
 
     [StructLayout(LayoutKind.Sequential)]
     public struct VEMemoryStats
     {
-        public ulong totalAllocated;
-        public ulong totalUsed;
-        public uint bufferCount;
-        public uint textureCount;
-        public uint samplerCount;
+        public UInt64 totalAllocated;
+        public UInt64 totalUsed;
+        public UInt32 bufferCount;
+        public UInt32 textureCount;
+        public UInt32 samplerCount;
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)]
         public VEMemoryHeapStats[] heaps;
     }
@@ -374,43 +335,43 @@ namespace VulkEase
     [StructLayout(LayoutKind.Sequential)]
     public struct VERenderConfigStats
     {
-        public uint totalConfigs;
-        public uint activeConfigs;
-        public uint configSwitches;
-        public uint stateSwitches;
-        public uint overrides;
+        public UInt32 totalConfigs;
+        public UInt32 activeConfigs;
+        public UInt32 configSwitches;
+        public UInt32 stateSwitches;
+        public UInt32 overrides;
     }
 
     // Push constants structures
     [StructLayout(LayoutKind.Sequential)]
     public struct VEGraphicsPushConstants
     {
-        public ulong vertexBuffer;
-        public ulong indexBuffer;
+        public UInt64 vertexBuffer;
+        public UInt64 indexBuffer;
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 4)]
-        public ulong[] uniformBuffers;
+        public UInt64[] uniformBuffers;
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
-        public uint[] textures;
+        public UInt32[] textures;
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
-        public uint[] samplers;
+        public UInt32[] samplers;
         public float objectScale;
-        public uint activeTextureCount;
-        public uint activeSamplerCount;
-        public uint activeUniformCount;
+        public UInt32 activeTextureCount;
+        public UInt32 activeSamplerCount;
+        public UInt32 activeUniformCount;
     }
 
     [StructLayout(LayoutKind.Sequential)]
     public struct VEComputePushConstants
     {
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
-        public ulong[] buffers;
+        public UInt64[] buffers;
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
-        public uint[] textures;
+        public UInt32[] textures;
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 4)]
-        public uint[] samplers;
-        public uint elementCount;
-        public uint activeBufferCount;
-        public uint activeTextureCount;
-        public uint activeSamplerCount;
+        public UInt32[] samplers;
+        public UInt32 elementCount;
+        public UInt32 activeBufferCount;
+        public UInt32 activeTextureCount;
+        public UInt32 activeSamplerCount;
     }
 }
