@@ -17,7 +17,7 @@ namespace VulkEase
     }
 
     [Flags]
-    public enum VEConfigTypeFlags : UInt32
+    public enum VEConfigType : UInt32
     {
         VE_CONFIG_TYPE_VERTEX_INPUT = 0x1,
         VE_CONFIG_TYPE_RASTERIZATION = 0x2,

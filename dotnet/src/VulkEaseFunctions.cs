@@ -44,7 +44,7 @@ namespace VulkEase
         }
 
         // Version and API Information
-        public static uint GetVersion() => VulkEaseDll.veGetVersion();
+        public static UInt32 GetVersion() => VulkEaseDll.veGetVersion();
 
         // Context and Device Management
         public static VEContext CreateContext(string applicationName)
@@ -442,7 +442,7 @@ namespace VulkEase
                 try
                 {
                     Marshal.Copy(Array.ConvertAll(code, x => (int)x), 0, codePtr, code.Length);
-                    return new VEShader { native = VulkEaseDll.veCreateShaderFromSPIRV(device.native, stage, codePtr, (UIntPtr)(code.Length * sizeof(uint)), entryPtr, namePtr) };
+                    return new VEShader { native = VulkEaseDll.veCreateShaderFromSPIRV(device.native, stage, codePtr, (UIntPtr)(code.Length * sizeof(UInt32)), entryPtr, namePtr) };
                 }
                 finally
                 {
@@ -571,8 +571,8 @@ namespace VulkEase
                 return new VEVertexConfig
                 {
                     native = VulkEaseDll.veCreateVertexConfig(device.native,
-                        (uint)(bindings?.Length ?? 0), bindingsPtr,
-                        (uint)(attributes?.Length ?? 0), attributesPtr)
+                        (UInt32)(bindings?.Length ?? 0), bindingsPtr,
+                        (UInt32)(attributes?.Length ?? 0), attributesPtr)
                 };
             }
             finally
@@ -798,7 +798,7 @@ namespace VulkEase
                     Marshal.Copy(nativePtrs, 0, shadersPtr, shaders.Length);
                 }
 
-                VulkEaseDll.veBindShaders(cmd.native, (uint)(shaders?.Length ?? 0), shadersPtr);
+                VulkEaseDll.veBindShaders(cmd.native, (UInt32)(shaders?.Length ?? 0), shadersPtr);
             }
             finally
             {
