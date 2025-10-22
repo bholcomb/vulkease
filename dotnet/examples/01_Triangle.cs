@@ -1,18 +1,20 @@
-using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.GraphicsLibraryFramework;
 using System;
+using System.Diagnostics;
+using System.Linq;
 using System.Runtime.InteropServices;
 using VulkEase;
 
 namespace VulkEaseExamples
 {
     [StructLayout(LayoutKind.Sequential)]
-    public unsafe struct TrianglePushConstants
+    public struct TrianglePushConstants
     {
-        public fixed float mvpMatrix[16];
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)]
+        public float[] mvpMatrix;
         public UInt64 vertexBufferAddress;
     };
     
@@ -47,11 +49,11 @@ namespace VulkEaseExamples
         private VESwapchain _swapchain;
         private VEShader _vertexShader;
         private VEShader _fragmentShader;
-        private VEBufferAddress _vertexBuffer = VEConstants.VE_INVALID_ADDRESS;
+        private VEBufferAddress _vertexBuffer;
         private VERenderConfig _renderConfig;
 
         // Animation state
-        private double _startTime;
+        private Stopwatch _stopwatch = Stopwatch.StartNew();
 
         // Vertex data for a triangle
         private static readonly Vertex[] TriangleVertices = {
@@ -64,7 +66,7 @@ namespace VulkEaseExamples
             new NativeWindowSettings()
             {
                 Title = "VulkEase Spinning Triangle",
-                Size = new Vector2i(WindowWidth, WindowHeight),
+                ClientSize = new Vector2i(WindowWidth, WindowHeight),
                 StartVisible = false,
                 StartFocused = true,
                 API = ContextAPI.NoAPI, // Important: No OpenGL context
@@ -98,7 +100,7 @@ namespace VulkEaseExamples
                 return;
             }
 
-            _startTime = GLFW.GetTime();
+            _stopwatch = Stopwatch.StartNew();
 
             Console.WriteLine("Triangle example initialized successfully!");
             IsVisible = true;
@@ -172,31 +174,31 @@ namespace VulkEaseExamples
             }
         }
 
-        private IntPtr GetNativeWindowHandle()
+        private unsafe IntPtr GetNativeWindowHandle()
         {
-            unsafe
+            // OpenTK's WindowPtr contains the GLFW window handle
+            // Use OpenTK's GLFW bindings to get platform-specific handles
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
-                // Get platform-specific window handle
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                {
-                    return GLFW.GetWin32Window(WindowPtr);
-                }
-                else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-                {
-                    // For Linux, we need both display and window handle
-                    IntPtr display = GLFW.GetX11Display();
-                    IntPtr window = GLFW.GetX11Window(WindowPtr);
-
-                    // Create array with both handles
-                    IntPtr[] handles = { display, window };
-                    IntPtr handleArray = Marshal.AllocHGlobal(handles.Length * IntPtr.Size);
-                    Marshal.Copy(handles.Select(h => h.ToInt64()).ToArray(), 0, handleArray, handles.Length);
-                    return handleArray;
-                }
-                else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                {
-                    return GLFW.GetCocoaWindow(WindowPtr);
-                }
+                // On Linux, we need both X11 display and window
+                IntPtr display = (IntPtr)GLFW.GetX11Display();
+                IntPtr window = (IntPtr)GLFW.GetX11Window(WindowPtr);
+                
+                // Create array with both handles
+                IntPtr[] handles = { display, window };
+                IntPtr handleArray = Marshal.AllocHGlobal(handles.Length * IntPtr.Size);
+                Marshal.Copy(handles.Select(h => h.ToInt64()).ToArray(), 0, handleArray, handles.Length);
+                return handleArray;
+            }
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                // On Windows, get Win32 window handle
+                return GLFW.GetWin32Window(WindowPtr);
+            }
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                // On macOS, get Cocoa window handle
+                return GLFW.GetCocoaWindow(WindowPtr);
             }
 
             return IntPtr.Zero;
@@ -235,25 +237,47 @@ namespace VulkEaseExamples
         {
             try
             {
-                // Create vertex buffer with initial data
-                var bufferDesc = new VEBufferDesc
+                // Pin the vertex data and get a pointer to it
+                GCHandle handle = GCHandle.Alloc(TriangleVertices, GCHandleType.Pinned);
+                try
                 {
-                    size = (ulong)(TriangleVertices.Length * Marshal.SizeOf<Vertex>()),
-                    usage = VkBufferUsageFlags.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                    persistentlyMapped = false,
-                    debugName = "TriangleVertexBuffer"
-                };
+                    IntPtr dataPtr = handle.AddrOfPinnedObject();
+                    ulong dataSize = (ulong)(TriangleVertices.Length * Marshal.SizeOf<Vertex>());
 
-                _vertexBuffer = VulkEase.VulkEase.CreateBuffer(_device, bufferDesc, TriangleVertices);
+                    // Create vertex buffer with initial data
+                    IntPtr debugNamePtr = Marshal.StringToHGlobalAnsi("TriangleVertexBuffer");
+                    try
+                    {
+                        var bufferDesc = new VEBufferDesc
+                        {
+                            size = dataSize,
+                            usage = VkBufferUsageFlags.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                            initialData = dataPtr,
+                            initialDataSize = dataSize,
+                            persistentlyMapped = false,
+                            debugName = debugNamePtr
+                        };
 
-                if (_vertexBuffer == VEConstants.VE_INVALID_ADDRESS)
-                {
-                    Console.Error.WriteLine("Failed to create vertex buffer");
-                    return false;
+                        _vertexBuffer = VulkEase.VulkEase.CreateBuffer(_device, bufferDesc);
+
+                        if (_vertexBuffer.native == VEConstants.VE_INVALID_ADDRESS.native)
+                        {
+                            Console.Error.WriteLine("Failed to create vertex buffer");
+                            return false;
+                        }
+
+                        Console.WriteLine($"Created vertex buffer at address: 0x{_vertexBuffer.native:X}");
+                        return true;
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(debugNamePtr);
+                    }
                 }
-
-                Console.WriteLine($"Created vertex buffer at address: 0x{_vertexBuffer:X}");
-                return true;
+                finally
+                {
+                    handle.Free();
+                }
             }
             catch (Exception ex)
             {
@@ -273,7 +297,7 @@ namespace VulkEaseExamples
             {
                 // Acquire next swapchain image
                 VETextureIndex backbuffer = VulkEase.VulkEase.AcquireNextImage(_swapchain);
-                if (backbuffer == VEConstants.VE_INVALID_TEXTURE_INDEX)
+                if (backbuffer.native == VEConstants.VE_INVALID_TEXTURE_INDEX.native)
                 {
                     return; // Swapchain needs recreation or other error
                 }
@@ -284,8 +308,7 @@ namespace VulkEaseExamples
                 VulkEase.VulkEase.TransitionTextureForColorAttachment(cmd, backbuffer);
 
                 // Calculate animation
-                double currentTime = GLFW.GetTime();
-                float elapsedTime = (float)(currentTime - _startTime);
+                float elapsedTime = (float)_stopwatch.Elapsed.TotalSeconds;
                 float rotationAngle = elapsedTime * 2.0f; // 2 radians per second
 
                 // Create rotation matrix for spinning animation
@@ -303,17 +326,15 @@ namespace VulkEaseExamples
 
                 VulkEase.VulkEase.GetSwapchainSize(_swapchain, out uint width, out uint height);
 
+                // Create rendering info with C#-friendly API
                 var renderingInfo = new VERenderingInfo
                 {
-                    renderAreaX = 0,
-                    renderAreaY = 0,
-                    renderAreaWidth = width,
-                    renderAreaHeight = height,
-                    colorAttachmentCount = 1,
-                    colorAttachments = new[] { colorAttachment },
-                    depthAttachment = null,
-                    stencilAttachment = null
+                    RenderAreaX = 0,
+                    RenderAreaY = 0,
+                    RenderAreaWidth = width,
+                    RenderAreaHeight = height
                 };
+                renderingInfo.ColorAttachments.Add(colorAttachment);
 
                 // Begin rendering
                 VulkEase.VulkEase.BeginRendering(cmd, renderingInfo);
@@ -330,9 +351,11 @@ namespace VulkEaseExamples
                 VulkEase.VulkEase.ApplyRenderConfig(cmd, _renderConfig);
 
                 // Set up push constants with the vertex buffer address
-                var pushConstants = new TrianglePushConstants();
-                Array.Copy(rotationMatrix, pushConstants.mvpMatrix, 16);
-                pushConstants.vertexBufferAddress = _vertexBuffer.native;
+                var pushConstants = new TrianglePushConstants
+                {
+                    mvpMatrix = rotationMatrix,
+                    vertexBufferAddress = _vertexBuffer.native
+                };
 
                 VulkEase.VulkEase.PushConstants(cmd, pushConstants);
 
@@ -386,7 +409,7 @@ namespace VulkEaseExamples
                 VulkEase.VulkEase.DeviceWaitIdle(_device);
             }
 
-            if (_vertexBuffer != VEConstants.VE_INVALID_ADDRESS)
+            if (_vertexBuffer.native != VEConstants.VE_INVALID_ADDRESS.native)
             {
                 VulkEase.VulkEase.DestroyBuffer(_device, _vertexBuffer);
             }

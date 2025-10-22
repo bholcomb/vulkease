@@ -290,9 +290,9 @@ namespace VulkEase
         public VETextureIndex resolveTexture;
     }
 
-    // Rendering info
+    // Internal PInvoke-friendly rendering info struct (with pointers)
     [StructLayout(LayoutKind.Sequential)]
-    public struct VERenderingInfo
+    internal struct VERenderingInfoInternal
     {
         public UInt32 renderAreaX, renderAreaY;
         public UInt32 renderAreaWidth, renderAreaHeight;
@@ -300,6 +300,30 @@ namespace VulkEase
         public IntPtr colorAttachments; // const VERenderingAttachment*
         public IntPtr depthAttachment; // const VERenderingAttachment*
         public IntPtr stencilAttachment; // const VERenderingAttachment*
+    }
+
+    // User-friendly rendering info class (C# friendly)
+    public class VERenderingInfo
+    {
+        public UInt32 RenderAreaX { get; set; }
+        public UInt32 RenderAreaY { get; set; }
+        public UInt32 RenderAreaWidth { get; set; }
+        public UInt32 RenderAreaHeight { get; set; }
+        public List<VERenderingAttachment> ColorAttachments { get; set; } = new List<VERenderingAttachment>();
+        public VERenderingAttachment? DepthAttachment { get; set; }
+        public VERenderingAttachment? StencilAttachment { get; set; }
+
+        public VERenderingInfo()
+        {
+        }
+
+        public VERenderingInfo(UInt32 renderAreaX, UInt32 renderAreaY, UInt32 renderAreaWidth, UInt32 renderAreaHeight)
+        {
+            RenderAreaX = renderAreaX;
+            RenderAreaY = renderAreaY;
+            RenderAreaWidth = renderAreaWidth;
+            RenderAreaHeight = renderAreaHeight;
+        }
     }
 
     // Statistics structures

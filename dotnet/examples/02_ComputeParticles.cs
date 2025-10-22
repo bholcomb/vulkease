@@ -1,9 +1,10 @@
-using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.GraphicsLibraryFramework;
 using System;
+using System.Diagnostics;
+using System.Linq;
 using System.Runtime.InteropServices;
 using VulkEase;
 
@@ -73,11 +74,11 @@ namespace VulkEaseExamples
         private VEShader _vertexShader;
         private VEShader _fragmentShader;
         private VERenderConfig _renderConfig;
-        private VEBufferAddress _particleBuffer = VEConstants.VE_INVALID_ADDRESS;
-        private VEBufferAddress _vertexBuffer = VEConstants.VE_INVALID_ADDRESS;
+        private VEBufferAddress _particleBuffer;
+        private VEBufferAddress _vertexBuffer;
 
         // Animation state
-        private double _lastTime;
+        private Stopwatch _stopwatch = Stopwatch.StartNew();
 
         // Simple quad vertices for instanced particle rendering
         private static readonly Vector2[] QuadVertices = {
@@ -91,7 +92,7 @@ namespace VulkEaseExamples
             new NativeWindowSettings()
             {
                 Title = "VulkEase Compute Particles",
-                Size = new Vector2i(WindowWidth, WindowHeight),
+                ClientSize = new Vector2i(WindowWidth, WindowHeight),
                 StartVisible = false,
                 StartFocused = true,
                 API = ContextAPI.NoAPI,
@@ -131,7 +132,7 @@ namespace VulkEaseExamples
                 return;
             }
 
-            _lastTime = GLFW.GetTime();
+            _stopwatch = Stopwatch.StartNew();
 
             Console.WriteLine($"Particle simulation initialized with {ParticleCount} particles");
             Console.WriteLine("Move mouse to attract particles!");
@@ -144,7 +145,7 @@ namespace VulkEaseExamples
 
             if (_swapchain.native != IntPtr.Zero && e.Width > 0 && e.Height > 0)
             {
-                VulkEase.ResizeSwapchain(_swapchain, (uint)e.Width, (uint)e.Height);
+                VulkEase.VulkEase.ResizeSwapchain(_swapchain, (uint)e.Width, (uint)e.Height);
             }
         }
 
@@ -152,10 +153,8 @@ namespace VulkEaseExamples
         {
             base.OnRenderFrame(args);
 
-            double currentTime = GLFW.GetTime();
-            float deltaTime = (float)(currentTime - _lastTime);
-            float time = (float)currentTime;
-            _lastTime = currentTime;
+            float time = (float)_stopwatch.Elapsed.TotalSeconds;
+            float deltaTime = (float)args.Time;
 
             Render(deltaTime, time);
         }
@@ -175,13 +174,13 @@ namespace VulkEaseExamples
             try
             {
                 // Create context
-                _context = VulkEase.CreateContext("VulkEase Compute Particle System");
+                _context = VulkEase.VulkEase.CreateContext("VulkEase Compute Particle System");
                 Console.WriteLine("VulkEase initialized successfully");
 
                 // Create device
-                _device = VulkEase.CreateDevice(_context);
+                _device = VulkEase.VulkEase.CreateDevice(_context);
                 Console.WriteLine("VulkEase device created successfully");
-                Console.WriteLine($"Device: {VulkEase.GetDeviceName(_device)}");
+                Console.WriteLine($"Device: {VulkEase.VulkEase.GetDeviceName(_device)}");
                 Console.WriteLine($"Compute workgroup size: {WorkgroupSize} (assumed optimal)");
 
                 // Get native window handle
@@ -193,7 +192,7 @@ namespace VulkEaseExamples
                 }
 
                 // Create swapchain
-                _swapchain = VulkEase.CreateSwapchain(_device, windowHandle,
+                _swapchain = VulkEase.VulkEase.CreateSwapchain(_device, windowHandle,
                     (uint)WindowWidth, (uint)WindowHeight, VkFormat.VK_FORMAT_B8G8R8A8_SRGB, EnableVSync);
 
                 Console.WriteLine($"Swapchain created: {WindowWidth}x{WindowHeight}");
@@ -202,7 +201,7 @@ namespace VulkEaseExamples
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to initialize VulkEase: {ex.Message}");
-                string? lastError = VulkEase.GetLastError();
+                string? lastError = VulkEase.VulkEase.GetLastError();
                 if (lastError != null)
                 {
                     Console.Error.WriteLine($"VulkEase Error: {lastError}");
@@ -211,7 +210,7 @@ namespace VulkEaseExamples
             }
         }
 
-        private IntPtr GetNativeWindowHandle()
+        private unsafe IntPtr GetNativeWindowHandle()
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
@@ -219,8 +218,8 @@ namespace VulkEaseExamples
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
-                IntPtr display = GLFW.GetX11Display();
-                IntPtr window = GLFW.GetX11Window(WindowPtr);
+                IntPtr display = (IntPtr)GLFW.GetX11Display();
+                IntPtr window = (IntPtr)GLFW.GetX11Window(WindowPtr);
                 
                 IntPtr[] handles = { display, window };
                 IntPtr handleArray = Marshal.AllocHGlobal(handles.Length * IntPtr.Size);
@@ -240,14 +239,14 @@ namespace VulkEaseExamples
             try
             {
                 // Load compute shader for particle simulation
-                _computeShader = VulkEase.LoadShader(_device, "examples/shaders/particles.comp.spv",
+                _computeShader = VulkEase.VulkEase.LoadShader(_device, "examples/shaders/particles.comp.spv",
                     VkShaderStageFlags.VK_SHADER_STAGE_COMPUTE_BIT, "main", "ParticleComputeShader");
 
                 // Load graphics shaders for particle rendering
-                _vertexShader = VulkEase.LoadShader(_device, "examples/shaders/particles.vert.spv",
+                _vertexShader = VulkEase.VulkEase.LoadShader(_device, "examples/shaders/particles.vert.spv",
                     VkShaderStageFlags.VK_SHADER_STAGE_VERTEX_BIT, "main", "ParticleVertexShader");
 
-                _fragmentShader = VulkEase.LoadShader(_device, "examples/shaders/particles.frag.spv",
+                _fragmentShader = VulkEase.VulkEase.LoadShader(_device, "examples/shaders/particles.frag.spv",
                     VkShaderStageFlags.VK_SHADER_STAGE_FRAGMENT_BIT, "main", "ParticleFragmentShader");
 
                 Console.WriteLine("Shaders loaded successfully");
@@ -256,7 +255,7 @@ namespace VulkEaseExamples
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to create shaders: {ex.Message}");
-                string? lastError = VulkEase.GetLastError();
+                string? lastError = VulkEase.VulkEase.GetLastError();
                 if (lastError != null)
                 {
                     Console.Error.WriteLine($"VulkEase Error: {lastError}");
@@ -273,47 +272,89 @@ namespace VulkEaseExamples
                 var particles = InitializeParticles(ParticleCount);
 
                 // Create particle storage buffer (read/write from compute shader)
-                var particleBufferDesc = new VEBufferDesc
+                GCHandle particleHandle = GCHandle.Alloc(particles, GCHandleType.Pinned);
+                try
                 {
-                    size = (ulong)(particles.Length * Marshal.SizeOf<Particle>()),
-                    usage = VkBufferUsageFlags.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                    persistentlyMapped = false,
-                    debugName = "ParticleStorageBuffer"
-                };
+                    IntPtr particleDataPtr = particleHandle.AddrOfPinnedObject();
+                    ulong particleDataSize = (ulong)(particles.Length * Marshal.SizeOf<Particle>());
 
-                _particleBuffer = VulkEase.CreateBuffer(_device, particleBufferDesc, particles);
+                    IntPtr particleDebugNamePtr = Marshal.StringToHGlobalAnsi("ParticleStorageBuffer");
+                    try
+                    {
+                        var particleBufferDesc = new VEBufferDesc
+                        {
+                            size = particleDataSize,
+                            usage = VkBufferUsageFlags.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                            initialData = particleDataPtr,
+                            initialDataSize = particleDataSize,
+                            persistentlyMapped = false,
+                            debugName = particleDebugNamePtr
+                        };
 
-                if (_particleBuffer == VEConstants.VE_INVALID_ADDRESS)
+                        _particleBuffer = VulkEase.VulkEase.CreateBuffer(_device, particleBufferDesc);
+
+                        if (_particleBuffer.native == VEConstants.VE_INVALID_ADDRESS.native)
+                        {
+                            Console.Error.WriteLine("Failed to create particle buffer");
+                            return false;
+                        }
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(particleDebugNamePtr);
+                    }
+                }
+                finally
                 {
-                    Console.Error.WriteLine("Failed to create particle buffer");
-                    return false;
+                    particleHandle.Free();
                 }
 
                 // Create vertex buffer for quad geometry
-                var vertexBufferDesc = new VEBufferDesc
+                GCHandle vertexHandle = GCHandle.Alloc(QuadVertices, GCHandleType.Pinned);
+                try
                 {
-                    size = (ulong)(QuadVertices.Length * Marshal.SizeOf<Vector2>()),
-                    usage = VkBufferUsageFlags.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                    persistentlyMapped = false,
-                    debugName = "QuadVertexBuffer"
-                };
+                    IntPtr vertexDataPtr = vertexHandle.AddrOfPinnedObject();
+                    ulong vertexDataSize = (ulong)(QuadVertices.Length * Marshal.SizeOf<Vector2>());
 
-                _vertexBuffer = VulkEase.CreateBuffer(_device, vertexBufferDesc, QuadVertices);
+                    IntPtr vertexDebugNamePtr = Marshal.StringToHGlobalAnsi("QuadVertexBuffer");
+                    try
+                    {
+                        var vertexBufferDesc = new VEBufferDesc
+                        {
+                            size = vertexDataSize,
+                            usage = VkBufferUsageFlags.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                            initialData = vertexDataPtr,
+                            initialDataSize = vertexDataSize,
+                            persistentlyMapped = false,
+                            debugName = vertexDebugNamePtr
+                        };
 
-                if (_vertexBuffer == VEConstants.VE_INVALID_ADDRESS)
+                        _vertexBuffer = VulkEase.VulkEase.CreateBuffer(_device, vertexBufferDesc);
+
+                        if (_vertexBuffer.native == VEConstants.VE_INVALID_ADDRESS.native)
+                        {
+                            Console.Error.WriteLine("Failed to create vertex buffer");
+                            return false;
+                        }
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(vertexDebugNamePtr);
+                    }
+                }
+                finally
                 {
-                    Console.Error.WriteLine("Failed to create vertex buffer");
-                    return false;
+                    vertexHandle.Free();
                 }
 
-                Console.WriteLine($"Created particle buffer (0x{_particleBuffer:X}) for {ParticleCount} particles");
-                Console.WriteLine($"Created vertex buffer (0x{_vertexBuffer:X}) for quad geometry");
+                Console.WriteLine($"Created particle buffer (0x{_particleBuffer.native:X}) for {ParticleCount} particles");
+                Console.WriteLine($"Created vertex buffer (0x{_vertexBuffer.native:X}) for quad geometry");
                 return true;
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to create buffers: {ex.Message}");
-                string? lastError = VulkEase.GetLastError();
+                string? lastError = VulkEase.VulkEase.GetLastError();
                 if (lastError != null)
                 {
                     Console.Error.WriteLine($"VulkEase Error: {lastError}");
@@ -363,13 +404,13 @@ namespace VulkEaseExamples
             try
             {
                 // Use transparent render config for particles with alpha blending
-                _renderConfig = VulkEase.CreateTransparentRenderConfig(_device, "ParticleRenderConfig");
+                _renderConfig = VulkEase.VulkEase.CreateTransparentRenderConfig(_device, "ParticleRenderConfig");
                 return true;
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to create render config: {ex.Message}");
-                string? lastError = VulkEase.GetLastError();
+                string? lastError = VulkEase.VulkEase.GetLastError();
                 if (lastError != null)
                 {
                     Console.Error.WriteLine($"VulkEase Error: {lastError}");
@@ -382,15 +423,15 @@ namespace VulkEaseExamples
         {
             // Begin compute debug region
             var computeColor = new VEColor(1.0f, 0.0f, 1.0f, 1.0f);
-            VulkEase.BeginDebugLabel(cmd, "Particle Simulation", computeColor);
+            VulkEase.VulkEase.BeginDebugLabel(cmd, "Particle Simulation", computeColor);
 
             // Bind compute shader
-            VulkEase.BindShader(cmd, _computeShader);
+            VulkEase.VulkEase.BindShader(cmd, _computeShader);
 
             // Set compute push constants
             var computeConstants = new ComputePushConstants
             {
-                ParticleBufferAddress = _particleBuffer,
+                ParticleBufferAddress = _particleBuffer.native,
                 DeltaTime = deltaTime,
                 Time = time,
                 AttractorPos = mousePos,
@@ -398,23 +439,23 @@ namespace VulkEaseExamples
                 ParticleCount = ParticleCount
             };
 
-            VulkEase.PushConstants(cmd, computeConstants);
+            VulkEase.VulkEase.PushConstants(cmd, computeConstants);
 
             // Calculate dispatch size
             uint numGroups = (uint)((ParticleCount + WorkgroupSize - 1) / WorkgroupSize);
 
             // Dispatch compute work
-            VulkEase.Dispatch(cmd, numGroups, 1, 1);
+            VulkEase.VulkEase.Dispatch(cmd, numGroups, 1, 1);
 
             // Add barrier between compute and graphics
-            VulkEase.BarrierComputeToVertex(cmd);
+            VulkEase.VulkEase.BarrierComputeToVertex(cmd);
 
-            VulkEase.EndDebugLabel(cmd);
+            VulkEase.VulkEase.EndDebugLabel(cmd);
         }
 
-        private void RenderParticles(VECommandBuffer cmd, uint backbuffer)
+        private void RenderParticles(VECommandBuffer cmd, VETextureIndex backbuffer)
         {
-            VulkEase.GetSwapchainSize(_swapchain, out uint width, out uint height);
+            VulkEase.VulkEase.GetSwapchainSize(_swapchain, out uint width, out uint height);
 
             // Set up rendering info
             var colorAttachment = new VERenderingAttachment
@@ -426,53 +467,51 @@ namespace VulkEaseExamples
                 resolveTexture = VEConstants.VE_INVALID_TEXTURE_INDEX
             };
 
+            // Create rendering info with C#-friendly API
             var renderingInfo = new VERenderingInfo
             {
-                renderAreaX = 0,
-                renderAreaY = 0,
-                renderAreaWidth = width,
-                renderAreaHeight = height,
-                colorAttachmentCount = 1,
-                colorAttachments = new[] { colorAttachment },
-                depthAttachment = null,
-                stencilAttachment = null
+                RenderAreaX = 0,
+                RenderAreaY = 0,
+                RenderAreaWidth = width,
+                RenderAreaHeight = height
             };
+            renderingInfo.ColorAttachments.Add(colorAttachment);
 
             // Begin graphics debug region
             var graphicsColor = new VEColor(0.0f, 1.0f, 0.5f, 1.0f);
-            VulkEase.BeginDebugLabel(cmd, "Particle Rendering", graphicsColor);
+            VulkEase.VulkEase.BeginDebugLabel(cmd, "Particle Rendering", graphicsColor);
 
             // Begin rendering
-            VulkEase.BeginRendering(cmd, renderingInfo);
+            VulkEase.VulkEase.BeginRendering(cmd, renderingInfo);
 
             // Setup viewport and scissor state
-            VulkEase.SetViewport(cmd, 0.0f, 0.0f, width, height, 0.0f, 1.0f);
-            VulkEase.SetScissor(cmd, 0, 0, width, height);
+            VulkEase.VulkEase.SetViewport(cmd, 0.0f, 0.0f, width, height, 0.0f, 1.0f);
+            VulkEase.VulkEase.SetScissor(cmd, 0, 0, width, height);
 
             // Apply render configuration (with alpha blending)
-            VulkEase.ApplyRenderConfig(cmd, _renderConfig);
+            VulkEase.VulkEase.ApplyRenderConfig(cmd, _renderConfig);
 
             // Bind graphics shaders
-            VulkEase.BindShader(cmd, _vertexShader);
-            VulkEase.BindShader(cmd, _fragmentShader);
+            VulkEase.VulkEase.BindShader(cmd, _vertexShader);
+            VulkEase.VulkEase.BindShader(cmd, _fragmentShader);
 
             // Set graphics push constants
             var graphicsConstants = new GraphicsPushConstants
             {
-                VertexBufferAddress = _vertexBuffer,
-                ParticleBufferAddress = _particleBuffer,
+                VertexBufferAddress = _vertexBuffer.native,
+                ParticleBufferAddress = _particleBuffer.native,
                 ScreenSize = new Vector2(width, height),
                 Padding = Vector2.Zero
             };
 
-            VulkEase.PushConstants(cmd, graphicsConstants);
+            VulkEase.VulkEase.PushConstants(cmd, graphicsConstants);
 
             // Draw instanced particles (4 vertices per quad, ParticleCount instances)
-            VulkEase.Draw(cmd, 4, (uint)ParticleCount, 0, 0);
+            VulkEase.VulkEase.Draw(cmd, 4, (uint)ParticleCount, 0, 0);
 
             // End rendering
-            VulkEase.EndRendering(cmd);
-            VulkEase.EndDebugLabel(cmd);
+            VulkEase.VulkEase.EndRendering(cmd);
+            VulkEase.VulkEase.EndDebugLabel(cmd);
         }
 
         private void Render(float deltaTime, float time)
@@ -484,16 +523,16 @@ namespace VulkEaseExamples
                 float normalizedMouseY = MathF.Cos(time);
 
                 // Acquire next swapchain image
-                uint backbuffer = VulkEase.AcquireNextImage(_swapchain);
-                if (backbuffer == VEConstants.VE_INVALID_TEXTURE_INDEX)
+                VETextureIndex backbuffer = VulkEase.VulkEase.AcquireNextImage(_swapchain);
+                if (backbuffer.native == VEConstants.VE_INVALID_TEXTURE_INDEX.native)
                 {
                     return;
                 }
 
                 // Begin command buffer
-                var cmd = VulkEase.BeginCommandBuffer(_device);
+                var cmd = VulkEase.VulkEase.BeginCommandBuffer(_device);
 
-                VulkEase.TransitionTextureForColorAttachment(cmd, backbuffer);
+                VulkEase.VulkEase.TransitionTextureForColorAttachment(cmd, backbuffer);
 
                 // Run compute shader to simulate particles
                 RunComputeShader(cmd, deltaTime, time, new Vector2(normalizedMouseX, normalizedMouseY));
@@ -502,13 +541,13 @@ namespace VulkEaseExamples
                 RenderParticles(cmd, backbuffer);
 
                 // Present
-                VulkEase.TransitionTextureForPresent(cmd, backbuffer);
-                var result = VulkEase.PresentImage(_swapchain, cmd);
+                VulkEase.VulkEase.TransitionTextureForPresent(cmd, backbuffer);
+                var result = VulkEase.VulkEase.PresentImage(_swapchain, cmd);
 
                 if (result == VEResult.VE_ERROR_SWAPCHAIN_OUT_OF_DATE)
                 {
-                    VulkEase.GetSwapchainSize(_swapchain, out uint swWidth, out uint swHeight);
-                    VulkEase.ResizeSwapchain(_swapchain, swWidth, swHeight);
+                    VulkEase.VulkEase.GetSwapchainSize(_swapchain, out uint swWidth, out uint swHeight);
+                    VulkEase.VulkEase.ResizeSwapchain(_swapchain, swWidth, swHeight);
                 }
             }
             catch (Exception ex)
@@ -523,52 +562,52 @@ namespace VulkEaseExamples
 
             if (_device.native != IntPtr.Zero)
             {
-                VulkEase.DeviceWaitIdle(_device);
+                VulkEase.VulkEase.DeviceWaitIdle(_device);
             }
 
-            if (_particleBuffer != VEConstants.VE_INVALID_ADDRESS)
+            if (_particleBuffer.native != VEConstants.VE_INVALID_ADDRESS.native)
             {
-                VulkEase.DestroyBuffer(_device, _particleBuffer);
+                VulkEase.VulkEase.DestroyBuffer(_device, _particleBuffer);
             }
 
-            if (_vertexBuffer != VEConstants.VE_INVALID_ADDRESS)
+            if (_vertexBuffer.native != VEConstants.VE_INVALID_ADDRESS.native)
             {
-                VulkEase.DestroyBuffer(_device, _vertexBuffer);
+                VulkEase.VulkEase.DestroyBuffer(_device, _vertexBuffer);
             }
 
             if (_renderConfig.native != IntPtr.Zero)
             {
-                VulkEase.DestroyRenderConfig(_renderConfig);
+                VulkEase.VulkEase.DestroyRenderConfig(_renderConfig);
             }
 
             if (_computeShader.native != IntPtr.Zero)
             {
-                VulkEase.DestroyShader(_computeShader);
+                VulkEase.VulkEase.DestroyShader(_computeShader);
             }
 
             if (_vertexShader.native != IntPtr.Zero)
             {
-                VulkEase.DestroyShader(_vertexShader);
+                VulkEase.VulkEase.DestroyShader(_vertexShader);
             }
 
             if (_fragmentShader.native != IntPtr.Zero)
             {
-                VulkEase.DestroyShader(_fragmentShader);
+                VulkEase.VulkEase.DestroyShader(_fragmentShader);
             }
 
             if (_swapchain.native != IntPtr.Zero)
             {
-                VulkEase.DestroySwapchain(_swapchain);
+                VulkEase.VulkEase.DestroySwapchain(_swapchain);
             }
 
             if (_device.native != IntPtr.Zero)
             {
-                VulkEase.DestroyDevice(_device);
+                VulkEase.VulkEase.DestroyDevice(_device);
             }
 
             if (_context.native != IntPtr.Zero)
             {
-                VulkEase.DestroyContext(_context);
+                VulkEase.VulkEase.DestroyContext(_context);
             }
 
             base.OnUnload();

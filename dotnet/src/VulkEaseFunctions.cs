@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 namespace VulkEase
@@ -695,7 +696,68 @@ namespace VulkEase
 
         public static void BeginRendering(VECommandBuffer cmd, VERenderingInfo renderingInfo)
         {
-            VulkEaseDll.veBeginRendering(cmd.native, ref renderingInfo);
+            // Pin color attachments array if it has any elements
+            // VERenderingAttachment is a blittable struct, so we can pin the array directly
+            IntPtr colorAttachmentsPtr = IntPtr.Zero;
+            GCHandle colorAttachmentsHandle = default;
+            
+            if (renderingInfo.ColorAttachments != null && renderingInfo.ColorAttachments.Count > 0)
+            {
+                var colorAttachmentsArray = renderingInfo.ColorAttachments.ToArray();
+                colorAttachmentsHandle = GCHandle.Alloc(colorAttachmentsArray, GCHandleType.Pinned);
+                colorAttachmentsPtr = colorAttachmentsHandle.AddrOfPinnedObject();
+            }
+
+            // Handle optional depth attachment - pin the struct to get its address
+            IntPtr depthAttachmentPtr = IntPtr.Zero;
+            GCHandle depthAttachmentHandle = default;
+            
+            if (renderingInfo.DepthAttachment.HasValue)
+            {
+                var depthAttachment = renderingInfo.DepthAttachment.Value;
+                depthAttachmentHandle = GCHandle.Alloc(depthAttachment, GCHandleType.Pinned);
+                depthAttachmentPtr = depthAttachmentHandle.AddrOfPinnedObject();
+            }
+
+            // Handle optional stencil attachment - pin the struct to get its address
+            IntPtr stencilAttachmentPtr = IntPtr.Zero;
+            GCHandle stencilAttachmentHandle = default;
+            
+            if (renderingInfo.StencilAttachment.HasValue)
+            {
+                var stencilAttachment = renderingInfo.StencilAttachment.Value;
+                stencilAttachmentHandle = GCHandle.Alloc(stencilAttachment, GCHandleType.Pinned);
+                stencilAttachmentPtr = stencilAttachmentHandle.AddrOfPinnedObject();
+            }
+
+            try
+            {
+                // Create the internal struct with pointers
+                var internalInfo = new VERenderingInfoInternal
+                {
+                    renderAreaX = renderingInfo.RenderAreaX,
+                    renderAreaY = renderingInfo.RenderAreaY,
+                    renderAreaWidth = renderingInfo.RenderAreaWidth,
+                    renderAreaHeight = renderingInfo.RenderAreaHeight,
+                    colorAttachmentCount = (uint)(renderingInfo.ColorAttachments?.Count ?? 0),
+                    colorAttachments = colorAttachmentsPtr,
+                    depthAttachment = depthAttachmentPtr,
+                    stencilAttachment = stencilAttachmentPtr
+                };
+
+                // Call the native function
+                VulkEaseDll.veBeginRendering(cmd.native, ref internalInfo);
+            }
+            finally
+            {
+                // Free all pinned handles
+                if (colorAttachmentsHandle.IsAllocated)
+                    colorAttachmentsHandle.Free();
+                if (depthAttachmentHandle.IsAllocated)
+                    depthAttachmentHandle.Free();
+                if (stencilAttachmentHandle.IsAllocated)
+                    stencilAttachmentHandle.Free();
+            }
         }
 
         public static void EndRendering(VECommandBuffer cmd)

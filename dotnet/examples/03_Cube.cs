@@ -1,11 +1,14 @@
-using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.GraphicsLibraryFramework;
 using System;
+using System.Diagnostics;
+using System.Linq;
 using System.Runtime.InteropServices;
 using VulkEase;
+
+using VE = VulkEase.VulkEase;
 
 namespace VulkEaseExamples
 {
@@ -33,34 +36,6 @@ namespace VulkEaseExamples
                 Position = position;
                 TexCoord = texCoord;
             }
-        }
-
-        // Matrix 4x4 for transformations
-        [StructLayout(LayoutKind.Sequential)]
-        private struct Mat4
-        {
-            public unsafe fixed float m[16];
-
-            public unsafe Mat4(params float[] values)
-            {
-                if (values.Length != 16) throw new ArgumentException("Matrix must have 16 elements");
-                for (int i = 0; i < 16; i++) m[i] = values[i];
-            }
-
-            public static unsafe Mat4 Identity()
-            {
-                var matrix = new Mat4();
-                for (int i = 0; i < 16; i++) matrix.m[i] = 0.0f;
-                matrix.m[0] = matrix.m[5] = matrix.m[10] = matrix.m[15] = 1.0f;
-                return matrix;
-            }
-        }
-
-        // Uniform buffer data
-        [StructLayout(LayoutKind.Sequential)]
-        private struct UniformData
-        {
-            public Mat4 MvpMatrix;
         }
 
         // Cube vertices with proper texture coordinates for each face
@@ -100,29 +75,28 @@ namespace VulkEaseExamples
         private VESwapchain _swapchain;
 
         // Resources
-        private VEBufferAddress _vertexBuffer = VEConstants.VE_INVALID_ADDRESS;
-        private VEBufferAddress _indexBuffer = VEConstants.VE_INVALID_ADDRESS;
-        private VEBufferAddress _uniformBuffer = VEConstants.VE_INVALID_ADDRESS;
-        private uint _texture = VEConstants.VE_INVALID_TEXTURE_INDEX;
-        private uint _sampler = VEConstants.VE_INVALID_SAMPLER_INDEX;
+        private VEBufferAddress _vertexBuffer;
+        private VEBufferAddress _indexBuffer;
+        private VEBufferAddress _uniformBuffer;
+        private VETextureIndex _texture;
+        private VESamplerIndex _sampler;
 
         // Shaders
         private VEShader _vertexShader;
         private VEShader _fragmentShader;
-        private VEShaderConfig _shaderConfig;
 
         // Render configuration
         private VERenderConfig _renderConfig;
 
         // Animation
         private float _rotationAngle;
-        private double _lastTime;
+        private Stopwatch _stopwatch = Stopwatch.StartNew();
 
         public CubeExample() : base(GameWindowSettings.Default,
             new NativeWindowSettings()
             {
                 Title = "VulkEase - Spinning Cube",
-                Size = new Vector2i(WindowWidth, WindowHeight),
+                ClientSize = new Vector2i(WindowWidth, WindowHeight),
                 StartVisible = false,
                 StartFocused = true,
                 API = ContextAPI.NoAPI,
@@ -171,10 +145,10 @@ namespace VulkEaseExamples
                 return;
             }
 
-            _lastTime = GLFW.GetTime();
+            _stopwatch = Stopwatch.StartNew();
 
             Console.WriteLine("Initialization complete. Starting main loop...");
-            Console.WriteLine("Controls: Close window to exit");
+            Console.WriteLine("Controls: Close window or press ESC to exit");
             Console.WriteLine();
             IsVisible = true;
         }
@@ -185,7 +159,7 @@ namespace VulkEaseExamples
 
             if (_swapchain.native != IntPtr.Zero && e.Width > 0 && e.Height > 0)
             {
-                VulkEase.ResizeSwapchain(_swapchain, (uint)e.Width, (uint)e.Height);
+                VE.ResizeSwapchain(_swapchain, (uint)e.Width, (uint)e.Height);
             }
         }
 
@@ -194,13 +168,13 @@ namespace VulkEaseExamples
             base.OnRenderFrame(args);
 
             // Handle window minimize
-            if (Size.X == 0 || Size.Y == 0)
+            if (ClientSize.X == 0 || ClientSize.Y == 0)
             {
                 return;
             }
 
-            UpdateUniforms();
-            RenderFrame();
+            UpdateAnimation();
+            RenderCube();
         }
 
         protected override void OnKeyDown(KeyboardKeyEventArgs e)
@@ -218,14 +192,14 @@ namespace VulkEaseExamples
             try
             {
                 // Create context
-                _context = VulkEase.CreateContext("VulkEase Cube Demo");
+                _context = VE.CreateContext("VulkEase Cube Demo");
                 Console.WriteLine("VulkEase initialized successfully");
 
                 // Create device
-                _device = VulkEase.CreateDevice(_context);
+                _device = VE.CreateDevice(_context);
                 Console.WriteLine("VulkEase device created successfully");
-                Console.WriteLine($"Device: {VulkEase.GetDeviceName(_device)}");
-                Console.WriteLine($"Driver: {VulkEase.GetDriverVersion(_device)}");
+                Console.WriteLine($"Device: {VE.GetDeviceName(_device)}");
+                Console.WriteLine($"Driver: {VE.GetDriverVersion(_device)}");
 
                 // Get native window handle
                 IntPtr windowHandle = GetNativeWindowHandle();
@@ -236,16 +210,23 @@ namespace VulkEaseExamples
                 }
 
                 // Create swapchain
-                _swapchain = VulkEase.CreateSwapchain(_device, windowHandle,
-                    WindowWidth, WindowHeight, VkFormat.VK_FORMAT_B8G8R8A8_SRGB, EnableVSync);
+                Console.WriteLine($"Creating swapchain: {WindowWidth}x{WindowHeight}...");
+                _swapchain = VE.CreateSwapchain(_device, windowHandle,
+                    (uint)WindowWidth, (uint)WindowHeight, VkFormat.VK_FORMAT_B8G8R8A8_SRGB, EnableVSync);
 
-                Console.WriteLine($"Swapchain created: {WindowWidth}x{WindowHeight}");
+                if (_swapchain.native == IntPtr.Zero)
+                {
+                    Console.Error.WriteLine("Failed to create swapchain");
+                    return false;
+                }
+
+                Console.WriteLine($"Swapchain created successfully: {WindowWidth}x{WindowHeight}");
                 return true;
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to initialize VulkEase: {ex.Message}");
-                string? lastError = VulkEase.GetLastError();
+                string? lastError = VE.GetLastError();
                 if (lastError != null)
                 {
                     Console.Error.WriteLine($"VulkEase Error: {lastError}");
@@ -254,16 +235,18 @@ namespace VulkEaseExamples
             }
         }
 
-        private IntPtr GetNativeWindowHandle()
+        private unsafe IntPtr GetNativeWindowHandle()
         {
+            // OpenTK's WindowPtr contains the GLFW window handle
+            // Use OpenTK's GLFW bindings to get platform-specific handles
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 return GLFW.GetWin32Window(WindowPtr);
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
-                IntPtr display = GLFW.GetX11Display();
-                IntPtr window = GLFW.GetX11Window(WindowPtr);
+                IntPtr display = (IntPtr)GLFW.GetX11Display();
+                IntPtr window = (IntPtr)GLFW.GetX11Window(WindowPtr);
                 
                 IntPtr[] handles = { display, window };
                 IntPtr handleArray = Marshal.AllocHGlobal(handles.Length * IntPtr.Size);
@@ -283,22 +266,12 @@ namespace VulkEaseExamples
             try
             {
                 // Load vertex shader
-                _vertexShader = VulkEase.LoadShader(_device, "examples/shaders/cube.vert.spv",
+                _vertexShader = VE.LoadShader(_device, "examples/shaders/cube.vert.spv",
                     VkShaderStageFlags.VK_SHADER_STAGE_VERTEX_BIT, "main", "CubeVertexShader");
 
                 // Load fragment shader
-                _fragmentShader = VulkEase.LoadShader(_device, "examples/shaders/cube.frag.spv",
+                _fragmentShader = VE.LoadShader(_device, "examples/shaders/cube.frag.spv",
                     VkShaderStageFlags.VK_SHADER_STAGE_FRAGMENT_BIT, "main", "CubeFragmentShader");
-
-                // Create shader configuration
-                var shaderConfigDesc = new VEShaderConfigDesc
-                {
-                    vertexShader = _vertexShader,
-                    fragmentShader = _fragmentShader,
-                    debugName = "CubeShaderConfig"
-                };
-
-                _shaderConfig = VulkEase.CreateShaderConfig(_device, shaderConfigDesc);
 
                 Console.WriteLine("Shaders loaded successfully");
                 return true;
@@ -306,7 +279,7 @@ namespace VulkEaseExamples
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to load shaders: {ex.Message}");
-                string? lastError = VulkEase.GetLastError();
+                string? lastError = VE.GetLastError();
                 if (lastError != null)
                 {
                     Console.Error.WriteLine($"VulkEase Error: {lastError}");
@@ -320,28 +293,50 @@ namespace VulkEaseExamples
             try
             {
                 // Create vertex buffer
-                _vertexBuffer = VulkEase.CreateVertexBuffer(_device, CubeVertices, "CubeVertices");
-
-                if (_vertexBuffer == VEConstants.VE_INVALID_ADDRESS)
+                GCHandle vertexHandle = GCHandle.Alloc(CubeVertices, GCHandleType.Pinned);
+                try
                 {
-                    Console.Error.WriteLine("Failed to create vertex buffer");
-                    return false;
+                    IntPtr vertexDataPtr = vertexHandle.AddrOfPinnedObject();
+                    ulong vertexDataSize = (ulong)(CubeVertices.Length * Marshal.SizeOf<Vertex>());
+
+                    _vertexBuffer = VE.CreateVertexBuffer(_device, vertexDataPtr, vertexDataSize, "CubeVertices");
+
+                    if (_vertexBuffer.native == VEConstants.VE_INVALID_ADDRESS.native)
+                    {
+                        Console.Error.WriteLine("Failed to create vertex buffer");
+                        return false;
+                    }
+                }
+                finally
+                {
+                    vertexHandle.Free();
                 }
 
                 // Create index buffer
-                _indexBuffer = VulkEase.CreateIndexBuffer(_device, CubeIndices, "CubeIndices");
-
-                if (_indexBuffer == VEConstants.VE_INVALID_ADDRESS)
+                GCHandle indexHandle = GCHandle.Alloc(CubeIndices, GCHandleType.Pinned);
+                try
                 {
-                    Console.Error.WriteLine("Failed to create index buffer");
-                    return false;
+                    IntPtr indexDataPtr = indexHandle.AddrOfPinnedObject();
+                    ulong indexDataSize = (ulong)(CubeIndices.Length * sizeof(ushort));
+
+                    _indexBuffer = VE.CreateIndexBuffer(_device, indexDataPtr, indexDataSize, "CubeIndices");
+
+                    if (_indexBuffer.native == VEConstants.VE_INVALID_ADDRESS.native)
+                    {
+                        Console.Error.WriteLine("Failed to create index buffer");
+                        return false;
+                    }
+                }
+                finally
+                {
+                    indexHandle.Free();
                 }
 
                 // Create uniform buffer (persistently mapped for easy updates)
-                _uniformBuffer = VulkEase.CreateUniformBuffer(_device, 
-                    (uint)Marshal.SizeOf<UniformData>(), true, "CubeUniforms");
+                ulong uniformBufferSize = (ulong)(16 * sizeof(float)); // 4x4 matrix
+                _uniformBuffer = VE.CreateUniformBuffer(_device, uniformBufferSize, true, "CubeUniforms");
 
-                if (_uniformBuffer == VEConstants.VE_INVALID_ADDRESS)
+                if (_uniformBuffer.native == VEConstants.VE_INVALID_ADDRESS.native)
                 {
                     Console.Error.WriteLine("Failed to create uniform buffer");
                     return false;
@@ -353,7 +348,7 @@ namespace VulkEaseExamples
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to create geometry: {ex.Message}");
-                string? lastError = VulkEase.GetLastError();
+                string? lastError = VE.GetLastError();
                 if (lastError != null)
                 {
                     Console.Error.WriteLine($"VulkEase Error: {lastError}");
@@ -367,36 +362,28 @@ namespace VulkEaseExamples
             try
             {
                 // Load texture from file
-                _texture = VulkEase.LoadTexture(_device, "examples/data/testCard.png",
+                _texture = VE.LoadTexture(_device, "examples/data/testCard.png",
                     VkImageUsageFlags.VK_IMAGE_USAGE_SAMPLED_BIT, true);
 
-                if (_texture == VEConstants.VE_INVALID_TEXTURE_INDEX)
+                if (_texture.native == VEConstants.VE_INVALID_TEXTURE_INDEX.native)
                 {
                     Console.WriteLine("Texture file not found, creating fallback texture...");
                     
                     // Create a simple fallback texture if file doesn't exist
-                    _texture = VulkEase.CreateTexture2D(_device, 2, 2, VkFormat.VK_FORMAT_R8G8B8A8_UNORM,
-                        VkImageUsageFlags.VK_IMAGE_USAGE_SAMPLED_BIT, "FallbackTexture");
+                    _texture = VE.CreateTexture2D(_device, 2, 2, VkFormat.VK_FORMAT_R8G8B8A8_UNORM,
+                        VkImageUsageFlags.VK_IMAGE_USAGE_SAMPLED_BIT | VkImageUsageFlags.VK_IMAGE_USAGE_TRANSFER_DST_BIT, "FallbackTexture");
 
-                    if (_texture == VEConstants.VE_INVALID_TEXTURE_INDEX)
+                    if (_texture.native == VEConstants.VE_INVALID_TEXTURE_INDEX.native)
                     {
                         Console.Error.WriteLine("Failed to create fallback texture");
                         return false;
                     }
-
-                    // Fill with simple checkerboard pattern
-                    uint[] pixels = { 0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFFFFFFFF };
-                    var result = VulkEase.UpdateBuffer(_device, _texture, pixels, 0);
-                    if (result != VEResult.VE_SUCCESS)
-                    {
-                        Console.WriteLine("Warning: Could not update fallback texture");
-                    }
                 }
 
                 // Create linear sampler
-                _sampler = VulkEase.CreateLinearSampler(_device);
+                _sampler = VE.CreateLinearSampler(_device);
 
-                if (_sampler == VEConstants.VE_INVALID_SAMPLER_INDEX)
+                if (_sampler.native == VEConstants.VE_INVALID_SAMPLER_INDEX.native)
                 {
                     Console.Error.WriteLine("Failed to create sampler");
                     return false;
@@ -408,7 +395,7 @@ namespace VulkEaseExamples
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to load texture: {ex.Message}");
-                string? lastError = VulkEase.GetLastError();
+                string? lastError = VE.GetLastError();
                 if (lastError != null)
                 {
                     Console.Error.WriteLine($"VulkEase Error: {lastError}");
@@ -421,61 +408,8 @@ namespace VulkEaseExamples
         {
             try
             {
-                // Define vertex input layout
-                var bindings = new VEVertexBinding[]
-                {
-                    new()
-                    {
-                        binding = 0,
-                        stride = (uint)Marshal.SizeOf<Vertex>(),
-                        inputRate = VkVertexInputRate.VK_VERTEX_INPUT_RATE_VERTEX,
-                        divisor = 1
-                    }
-                };
-
-                var attributes = new VEVertexAttribute[]
-                {
-                    new()
-                    {
-                        location = 0, // Position
-                        binding = 0,
-                        format = VkFormat.VK_FORMAT_R32G32B32_SFLOAT,
-                        offset = 0
-                    },
-                    new()
-                    {
-                        location = 1, // Texture coordinates
-                        binding = 0,
-                        format = VkFormat.VK_FORMAT_R32G32_SFLOAT,
-                        offset = 12 // sizeof(Vector3)
-                    }
-                };
-
-                var vertexInput = new VEVertexInputConfig
-                {
-                    bindingCount = 1,
-                    bindings = bindings,
-                    attributeCount = 2,
-                    attributes = attributes,
-                    topology = VkPrimitiveTopology.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-                    primitiveRestartEnable = false
-                };
-
-                // Create render configuration
-                var configDesc = new VERenderConfigDesc
-                {
-                    configTypes = VEConfigType.VE_CONFIG_TYPE_VERTEX_INPUT | 
-                                  VEConfigType.VE_CONFIG_TYPE_RASTERIZATION |
-                                  VEConfigType.VE_CONFIG_TYPE_DEPTH_STENCIL | 
-                                  VEConfigType.VE_CONFIG_TYPE_COLOR_BLEND,
-                    vertexInputConfig = vertexInput,
-                    rasterConfig = null, // Use defaults
-                    depthConfig = null, // Use defaults
-                    blendConfig = null, // Use defaults
-                    debugName = "CubeRenderConfig"
-                };
-
-                _renderConfig = VulkEase.CreateRenderConfig(_device, configDesc);
+                // Create opaque render config with depth testing
+                _renderConfig = VE.CreateOpaqueRenderConfig(_device, "CubeRenderConfig");
 
                 Console.WriteLine("Render config created successfully");
                 return true;
@@ -483,7 +417,7 @@ namespace VulkEaseExamples
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to create render config: {ex.Message}");
-                string? lastError = VulkEase.GetLastError();
+                string? lastError = VE.GetLastError();
                 if (lastError != null)
                 {
                     Console.Error.WriteLine($"VulkEase Error: {lastError}");
@@ -492,110 +426,125 @@ namespace VulkEaseExamples
             }
         }
 
-        private void UpdateUniforms()
+        private void UpdateAnimation()
         {
             // Update rotation
-            double currentTime = GLFW.GetTime();
-            float deltaTime = (float)(currentTime - _lastTime);
-            _lastTime = currentTime;
-            _rotationAngle += deltaTime * 0.8f; // Rotate at 0.8 radians per second
+            float deltaTime = (float)_stopwatch.Elapsed.TotalSeconds;
+            _rotationAngle = deltaTime * 0.8f; // Rotate at 0.8 radians per second
 
             if (_rotationAngle > 2.0f * PI)
             {
                 _rotationAngle -= 2.0f * PI;
             }
-
-            // Build transformation matrices
-            VulkEase.GetSwapchainSize(_swapchain, out uint width, out uint height);
-            float aspect = (float)width / (float)height;
-
-            var projection = CreatePerspectiveMatrix(PI * 0.25f, aspect, 0.1f, 100.0f);
-            var view = CreateTranslationMatrix(0.0f, 0.0f, -5.0f);
-            var model = CreateRotationMatrixY(_rotationAngle);
-            
-            var vm = MultiplyMatrix(ref model, ref view);
-            var mvp = MultiplyMatrix(ref vm, ref projection);
-
-            // Update uniform buffer
-            var uniformData = new UniformData { MvpMatrix = mvp };
-            var result = VulkEase.UpdateBuffer(_device, _uniformBuffer, uniformData, 0);
-
-            if (result != VEResult.VE_SUCCESS)
-            {
-                Console.Error.WriteLine("Failed to update uniform buffer");
-            }
         }
 
-        private unsafe Mat4 CreatePerspectiveMatrix(float fov, float aspect, float near, float far)
+        private float[] CreatePerspectiveMatrix(float fov, float aspect, float near, float far)
         {
-            var m = new Mat4();
+            var m = new float[16];
             float tanHalfFov = MathF.Tan(fov * 0.5f);
 
             // Flipped Y for Vulkan screen coordinate system
-            m.m[0] = 1.0f / (aspect * tanHalfFov);
-            m.m[5] = -1.0f / tanHalfFov; // Flip Y for Vulkan
-            m.m[10] = far / (near - far); // Z [0,1] mapping
-            m.m[11] = -1.0f;
-            m.m[14] = -(far * near) / (far - near); // Z [0,1] mapping
+            m[0] = 1.0f / (aspect * tanHalfFov);
+            m[5] = -1.0f / tanHalfFov; // Flip Y for Vulkan
+            m[10] = far / (near - far); // Z [0,1] mapping
+            m[11] = -1.0f;
+            m[14] = -(far * near) / (far - near); // Z [0,1] mapping
+            m[15] = 0.0f;
 
             return m;
         }
 
-        private unsafe Mat4 CreateRotationMatrixY(float angle)
+        private float[] CreateRotationMatrixY(float angle)
         {
-            var m = Mat4.Identity();
+            var m = CreateIdentityMatrix();
             float c = MathF.Cos(angle);
             float s = MathF.Sin(angle);
 
-            m.m[0] = c; m.m[2] = s;
-            m.m[8] = -s; m.m[10] = c;
+            m[0] = c; m[2] = s;
+            m[8] = -s; m[10] = c;
 
             return m;
         }
 
-        private unsafe Mat4 CreateTranslationMatrix(float x, float y, float z)
+        private float[] CreateTranslationMatrix(float x, float y, float z)
         {
-            var m = Mat4.Identity();
-            m.m[12] = x;
-            m.m[13] = y;
-            m.m[14] = z;
+            var m = CreateIdentityMatrix();
+            m[12] = x;
+            m[13] = y;
+            m[14] = z;
             return m;
         }
 
-        private unsafe Mat4 MultiplyMatrix(ref Mat4 a, ref Mat4 b)
+        private float[] CreateIdentityMatrix()
         {
-            var result = new Mat4();
+            var m = new float[16];
+            m[0] = m[5] = m[10] = m[15] = 1.0f;
+            return m;
+        }
+
+        private float[] MultiplyMatrix(float[] a, float[] b)
+        {
+            var result = new float[16];
             for (int i = 0; i < 4; i++)
             {
                 for (int j = 0; j < 4; j++)
                 {
                     for (int k = 0; k < 4; k++)
                     {
-                        result.m[i * 4 + j] += a.m[i * 4 + k] * b.m[k * 4 + j];
+                        result[i * 4 + j] += a[i * 4 + k] * b[k * 4 + j];
                     }
                 }
             }
             return result;
         }
 
-        private void RenderFrame()
+        private void RenderCube()
         {
             try
             {
                 // Acquire next image
-                uint backbuffer = VulkEase.AcquireNextImage(_swapchain);
-                if (backbuffer == VEConstants.VE_INVALID_TEXTURE_INDEX)
+                VETextureIndex backbuffer = VE.AcquireNextImage(_swapchain);
+                if (backbuffer.native == VEConstants.VE_INVALID_TEXTURE_INDEX.native)
                 {
                     return; // Swapchain out of date, will be recreated
                 }
 
                 // Begin command buffer
-                var cmd = VulkEase.BeginCommandBuffer(_device);
+                var cmd = VE.BeginCommandBuffer(_device);
 
-                VulkEase.TransitionTextureForColorAttachment(cmd, backbuffer);
+                VE.TransitionTextureForColorAttachment(cmd, backbuffer);
 
                 // Begin rendering to backbuffer
-                VulkEase.GetSwapchainSize(_swapchain, out uint width, out uint height);
+                uint width = (uint)WindowWidth;
+                uint height = (uint)WindowHeight;
+                //VE.GetSwapchainSize(_swapchain, out uint width, out uint height);
+
+                // Build transformation matrices
+                float aspect = (float)width / (float)height;
+                var projection = CreatePerspectiveMatrix(PI * 0.25f, aspect, 0.1f, 100.0f);
+                var view = CreateTranslationMatrix(0.0f, 0.0f, -5.0f);
+                var model = CreateRotationMatrixY(_rotationAngle);
+                
+                var vm = MultiplyMatrix(model, view);
+                var mvp = MultiplyMatrix(vm, projection);
+
+                // Update uniform buffer with MVP matrix
+                GCHandle mvpHandle = GCHandle.Alloc(mvp, GCHandleType.Pinned);
+                try
+                {
+                    IntPtr mvpPtr = mvpHandle.AddrOfPinnedObject();
+                    ulong mvpSize = (ulong)(mvp.Length * sizeof(float));
+                    var updateResult = VE.UpdateBuffer(_device, _uniformBuffer, mvpPtr, mvpSize, 0);
+                    if (updateResult != VEResult.VE_SUCCESS)
+                    {
+                        Console.Error.WriteLine("Failed to update uniform buffer");
+                        return;
+                    }
+                }
+                finally
+                {
+                    mvpHandle.Free();
+                }
 
                 var colorAttachment = new VERenderingAttachment
                 {
@@ -606,60 +555,62 @@ namespace VulkEaseExamples
                     resolveTexture = VEConstants.VE_INVALID_TEXTURE_INDEX
                 };
 
+                // Create rendering info with C#-friendly API
                 var renderingInfo = new VERenderingInfo
                 {
-                    renderAreaX = 0,
-                    renderAreaY = 0,
-                    renderAreaWidth = width,
-                    renderAreaHeight = height,
-                    colorAttachmentCount = 1,
-                    colorAttachments = new[] { colorAttachment },
-                    depthAttachment = null,
-                    stencilAttachment = null
+                    RenderAreaX = 0,
+                    RenderAreaY = 0,
+                    RenderAreaWidth = width,
+                    RenderAreaHeight = height
                 };
+                renderingInfo.ColorAttachments.Add(colorAttachment);
 
-                VulkEase.BeginRendering(cmd, renderingInfo);
+                VE.BeginRendering(cmd, renderingInfo);
 
                 // Set viewport and scissor
-                VulkEase.SetViewport(cmd, 0.0f, 0.0f, width, height, 0.0f, 1.0f);
-                VulkEase.SetScissor(cmd, 0, 0, width, height);
+                VE.SetViewport(cmd, 0.0f, 0.0f, width, height, 0.0f, 1.0f);
+                VE.SetScissor(cmd, 0, 0, width, height);
 
                 // Bind shaders and render configuration
-                VulkEase.BindShaderConfig(cmd, _shaderConfig);
-                VulkEase.ApplyRenderConfig(cmd, _renderConfig);
+                VE.BindShader(cmd, _vertexShader);
+                VE.BindShader(cmd, _fragmentShader);
+                VE.ApplyRenderConfig(cmd, _renderConfig);
 
                 // Set up push constants with bindless resource indices
-                var pushConstants = new VEGraphicsPushConstants();
-                pushConstants.vertexBuffer = _vertexBuffer;
-                pushConstants.indexBuffer = _indexBuffer;
-                pushConstants.uniformBuffers[0] = _uniformBuffer;
-                pushConstants.textures[0] = _texture;
-                pushConstants.samplers[0] = _sampler;
-                pushConstants.activeUniformCount = 1;
-                pushConstants.activeTextureCount = 1;
-                pushConstants.activeSamplerCount = 1;
-                pushConstants.objectScale = 1.0f;
+                var pushConstants = new VEGraphicsPushConstants
+                {
+                    vertexBuffer = _vertexBuffer.native,
+                    indexBuffer = _indexBuffer.native,
+                    uniformBuffers = new ulong[4] { _uniformBuffer.native, 0, 0, 0 },
+                    textures = new uint[8] { _texture.native, 0, 0, 0, 0, 0, 0, 0 },
+                    samplers = new uint[8] { _sampler.native, 0, 0, 0, 0, 0, 0, 0 },
+                    objectScale = 1.0f,
+                    activeTextureCount = 1,
+                    activeSamplerCount = 1,
+                    activeUniformCount = 1
+                };
 
-                VulkEase.PushConstants(cmd, pushConstants);
+                VE.PushConstants(cmd, pushConstants);
+
 
                 // Draw the cube
-                VulkEase.BindIndexBuffer(cmd, _indexBuffer, 0, VkIndexType.VK_INDEX_TYPE_UINT16);
-                VulkEase.DrawIndexed(cmd, (uint)CubeIndices.Length, 1, 0, 0, 0);
+                VE.BindIndexBuffer(cmd, _indexBuffer, 0, VkIndexType.VK_INDEX_TYPE_UINT16);
+                VE.DrawIndexed(cmd, (uint)CubeIndices.Length, 1, 0, 0, 0);
 
                 // End rendering
-                VulkEase.EndRendering(cmd);
+                VE.EndRendering(cmd);
 
                 // Present the frame
-                VulkEase.TransitionTextureForPresent(cmd, backbuffer);
-                var result = VulkEase.PresentImage(_swapchain, cmd);
+                VE.TransitionTextureForPresent(cmd, backbuffer);
+                var result = VE.PresentImage(_swapchain, cmd);
 
                 if (result == VEResult.VE_ERROR_SWAPCHAIN_OUT_OF_DATE)
                 {
                     // Swapchain needs to be recreated (window resized)
-                    VulkEase.GetSwapchainSize(_swapchain, out uint newWidth, out uint newHeight);
+                    VE.GetSwapchainSize(_swapchain, out uint newWidth, out uint newHeight);
                     if (newWidth > 0 && newHeight > 0)
                     {
-                        VulkEase.ResizeSwapchain(_swapchain, newWidth, newHeight);
+                        VE.ResizeSwapchain(_swapchain, newWidth, newHeight);
                     }
                 }
             }
@@ -675,71 +626,66 @@ namespace VulkEaseExamples
 
             if (_device.native != IntPtr.Zero)
             {
-                VulkEase.DeviceWaitIdle(_device);
+                VE.DeviceWaitIdle(_device);
             }
 
             // Destroy render config
             if (_renderConfig.native != IntPtr.Zero)
             {
-                VulkEase.DestroyRenderConfig(_renderConfig);
+                VE.DestroyRenderConfig(_renderConfig);
             }
 
             // Destroy shaders
-            if (_shaderConfig.native != IntPtr.Zero)
-            {
-                VulkEase.DestroyShaderConfig(_shaderConfig);
-            }
-
             if (_vertexShader.native != IntPtr.Zero)
             {
-                VulkEase.DestroyShader(_vertexShader);
+                VE.DestroyShader(_vertexShader);
             }
 
             if (_fragmentShader.native != IntPtr.Zero)
             {
-                VulkEase.DestroyShader(_fragmentShader);
+                VE.DestroyShader(_fragmentShader);
             }
 
             // Destroy resources
-            if (_sampler != VEConstants.VE_INVALID_SAMPLER_INDEX)
+            if (_sampler.native != VEConstants.VE_INVALID_SAMPLER_INDEX.native)
             {
-                VulkEase.DestroySampler(_device, _sampler);
+                VE.DestroySampler(_device, _sampler);
             }
 
-            if (_texture != VEConstants.VE_INVALID_TEXTURE_INDEX)
+            if (_texture.native != VEConstants.VE_INVALID_TEXTURE_INDEX.native)
             {
-                VulkEase.DestroyTexture(_device, _texture);
+                VE.DestroyTexture(_device, _texture);
             }
 
-            if (_uniformBuffer != VEConstants.VE_INVALID_ADDRESS)
+            if (_uniformBuffer.native != VEConstants.VE_INVALID_ADDRESS.native)
             {
-                VulkEase.DestroyBuffer(_device, _uniformBuffer);
+                VE.DestroyBuffer(_device, _uniformBuffer);
             }
 
-            if (_indexBuffer != VEConstants.VE_INVALID_ADDRESS)
+            if (_indexBuffer.native != VEConstants.VE_INVALID_ADDRESS.native)
             {
-                VulkEase.DestroyBuffer(_device, _indexBuffer);
+                VE.DestroyBuffer(_device, _indexBuffer);
             }
 
-            if (_vertexBuffer != VEConstants.VE_INVALID_ADDRESS)
+            if (_vertexBuffer.native != VEConstants.VE_INVALID_ADDRESS.native)
             {
-                VulkEase.DestroyBuffer(_device, _vertexBuffer);
+                VE.DestroyBuffer(_device, _vertexBuffer);
             }
 
             // Destroy VulkEase objects
             if (_swapchain.native != IntPtr.Zero)
             {
-                VulkEase.DestroySwapchain(_swapchain);
+                VE.DestroySwapchain(_swapchain);
             }
 
             if (_device.native != IntPtr.Zero)
             {
-                VulkEase.DestroyDevice(_device);
+                VE.DestroyDevice(_device);
             }
 
             if (_context.native != IntPtr.Zero)
             {
-                VulkEase.DestroyContext(_context);
+                VE.DestroyContext(_context);
             }
 
             base.OnUnload();

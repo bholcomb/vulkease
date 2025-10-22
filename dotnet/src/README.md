@@ -93,18 +93,16 @@ while (!shouldClose)
     
     var renderingInfo = new VERenderingInfo
     {
-        renderAreaWidth = width,
-        renderAreaHeight = height,
-        colorAttachmentCount = 1,
-        colorAttachments = new[] { 
-            new VERenderingAttachment 
-            {
-                texture = backbuffer,
-                loadOp = VkAttachmentLoadOp.VK_ATTACHMENT_LOAD_OP_CLEAR,
-                clearValue = new VEColor(0.1f, 0.1f, 0.1f, 1.0f)
-            }
-        }
+        RenderAreaWidth = width,
+        RenderAreaHeight = height
     };
+    renderingInfo.ColorAttachments.Add(new VERenderingAttachment 
+    {
+        texture = backbuffer,
+        loadOp = VkAttachmentLoadOp.VK_ATTACHMENT_LOAD_OP_CLEAR,
+        storeOp = VkAttachmentStoreOp.VK_ATTACHMENT_STORE_OP_STORE,
+        clearValue = new VEColor(0.1f, 0.1f, 0.1f, 1.0f)
+    });
     
     VulkEase.BeginRendering(cmd, renderingInfo);
     VulkEase.BindShader(cmd, vertexShader);
@@ -148,9 +146,14 @@ var pushConstants = new VEComputePushConstants
 // No render passes - just specify attachments
 var renderingInfo = new VERenderingInfo
 {
-    colorAttachments = colorTargets,
-    depthAttachment = depthTarget
+    RenderAreaWidth = width,
+    RenderAreaHeight = height
 };
+// Add color attachments using a List
+renderingInfo.ColorAttachments.Add(colorTarget);
+// Optional depth/stencil attachments
+renderingInfo.DepthAttachment = depthTarget;
+
 VulkEase.BeginRendering(cmd, renderingInfo);
 ```
 
