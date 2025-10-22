@@ -229,7 +229,7 @@ static bool initVulkEase(CubeApp* app) {
         return false;
     }
 
-    app->swapchain = veCreateSwapchain(g_device, windowHandle, width, height, VE_FORMAT_BGRA8_SRGB);
+    app->swapchain = veCreateSwapchain(g_device, windowHandle, width, height, VK_FORMAT_B8G8R8A8_SRGB, vsync);
 #elif defined(__linux__)
     // Get native window handle for VulkEase's simple approach
     void* displayHandle = NULL;
@@ -258,7 +258,7 @@ static bool initVulkEase(CubeApp* app) {
         fprintf(stderr, "Failed to get native window data\n");
         return false;
     }
-    app->swapchain = veCreateSwapchain(g_device, windowHandle, width, height, VE_FORMAT_BGRA8_SRGB);
+    app->swapchain = veCreateSwapchain(g_device, windowHandle, width, height, VK_FORMAT_B8G8R8A8_SRGB, vsync);
 #endif 
 
     if (!app->swapchain) {

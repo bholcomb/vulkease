@@ -293,7 +293,7 @@ namespace VulkEase
         internal static extern VEResult veSubmitCommandBuffer(IntPtr cmd, bool waitForCompletion);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veBeginRendering(IntPtr cmd, ref VERenderingInfo renderingInfo);
+        internal static extern void veBeginRendering(IntPtr cmd, ref VERenderingInfoInternal renderingInfo);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void veEndRendering(IntPtr cmd);
