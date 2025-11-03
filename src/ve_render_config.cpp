@@ -5,9 +5,8 @@
 
 #include "ve_internal.h"
 
-const VkColorComponentFlagBits VK_COLOR_COMPONENT_ALL =
-    static_cast<VkColorComponentFlagBits>(VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
-                                          VK_COLOR_COMPONENT_A_BIT);
+const VkColorComponentFlagBits VK_COLOR_COMPONENT_ALL = static_cast<VkColorComponentFlagBits>(
+    VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT);
 
 // =============================================================================
 // Default Configuration Creators
@@ -518,7 +517,7 @@ VERenderConfig *veCreateConfigVariant(VERenderConfig *baseConfig, const VERender
    desc.shaders = overrides->shaders ? overrides->shaders : base->shaders;
    desc.debugName = overrides->debugName ? overrides->debugName : "ConfigVariant";
 
-   VERenderConfig* ret = veCreateRenderConfig((VEDevice*)base->device, &desc);
+   VERenderConfig *ret = veCreateRenderConfig((VEDevice *)base->device, &desc);
 
    return ret;
 }
@@ -526,7 +525,7 @@ VERenderConfig *veCreateConfigVariant(VERenderConfig *baseConfig, const VERender
 VERenderConfig *veMergeRenderConfigs(VEDevice *device, uint32_t configCount, VERenderConfig *const *configs,
                                      const char *debugName)
 {
-   (void)debugName; //suppress unused parameter warning
+   (void)debugName; // suppress unused parameter warning
    if (!device || configCount == 0 || !configs)
    {
       veSetError("Invalid parameters for config merging");
@@ -540,7 +539,7 @@ VERenderConfig *veMergeRenderConfigs(VEDevice *device, uint32_t configCount, VER
 
 VERenderConfig *veCloneRenderConfig(VERenderConfig *config, const char *debugName)
 {
-   (void)debugName; //suppress unused parameter warning
+   (void)debugName; // suppress unused parameter warning
    if (!config)
    {
       veSetError("Config cannot be NULL");

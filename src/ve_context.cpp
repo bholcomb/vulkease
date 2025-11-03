@@ -5,6 +5,7 @@
 
 #include "ve_internal.h"
 
+#include <new>
 #include <vector>
 
 #ifdef _WIN32
@@ -78,14 +79,18 @@ void veSetError(const char *format, ...)
 
 const char *veGetLastError(void) { return g_lastError[0] ? g_lastError : "No error"; }
 
-const char* getMessageTypeString(VkDebugUtilsMessageTypeFlagsEXT messageType)
+const char *getMessageTypeString(VkDebugUtilsMessageTypeFlagsEXT messageType)
 {
-   switch(messageType)
+   switch (messageType)
    {
-      case VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT: return "General";
-      case VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT: return "Validation";
-      case VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT: return "Performance";
-      case VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT: return "Device Address Binding";
+   case VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT:
+      return "General";
+   case VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT:
+      return "Validation";
+   case VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT:
+      return "Performance";
+   case VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT:
+      return "Device Address Binding";
    }
 
    return "Unknown";
@@ -97,7 +102,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityF
                                                     const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
                                                     void *pUserData)
 {
-   (void)pUserData; //suppresses unused parameter warning
+   (void)pUserData; // suppresses unused parameter warning
 
    const char *severity = "INFO";
    if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
@@ -880,20 +885,26 @@ VEDevice *veCreateDevice(VEContext *context)
    }
 
    // Initialize command pools
-   device->graphicsCommandPool = static_cast<VECommandPool *>(calloc(1, sizeof(VECommandPool)));
-   if (!veInitCommandPool(device, device->queueFamilies.graphicsFamily, device->graphicsCommandPool))
+   device->graphicsCommandPool = new (std::nothrow) VECommandPool();
+   if (!device->graphicsCommandPool ||
+       !device->graphicsCommandPool->initialize(device, device->queueFamilies.graphicsFamily))
    {
       vkDestroyDevice(device->device, NULL);
+      delete device->graphicsCommandPool;
+      device->graphicsCommandPool = nullptr;
       free(device);
       return NULL;
    }
 
    if (device->computeQueue != device->graphicsQueue)
    {
-      device->computeCommandPool = static_cast<VECommandPool *>(calloc(1, sizeof(VECommandPool)));
-      if (!veInitCommandPool(device, device->queueFamilies.computeFamily, device->computeCommandPool))
+      device->computeCommandPool = new (std::nothrow) VECommandPool();
+      if (!device->computeCommandPool ||
+          !device->computeCommandPool->initialize(device, device->queueFamilies.computeFamily))
       {
          vkDestroyDevice(device->device, NULL);
+         delete device->computeCommandPool;
+         device->computeCommandPool = nullptr;
          free(device);
          return NULL;
       }
@@ -905,10 +916,13 @@ VEDevice *veCreateDevice(VEContext *context)
 
    if (device->transferQueue != device->graphicsQueue)
    {
-      device->transferCommandPool = static_cast<VECommandPool *>(calloc(1, sizeof(VECommandPool)));
-      if (!veInitCommandPool(device, device->queueFamilies.transferFamily, device->transferCommandPool))
+      device->transferCommandPool = new (std::nothrow) VECommandPool();
+      if (!device->transferCommandPool ||
+          !device->transferCommandPool->initialize(device, device->queueFamilies.transferFamily))
       {
          vkDestroyDevice(device->device, NULL);
+         delete device->transferCommandPool;
+         device->transferCommandPool = nullptr;
          free(device);
          return NULL;
       }
@@ -924,20 +938,17 @@ VEDevice *veCreateDevice(VEContext *context)
       veSetError("Failed to initialize device queue locks");
       if (device->transferCommandPool && device->transferCommandPool != device->graphicsCommandPool)
       {
-         veDestroyCommandPool(device, device->transferCommandPool);
-         free(device->transferCommandPool);
+         delete device->transferCommandPool;
          device->transferCommandPool = NULL;
       }
       if (device->computeCommandPool && device->computeCommandPool != device->graphicsCommandPool)
       {
-         veDestroyCommandPool(device, device->computeCommandPool);
-         free(device->computeCommandPool);
+         delete device->computeCommandPool;
          device->computeCommandPool = NULL;
       }
       if (device->graphicsCommandPool)
       {
-         veDestroyCommandPool(device, device->graphicsCommandPool);
-         free(device->graphicsCommandPool);
+         delete device->graphicsCommandPool;
          device->graphicsCommandPool = NULL;
       }
       vkDestroyDevice(device->device, NULL);
@@ -957,20 +968,20 @@ VEDevice *veCreateDevice(VEContext *context)
 
    // Initialize config arrays
    device->maxRenderConfigs = VE_MAX_RENDER_CONFIGS;
-   device->renderConfigs = static_cast<VERenderConfigInternal *>(
-       calloc(VE_MAX_RENDER_CONFIGS, sizeof(VERenderConfigInternal)));
+   device->renderConfigs =
+       static_cast<VERenderConfigInternal *>(calloc(VE_MAX_RENDER_CONFIGS, sizeof(VERenderConfigInternal)));
    device->renderConfigCount = 0;
 
    // initialize vertex configs
    device->maxVertexConfigs = VE_MAX_VERTEX_CONFIGS;
-   device->vertexConfigs = static_cast<VEVertexConfigInternal *>(
-       calloc(VE_MAX_VERTEX_CONFIGS, sizeof(VEVertexConfigInternal)));
+   device->vertexConfigs =
+       static_cast<VEVertexConfigInternal *>(calloc(VE_MAX_VERTEX_CONFIGS, sizeof(VEVertexConfigInternal)));
    device->vertexConfigCount = 0;
 
    // initialize shader configs
    device->maxShaderConfigs = VE_MAX_SHADER_CONFIGS;
-   device->shaderConfigs = static_cast<VEShaderConfigInternal *>(
-       calloc(VE_MAX_SHADER_CONFIGS, sizeof(VEShaderConfigInternal)));
+   device->shaderConfigs =
+       static_cast<VEShaderConfigInternal *>(calloc(VE_MAX_SHADER_CONFIGS, sizeof(VEShaderConfigInternal)));
    device->shaderConfigCount = 0;
 
    // Create global pipeline layouts with Vulkan 1.4 enhanced push constants (256 bytes)
@@ -1047,22 +1058,19 @@ void veDestroyDevice(VEDevice *device)
 
    if (internal->transferCommandPool && internal->transferCommandPool != internal->graphicsCommandPool)
    {
-      veDestroyCommandPool(internal, internal->transferCommandPool);
-      free(internal->transferCommandPool);
+      delete internal->transferCommandPool;
       internal->transferCommandPool = NULL;
    }
 
    if (internal->computeCommandPool && internal->computeCommandPool != internal->graphicsCommandPool)
    {
-      veDestroyCommandPool(internal, internal->computeCommandPool);
-      free(internal->computeCommandPool);
+      delete internal->computeCommandPool;
       internal->computeCommandPool = NULL;
    }
 
    if (internal->graphicsCommandPool)
    {
-      veDestroyCommandPool(internal, internal->graphicsCommandPool);
-      free(internal->graphicsCommandPool);
+      delete internal->graphicsCommandPool;
       internal->graphicsCommandPool = NULL;
    }
 
@@ -1102,46 +1110,6 @@ VEResult veDeviceWaitIdle(VEDevice *device)
 // =============================================================================
 // Feature Detection Implementation
 // =============================================================================
-
-bool veSupportsBufferDeviceAddress(VEDevice *device)
-{
-   if (!device)
-      return false;
-   VEDeviceInternal *internal = (VEDeviceInternal *)device;
-   return internal->features.bufferDeviceAddress;
-}
-
-bool veSupportsDescriptorIndexing(VEDevice *device)
-{
-   if (!device)
-      return false;
-   VEDeviceInternal *internal = (VEDeviceInternal *)device;
-   return internal->features.descriptorIndexing;
-}
-
-bool veSupportsShaderObjects(VEDevice *device)
-{
-   if (!device)
-      return false;
-   VEDeviceInternal *internal = (VEDeviceInternal *)device;
-   return internal->features.shaderObject;
-}
-
-bool veSupportsExtendedDynamicState3(VEDevice *device)
-{
-   if (!device)
-      return false;
-   VEDeviceInternal *internal = (VEDeviceInternal *)device;
-   return internal->features.extendedDynamicState3;
-}
-
-bool veSupportsVertexInputDynamicState(VEDevice *device)
-{
-   if (!device)
-      return false;
-   VEDeviceInternal *internal = (VEDeviceInternal *)device;
-   return internal->features.vertexInputDynamicState;
-}
 
 // =============================================================================
 // Device Information Implementation
