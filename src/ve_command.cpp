@@ -5,6 +5,8 @@
 
 #include "ve_internal.h"
 
+#include <mutex>
+
 // =============================================================================
 // Command Buffer Operations
 // =============================================================================
@@ -26,7 +28,7 @@ VECommandBuffer *veBeginCommandBuffer(VEDevice *device)
       return NULL;
    }
 
-   VkCommandBufferBeginInfo beginInfo = {0};
+   VkCommandBufferBeginInfo beginInfo{};
    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
@@ -70,52 +72,62 @@ VEResult veSubmitCommandBuffer(VECommandBuffer *cmd, bool waitForCompletion)
    internal->isRecording = false;
 
    // Submit command buffer using stored device reference
-   VkSubmitInfo submitInfo = {0};
+   VkSubmitInfo submitInfo{};
    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
    submitInfo.commandBufferCount = 1;
    submitInfo.pCommandBuffers = &internal->commandBuffer;
 
-   VkFence fence = VK_NULL_HANDLE;
-   if (waitForCompletion)
+   VkFence fence = internal->inFlightFence;
+   if (fence == VK_NULL_HANDLE)
    {
-      // Create fence for synchronization
-      VkFenceCreateInfo fenceInfo = {0};
+      VkFenceCreateInfo fenceInfo{};
       fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-
-      result = vkCreateFence(internal->device->device, &fenceInfo, NULL, &fence);
-      if (result != VK_SUCCESS)
+      fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+      VkResult fenceResult = vkCreateFence(internal->device->device, &fenceInfo, NULL, &fence);
+      if (fenceResult != VK_SUCCESS)
       {
-         veSetError("Failed to create fence for command buffer submission (VkResult: %d)", result);
+         veSetError("Failed to create command buffer fence (VkResult: %d)", fenceResult);
          return VE_ERROR_OUT_OF_MEMORY;
       }
+      internal->inFlightFence = fence;
    }
 
-   result = vkQueueSubmit(internal->device->graphicsQueue, 1, &submitInfo, fence);
+   result = vkResetFences(internal->device->device, 1, &fence);
    if (result != VK_SUCCESS)
    {
-      if (fence != VK_NULL_HANDLE)
-      {
-         vkDestroyFence(internal->device->device, fence, NULL);
-      }
+      veSetError("Failed to reset command buffer fence (VkResult: %d)", result);
+      return VE_ERROR_OUT_OF_MEMORY;
+   }
+
+   std::mutex &queueMutex = veGetGraphicsQueueMutex(internal->device);
+   {
+      std::lock_guard<std::mutex> lock(queueMutex);
+      result = vkQueueSubmit(internal->device->graphicsQueue, 1, &submitInfo, fence);
+   }
+   if (result != VK_SUCCESS)
+   {
       veSetError("Failed to submit command buffer (VkResult: %d)", result);
       return VE_ERROR_OUT_OF_MEMORY;
    }
 
    if (waitForCompletion)
    {
-      // Wait for completion and cleanup fence
       result = vkWaitForFences(internal->device->device, 1, &fence, VK_TRUE, UINT64_MAX);
-      vkDestroyFence(internal->device->device, fence, NULL);
-
       if (result != VK_SUCCESS)
       {
          veSetError("Failed to wait for command buffer completion (VkResult: %d)", result);
          return VE_ERROR_OUT_OF_MEMORY;
       }
-   }
 
-   // Free the command buffer for reuse
-   veFreeCommandBuffer(internal);
+      internal->fenceActive = false;
+      internal->activeFence = VK_NULL_HANDLE;
+      veFreeCommandBuffer(internal);
+   }
+   else
+   {
+      internal->activeFence = fence;
+      internal->fenceActive = true;
+   }
 
    return VE_SUCCESS;
 }
@@ -132,7 +144,7 @@ void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
    // Convert to Vulkan rendering info
-   VkRenderingInfo vkRenderingInfo = {0};
+   VkRenderingInfo vkRenderingInfo{};
    vkRenderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
    vkRenderingInfo.renderArea.offset.x = renderingInfo->renderAreaX;
    vkRenderingInfo.renderArea.offset.y = renderingInfo->renderAreaY;
@@ -141,7 +153,7 @@ void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo
    vkRenderingInfo.layerCount = 1;
 
    // Convert color attachments
-   VkRenderingAttachmentInfo colorAttachments[8] = {0};
+   VkRenderingAttachmentInfo colorAttachments[8] = {};
    for (uint32_t i = 0; i < renderingInfo->colorAttachmentCount && i < 8; i++)
    {
       colorAttachments[i].sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -183,7 +195,7 @@ void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo
    vkRenderingInfo.pColorAttachments = colorAttachments;
 
    // Convert depth attachment
-   VkRenderingAttachmentInfo depthAttachment = {0};
+   VkRenderingAttachmentInfo depthAttachment{};
    if (renderingInfo->depthAttachment)
    {
       depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -222,7 +234,7 @@ void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo
    }
 
    // Convert stencil attachment
-   VkRenderingAttachmentInfo stencilAttachment = {0};
+   VkRenderingAttachmentInfo stencilAttachment{};
    if (renderingInfo->stencilAttachment)
    {
       stencilAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -304,19 +316,23 @@ void veApplyRenderConfig(VECommandBuffer *cmd, VERenderConfig *config)
    // This is MANDATORY when shader objects are bound
    if (configInternal->configTypes & VE_CONFIG_TYPE_VIEWPORT)
    {
-      VkViewport viewport = {.x = configInternal->viewport.x,
-                             .y = configInternal->viewport.y,
-                             .width = configInternal->viewport.width,
-                             .height = configInternal->viewport.height,
-                             .minDepth = configInternal->viewport.minDepth,
-                             .maxDepth = configInternal->viewport.maxDepth};
+      VkViewport viewport{};
+      viewport.x = configInternal->viewport.x;
+      viewport.y = configInternal->viewport.y;
+      viewport.width = configInternal->viewport.width;
+      viewport.height = configInternal->viewport.height;
+      viewport.minDepth = configInternal->viewport.minDepth;
+      viewport.maxDepth = configInternal->viewport.maxDepth;
       vkCmdSetViewportWithCount(vkCmd, 1, &viewport);
    }
 
    if (configInternal->configTypes & VE_CONFIG_TYPE_SCISSOR)
    {
-      VkRect2D scissor = {.offset = {configInternal->scissor.x, configInternal->scissor.y},
-                          .extent = {configInternal->scissor.width, configInternal->scissor.height}};
+      VkRect2D scissor{};
+      scissor.offset.x = configInternal->scissor.x;
+      scissor.offset.y = configInternal->scissor.y;
+      scissor.extent.width = configInternal->scissor.width;
+      scissor.extent.height = configInternal->scissor.height;
 
       vkCmdSetScissorWithCount(vkCmd, 1, &scissor);
    }
@@ -450,12 +466,14 @@ void veApplyRenderConfig(VECommandBuffer *cmd, VERenderConfig *config)
          colorWriteMasks[i] = blend->attachments[i].colorWriteMask;
 
          // Set blend equation for this attachment (even if blending is disabled)
-         blendEquations[i] = (VkColorBlendEquationEXT){.srcColorBlendFactor = blend->attachments[i].srcColorBlendFactor,
-                                                       .dstColorBlendFactor = blend->attachments[i].dstColorBlendFactor,
-                                                       .colorBlendOp = blend->attachments[i].colorBlendOp,
-                                                       .srcAlphaBlendFactor = blend->attachments[i].srcAlphaBlendFactor,
-                                                       .dstAlphaBlendFactor = blend->attachments[i].dstAlphaBlendFactor,
-                                                       .alphaBlendOp = blend->attachments[i].alphaBlendOp};
+         VkColorBlendEquationEXT equation{};
+         equation.srcColorBlendFactor = blend->attachments[i].srcColorBlendFactor;
+         equation.dstColorBlendFactor = blend->attachments[i].dstColorBlendFactor;
+         equation.colorBlendOp = blend->attachments[i].colorBlendOp;
+         equation.srcAlphaBlendFactor = blend->attachments[i].srcAlphaBlendFactor;
+         equation.dstAlphaBlendFactor = blend->attachments[i].dstAlphaBlendFactor;
+         equation.alphaBlendOp = blend->attachments[i].alphaBlendOp;
+         blendEquations[i] = equation;
       }
 
       // Set all blend state at once
@@ -504,23 +522,25 @@ void veApplyRenderConfig(VECommandBuffer *cmd, VERenderConfig *config)
       // Convert bindings
       for (uint32_t i = 0; i < vertexInput->bindingCount; i++)
       {
-         bindings[i] =
-             (VkVertexInputBindingDescription2EXT){.sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT,
-                                                   .binding = vertexInput->bindings[i].binding,
-                                                   .stride = vertexInput->bindings[i].stride,
-                                                   .inputRate = vertexInput->bindings[i].inputRate,
-                                                   .divisor = vertexInput->bindings[i].divisor};
+         VkVertexInputBindingDescription2EXT binding{};
+         binding.sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT;
+         binding.binding = vertexInput->bindings[i].binding;
+         binding.stride = vertexInput->bindings[i].stride;
+         binding.inputRate = vertexInput->bindings[i].inputRate;
+         binding.divisor = vertexInput->bindings[i].divisor;
+         bindings[i] = binding;
       }
 
       // Convert attributes
       for (uint32_t i = 0; i < vertexInput->attributeCount; i++)
       {
-         attributes[i] = (VkVertexInputAttributeDescription2EXT){
-             .sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT,
-             .location = vertexInput->attributes[i].location,
-             .binding = vertexInput->attributes[i].binding,
-             .format = vertexInput->attributes[i].format,
-             .offset = vertexInput->attributes[i].offset};
+         VkVertexInputAttributeDescription2EXT attribute{};
+         attribute.sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT;
+         attribute.location = vertexInput->attributes[i].location;
+         attribute.binding = vertexInput->attributes[i].binding;
+         attribute.format = vertexInput->attributes[i].format;
+         attribute.offset = vertexInput->attributes[i].offset;
+         attributes[i] = attribute;
       }
 
       // Set vertex input layout dynamically
@@ -541,14 +561,15 @@ void veApplyRenderConfig(VECommandBuffer *cmd, VERenderConfig *config)
    {
       const VEMultisampleConfig *msaa = &configInternal->multisampleConfig;
 
-      veFuncs.vkCmdSetRasterizationSamplesEXT(vkCmd, msaa->rasterizationSamples);
+      VkSampleCountFlagBits sampleCountBits = static_cast<VkSampleCountFlagBits>(msaa->rasterizationSamples);
+      veFuncs.vkCmdSetRasterizationSamplesEXT(vkCmd, sampleCountBits);
       veFuncs.vkCmdSetAlphaToCoverageEnableEXT(vkCmd, msaa->alphaToCoverageEnable ? VK_TRUE : VK_FALSE);
       veFuncs.vkCmdSetAlphaToOneEnableEXT(vkCmd, msaa->alphaToOneEnable ? VK_TRUE : VK_FALSE);
 
       // Generate default sample mask (all samples enabled)
-      VkSampleCountFlags sampleCount = msaa->rasterizationSamples;
+      uint32_t sampleCount = static_cast<uint32_t>(msaa->rasterizationSamples);
       uint32_t maskWords = (sampleCount + 31) / 32; // Calculate number of 32-bit words needed
-      uint32_t sampleMask[16];                      // Maximum reasonable sample count (512 samples =
+      VkSampleMask sampleMask[16];                  // Maximum reasonable sample count (512 samples =
                                                     // 16 words)
 
       for (uint32_t i = 0; i < maskWords; i++)
@@ -556,7 +577,7 @@ void veApplyRenderConfig(VECommandBuffer *cmd, VERenderConfig *config)
          sampleMask[i] = 0xFFFFFFFF; // All bits set = all samples enabled
       }
 
-      veFuncs.vkCmdSetSampleMaskEXT(vkCmd, sampleCount, sampleMask);
+      veFuncs.vkCmdSetSampleMaskEXT(vkCmd, sampleCountBits, sampleMask);
    }
    else
    {
@@ -565,7 +586,7 @@ void veApplyRenderConfig(VECommandBuffer *cmd, VERenderConfig *config)
       veFuncs.vkCmdSetAlphaToCoverageEnableEXT(vkCmd, VK_FALSE);
       veFuncs.vkCmdSetAlphaToOneEnableEXT(vkCmd, VK_FALSE);
 
-      uint32_t sampleMask = 0xFFFFFFFF;
+      VkSampleMask sampleMask = 0xFFFFFFFF;
       veFuncs.vkCmdSetSampleMaskEXT(vkCmd, VK_SAMPLE_COUNT_1_BIT, &sampleMask);
    }
 
@@ -611,9 +632,9 @@ void veBindShader(VECommandBuffer *cmd, VEShader *shader)
 
    internal->boundShaders = internal->boundShaders | shaderInternal->stage;
 
-   VkSampleCountFlags stage = shaderInternal->stage;
+   VkShaderStageFlagBits stageBit = static_cast<VkShaderStageFlagBits>(shaderInternal->stage);
 
-   veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, 1, &stage, &shaderInternal->shaderObject);
+   veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, 1, &stageBit, &shaderInternal->shaderObject);
 }
 
 void veBindShaders(VECommandBuffer *cmd, uint32_t shaderCount, VEShader *const *shaders)
@@ -621,7 +642,7 @@ void veBindShaders(VECommandBuffer *cmd, uint32_t shaderCount, VEShader *const *
    if (!cmd || shaderCount == 0 || !shaders)
       return;
 
-   VkSampleCountFlags stages[16];
+   VkShaderStageFlagBits stageBits[16];
    VkShaderEXT shaderObjects[16];
    uint32_t validCount = 0;
 
@@ -630,7 +651,7 @@ void veBindShaders(VECommandBuffer *cmd, uint32_t shaderCount, VEShader *const *
       if (shaders[i])
       {
          VEShaderInternal *shaderInternal = (VEShaderInternal *)shaders[i];
-         stages[validCount] = shaderInternal->stage;
+         stageBits[validCount] = static_cast<VkShaderStageFlagBits>(shaderInternal->stage);
          shaderObjects[validCount] = shaderInternal->shaderObject;
          validCount++;
       }
@@ -639,7 +660,7 @@ void veBindShaders(VECommandBuffer *cmd, uint32_t shaderCount, VEShader *const *
    if (validCount > 0)
    {
       VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
-      veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, validCount, stages, shaderObjects);
+      veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, validCount, stageBits, shaderObjects);
    }
 }
 
@@ -697,8 +718,14 @@ void veUnbindShaderStage(VECommandBuffer *cmd, VkShaderStageFlags stage)
       return;
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
-   VkSampleCountFlags vkStage = stage;
    VkShaderEXT nullShader = VK_NULL_HANDLE;
+   uint32_t remainingBits = static_cast<uint32_t>(stage);
 
-   veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, 1, &vkStage, &nullShader);
+   while (remainingBits)
+   {
+      uint32_t lowestBit = remainingBits & (~(remainingBits - 1u));
+      VkShaderStageFlagBits stageBit = static_cast<VkShaderStageFlagBits>(lowestBit);
+      veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, 1, &stageBit, &nullShader);
+      remainingBits &= ~lowestBit;
+   }
 }

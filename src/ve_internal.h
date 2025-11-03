@@ -26,6 +26,10 @@
 #include <string.h>
 
 #ifdef __cplusplus
+#include <mutex>
+#endif
+
+#ifdef __cplusplus
 extern "C"
 {
 #endif
@@ -56,6 +60,7 @@ extern "C"
 
    typedef struct VEDeviceInternal VEDeviceInternal;
    typedef struct VECommandBufferInternal VECommandBufferInternal;
+   typedef struct VEDeviceQueueLocks VEDeviceQueueLocks;
 
    // =============================================================================
    // Internal Structures
@@ -120,6 +125,7 @@ extern "C"
       uint32_t nextFreeCommandBuffer;
       uint32_t commandBufferCount;
       uint32_t queueFamily;
+      void *allocationLock;
    } VECommandPool;
 
    // Buffer internal structure
@@ -239,6 +245,9 @@ extern "C"
       bool isOneTime;
       uint32_t index;
       VkShaderStageFlags boundShaders;
+      VkFence inFlightFence;
+      VkFence activeFence;
+      bool fenceActive;
    } VECommandBufferInternal;
 
    // Swapchain internal structure
@@ -340,6 +349,8 @@ extern "C"
       VEPerformanceStats performanceStats;
       VEMemoryStats memoryStats;
       VERenderConfigStats renderConfigStats;
+
+      VEDeviceQueueLocks *queueLocks;
    } VEDeviceInternal;
 
    // =============================================================================
@@ -362,6 +373,15 @@ extern "C"
    VECommandBufferInternal *veGetCommandBufferInternal(VECommandBuffer *cmd);
    VEResult veAllocateCommandBuffer(VEDeviceInternal *device, VECommandPool *pool, VECommandBufferInternal **outCmd);
    void veFreeCommandBuffer(VECommandBufferInternal *cmd);
+   void veInitializeQueueLocks(VEDeviceInternal *device);
+   void veDestroyQueueLocks(VEDeviceInternal *device);
+   void veLockGraphicsQueue(VEDeviceInternal *device);
+   void veUnlockGraphicsQueue(VEDeviceInternal *device);
+   void veLockComputeQueue(VEDeviceInternal *device);
+   void veUnlockComputeQueue(VEDeviceInternal *device);
+   void veLockTransferQueue(VEDeviceInternal *device);
+   void veUnlockTransferQueue(VEDeviceInternal *device);
+   void veNotifyCommandBufferFenceSignaled(VEDeviceInternal *device, VkFence fence);
 
    // Resource index management functions
    uint32_t veAllocateBufferIndex(VEDeviceInternal *device);
@@ -454,6 +474,12 @@ extern "C"
 
 #ifdef __cplusplus
 }
+#endif
+
+#ifdef __cplusplus
+std::mutex &veGetGraphicsQueueMutex(VEDeviceInternal *device);
+std::mutex &veGetComputeQueueMutex(VEDeviceInternal *device);
+std::mutex &veGetTransferQueueMutex(VEDeviceInternal *device);
 #endif
 
 #endif // VE_INTERNAL_H

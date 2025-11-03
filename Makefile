@@ -31,7 +31,7 @@ CC = gcc
 CXX = g++
 
 CFLAGS = -std=c11 -fPIC -Wall -Wextra -Wconversion -Werror
-CXXFLAGS = -std=c++14 -fPIC -Wall -Wextra -std=c++17 -Wconversion -Werror
+CXXFLAGS = -std=c++17 -fPIC -Wall -Wextra -Wconversion -Werror
 EXAMPLE_CFLAGS = -std=c11 -Wall -Wextra -Wconversion -Werror
 
 

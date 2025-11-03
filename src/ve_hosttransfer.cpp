@@ -205,7 +205,7 @@ VULKEASE_API VEResult veHostCopyToTexture(VEDevice *device, VETextureIndex textu
    }
 
    // Prepare copy region
-   VkMemoryToImageCopyEXT copyRegion = {0};
+   VkMemoryToImageCopyEXT copyRegion{};
    copyRegion.sType = VK_STRUCTURE_TYPE_MEMORY_TO_IMAGE_COPY_EXT;
    copyRegion.pHostPointer = srcData;
    copyRegion.memoryRowLength = width;    // Tightly packed
@@ -222,7 +222,7 @@ VULKEASE_API VEResult veHostCopyToTexture(VEDevice *device, VETextureIndex textu
    copyRegion.imageExtent.depth = depth;
 
    // Setup copy info
-   VkCopyMemoryToImageInfoEXT copyInfo = {0};
+   VkCopyMemoryToImageInfoEXT copyInfo{};
    copyInfo.sType = VK_STRUCTURE_TYPE_COPY_MEMORY_TO_IMAGE_INFO_EXT;
    copyInfo.flags = 0;
    copyInfo.dstImage = texture->image;
@@ -293,7 +293,7 @@ VULKEASE_API VEResult veHostCopyFromTexture(VEDevice *device, VETextureIndex tex
    }
 
    // Prepare copy region
-   VkImageToMemoryCopyEXT copyRegion = {0};
+   VkImageToMemoryCopyEXT copyRegion{};
    copyRegion.sType = VK_STRUCTURE_TYPE_IMAGE_TO_MEMORY_COPY_EXT;
    copyRegion.pHostPointer = dstData;
    copyRegion.memoryRowLength = width;    // Tightly packed
@@ -310,7 +310,7 @@ VULKEASE_API VEResult veHostCopyFromTexture(VEDevice *device, VETextureIndex tex
    copyRegion.imageExtent.depth = depth;
 
    // Setup copy info
-   VkCopyImageToMemoryInfoEXT copyInfo = {0};
+   VkCopyImageToMemoryInfoEXT copyInfo{};
    copyInfo.sType = VK_STRUCTURE_TYPE_COPY_IMAGE_TO_MEMORY_INFO_EXT;
    copyInfo.flags = 0;
    copyInfo.srcImage = texture->image;

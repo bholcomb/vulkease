@@ -112,7 +112,7 @@ void veInsertDebugLabelLegacy(VECommandBuffer *cmd, const char *labelName, float
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
-   VkDebugUtilsLabelEXT labelInfo = {0};
+   VkDebugUtilsLabelEXT labelInfo{};
    labelInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
    labelInfo.pLabelName = labelName;
 
@@ -142,7 +142,7 @@ void veBeginDebugLabel(VECommandBuffer *cmd, const char *label, VEColor color)
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
-   VkDebugUtilsLabelEXT labelInfo = {0};
+   VkDebugUtilsLabelEXT labelInfo{};
    labelInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
    labelInfo.pLabelName = label;
    labelInfo.color[0] = color.r;
@@ -169,7 +169,7 @@ void veInsertDebugLabel(VECommandBuffer *cmd, const char *label, VEColor color)
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
-   VkDebugUtilsLabelEXT labelInfo = {0};
+   VkDebugUtilsLabelEXT labelInfo{};
    labelInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
    labelInfo.pLabelName = label;
    labelInfo.color[0] = color.r;
@@ -187,7 +187,7 @@ void veBeginDebugRegion(VECommandBuffer *cmd, const char *regionName, float colo
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
-   VkDebugUtilsLabelEXT labelInfo = {0};
+   VkDebugUtilsLabelEXT labelInfo{};
    labelInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
    labelInfo.pLabelName = regionName;
 
@@ -269,7 +269,7 @@ void veLogMessage(VEDevice *device, VEMessageSeverity severity, const char *mess
       break;
    }
 
-   VkDebugUtilsMessengerCallbackDataEXT callbackData = {0};
+   VkDebugUtilsMessengerCallbackDataEXT callbackData{};
    callbackData.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CALLBACK_DATA_EXT;
    callbackData.pMessage = message;
    callbackData.messageIdNumber = 0;
