@@ -390,7 +390,7 @@ VEResult veBeginGPUTiming(VECommandBuffer *cmd, uint32_t queryIndex)
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   //VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   // VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
    // In a full implementation, we would:
    // 1. Create timestamp query pool if not exists
@@ -398,7 +398,7 @@ VEResult veBeginGPUTiming(VECommandBuffer *cmd, uint32_t queryIndex)
    // 3. Write timestamp at pipeline stage
 
    // For now, record the CPU time as a fallback
-   //double currentTime = getCurrentTimeSeconds();
+   // double currentTime = getCurrentTimeSeconds();
 
    // Store timing data in command buffer (would need to extend internal
    // structure) internal->timingData[queryIndex].startTime = currentTime;
@@ -409,21 +409,21 @@ VEResult veBeginGPUTiming(VECommandBuffer *cmd, uint32_t queryIndex)
 VEResult veEndGPUTiming(VECommandBuffer *cmd, uint32_t queryIndex)
 {
    (void)queryIndex;
-   
+
    if (!cmd)
    {
       veSetError("Command buffer cannot be NULL");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   //VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   // VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
    // In a full implementation, we would:
    // 1. Write end timestamp
    // 2. Calculate duration when results are available
 
-   //double currentTime = getCurrentTimeSeconds();
-   // internal->timingData[queryIndex].endTime = currentTime;
+   // double currentTime = getCurrentTimeSeconds();
+   //  internal->timingData[queryIndex].endTime = currentTime;
 
    return VE_SUCCESS;
 }
@@ -431,14 +431,14 @@ VEResult veEndGPUTiming(VECommandBuffer *cmd, uint32_t queryIndex)
 VEResult veGetGPUTimingResults(VEDevice *device, uint32_t queryIndex, double *timeInMilliseconds)
 {
    (void)queryIndex;
-   
+
    if (!device || !timeInMilliseconds)
    {
       veSetError("Invalid parameters for GPU timing results");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   //VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+   // VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
 
    // In a full implementation, we would:
    // 1. Get query results from timestamp query pool
@@ -461,7 +461,7 @@ uint32_t veGetBufferCount(VEDevice *device)
       return 0;
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
-   return deviceInternal->graphicsCommandPool->commandBufferCount + 
+   return deviceInternal->graphicsCommandPool->commandBufferCount +
           deviceInternal->computeCommandPool->commandBufferCount +
           deviceInternal->transferCommandPool->commandBufferCount;
 }
@@ -659,11 +659,15 @@ void vePrintDebugInfo(VEDevice *device)
 
    // Feature support
    printf("\nFeature Support:\n");
-   printf("  Buffer Device Address: %s\n", veSupportsBufferDeviceAddress(device) ? "Yes" : "No");
-   printf("  Descriptor Indexing: %s\n", veSupportsDescriptorIndexing(device) ? "Yes" : "No");
-   printf("  Shader Objects: %s\n", veSupportsShaderObjects(device) ? "Yes" : "No");
-   printf("  Extended Dynamic State 3: %s\n", veSupportsExtendedDynamicState3(device) ? "Yes" : "No");
-   printf("  Vertex Input Dynamic State: %s\n", veSupportsVertexInputDynamicState(device) ? "Yes" : "No");
+   printf("  Buffer Device Address: %s\n",
+          deviceInternal->supportsBufferDeviceAddress() ? "Yes" : "No");
+   printf("  Descriptor Indexing: %s\n",
+          deviceInternal->supportsDescriptorIndexing() ? "Yes" : "No");
+   printf("  Shader Objects: %s\n", deviceInternal->supportsShaderObjects() ? "Yes" : "No");
+   printf("  Extended Dynamic State 3: %s\n",
+          deviceInternal->supportsExtendedDynamicState3() ? "Yes" : "No");
+   printf("  Vertex Input Dynamic State: %s\n",
+          deviceInternal->supportsVertexInputDynamicState() ? "Yes" : "No");
 
    printf("================================\n");
 }

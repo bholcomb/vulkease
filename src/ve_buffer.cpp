@@ -19,7 +19,7 @@ static BufferMap *getBufferMap(VEDeviceInternal *device) { return static_cast<Bu
 // VMA Integration
 // =============================================================================
 
-extern "C" VEResult veInitializeVMA(VEDeviceInternal *device)
+VEResult veInitializeVMA(VEDeviceInternal *device)
 {
    // Require buffer device address support - no fallback
    if (!device->features.bufferDeviceAddress)
@@ -36,8 +36,8 @@ extern "C" VEResult veInitializeVMA(VEDeviceInternal *device)
    allocatorInfo.physicalDevice = device->physicalDevice;
    allocatorInfo.device = device->device;
    allocatorInfo.instance = device->context->instance;
-   //allocatorInfo.vulkanApiVersion = device->deviceProperties.apiVersion;
-   allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3; //TODO: move to 1.4
+   // allocatorInfo.vulkanApiVersion = device->deviceProperties.apiVersion;
+   allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3; // TODO: move to 1.4
    allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
    allocatorInfo.pVulkanFunctions = &vulkanFunctions;
 
@@ -60,7 +60,7 @@ extern "C" VEResult veInitializeVMA(VEDeviceInternal *device)
    return VE_SUCCESS;
 }
 
-extern "C" void veCleanupVMA(VEDeviceInternal *device)
+void veCleanupVMA(VEDeviceInternal *device)
 {
    if (!device)
       return;
@@ -110,13 +110,13 @@ VEBufferInternal *veGetBufferFromAddress(VEDeviceInternal *device, VEBufferAddre
    return (it != bufferMap->end()) ? it->second.get() : nullptr;
 }
 
-extern "C" bool veValidateBufferAddress(VEDeviceInternal *device, VEBufferAddress address)
+bool veValidateBufferAddress(VEDeviceInternal *device, VEBufferAddress address)
 {
    return veGetBufferFromAddress(device, address) != nullptr;
 }
 
 // Get VkBuffer handle from buffer address for command buffer operations
-extern "C" VkBuffer veGetVkBufferFromAddress(VEDeviceInternal *device, VEBufferAddress address)
+VkBuffer veGetVkBufferFromAddress(VEDeviceInternal *device, VEBufferAddress address)
 {
    VEBufferInternal *buffer = veGetBufferFromAddress(device, address);
    return (buffer && buffer->isValid) ? buffer->buffer : VK_NULL_HANDLE;
@@ -364,9 +364,15 @@ static VEResult veSubmitTransferCommandBuffer(VECommandBuffer *cmd, bool waitFor
       return VE_ERROR_OUT_OF_MEMORY;
    }
 
-   std::mutex &queueMutex = veGetTransferQueueMutex(internalCmd->device);
+   VEDeviceQueueLocks *locks = internalCmd->device->queueLocks.get();
+   if (!locks)
    {
-      std::lock_guard<std::mutex> lock(queueMutex);
+      veSetError("Device queue locks not initialized");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   {
+      std::lock_guard<std::mutex> lock(locks->transferMutex());
       result = vkQueueSubmit(internalCmd->device->transferQueue, 1, &submitInfo, fence);
    }
    if (result != VK_SUCCESS)
@@ -386,14 +392,12 @@ static VEResult veSubmitTransferCommandBuffer(VECommandBuffer *cmd, bool waitFor
          return VE_ERROR_OUT_OF_MEMORY;
       }
 
-      internalCmd->fenceActive = false;
-      internalCmd->activeFence = VK_NULL_HANDLE;
+      internalCmd->clearFenceTracking();
       veFreeCommandBuffer(internalCmd);
    }
    else
    {
-      internalCmd->activeFence = fence;
-      internalCmd->fenceActive = true;
+      internalCmd->markFenceActive(fence);
    }
 
    return VE_SUCCESS;

@@ -199,7 +199,7 @@ VEShader *veCreateShaderFromSPIRV(VEDevice *device, VkShaderStageFlags stage, co
    };
 
    VkShaderStageFlagBits stageFlags;
-   if(stage == VK_SHADER_STAGE_COMPUTE_BIT)
+   if (stage == VK_SHADER_STAGE_COMPUTE_BIT)
    {
       stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
    }
@@ -208,8 +208,7 @@ VEShader *veCreateShaderFromSPIRV(VEDevice *device, VkShaderStageFlags stage, co
       stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
    }
 
-   VkPushConstantRange shaderPushRange = {
-       .stageFlags = stageFlags, .offset = 0, .size = VE_MAX_PUSH_CONSTANT_BYTES};
+   VkPushConstantRange shaderPushRange = {.stageFlags = stageFlags, .offset = 0, .size = VE_MAX_PUSH_CONSTANT_BYTES};
 
    // Create shader object using VK_EXT_shader_object
    VkShaderCreateInfoEXT shaderCreateInfo{};
@@ -305,9 +304,8 @@ VEShader *veLoadShader(VEDevice *device, const char *filename, VkShaderStageFlag
       return NULL;
    }
 
-   VEShader *shader =
-       veCreateShaderFromSPIRV(device, stage, reinterpret_cast<const uint32_t *>(code.data()), fileSize, entryPoint,
-                               debugName);
+   VEShader *shader = veCreateShaderFromSPIRV(device, stage, reinterpret_cast<const uint32_t *>(code.data()), fileSize,
+                                              entryPoint, debugName);
 
    if (shader)
    {

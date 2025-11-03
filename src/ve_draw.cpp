@@ -327,7 +327,8 @@ void veDrawIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, u
 }
 
 void veDrawIndexedIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t indirectOffset,
-                                VEBufferAddress countBuffer, uint64_t countOffset, uint32_t maxDrawCount, uint32_t stride)
+                                VEBufferAddress countBuffer, uint64_t countOffset, uint32_t maxDrawCount,
+                                uint32_t stride)
 {
    if (!cmd || indirectBuffer == VE_INVALID_ADDRESS || countBuffer == VE_INVALID_ADDRESS)
       return;

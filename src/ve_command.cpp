@@ -99,9 +99,15 @@ VEResult veSubmitCommandBuffer(VECommandBuffer *cmd, bool waitForCompletion)
       return VE_ERROR_OUT_OF_MEMORY;
    }
 
-   std::mutex &queueMutex = veGetGraphicsQueueMutex(internal->device);
+   VEDeviceQueueLocks *locks = internal->device->queueLocks.get();
+   if (!locks)
    {
-      std::lock_guard<std::mutex> lock(queueMutex);
+      veSetError("Device queue locks not initialized");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   {
+      std::lock_guard<std::mutex> lock(locks->graphicsMutex());
       result = vkQueueSubmit(internal->device->graphicsQueue, 1, &submitInfo, fence);
    }
    if (result != VK_SUCCESS)
@@ -119,14 +125,12 @@ VEResult veSubmitCommandBuffer(VECommandBuffer *cmd, bool waitForCompletion)
          return VE_ERROR_OUT_OF_MEMORY;
       }
 
-      internal->fenceActive = false;
-      internal->activeFence = VK_NULL_HANDLE;
+      internal->clearFenceTracking();
       veFreeCommandBuffer(internal);
    }
    else
    {
-      internal->activeFence = fence;
-      internal->fenceActive = true;
+      internal->markFenceActive(fence);
    }
 
    return VE_SUCCESS;
