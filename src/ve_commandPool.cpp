@@ -1,5 +1,8 @@
 #include "ve_internal.h"
 
+#include <mutex>
+#include <new>
+
 extern "C" bool veInitCommandPool(VEDeviceInternal *device, uint32_t queueFamily, VECommandPool *pool)
 {
    if (pool == nullptr)
@@ -14,6 +17,16 @@ extern "C" bool veInitCommandPool(VEDeviceInternal *device, uint32_t queueFamily
 
    if (!pool->commandBuffers || !pool->commandBufferInUse)
    {
+      return false;
+   }
+
+   pool->allocationLock = new (std::nothrow) std::mutex();
+   if (!pool->allocationLock)
+   {
+      free(pool->commandBuffers);
+      pool->commandBuffers = nullptr;
+      free(pool->commandBufferInUse);
+      pool->commandBufferInUse = nullptr;
       return false;
    }
 
@@ -43,6 +56,14 @@ extern "C" bool veDestroyCommandPool(VEDeviceInternal *device, VECommandPool *po
 
    if (pool->commandBuffers)
    {
+      for (uint32_t i = 0; i < VE_MAX_COMMAND_BUFFERS; ++i)
+      {
+         if (pool->commandBuffers[i].inFlightFence)
+         {
+            vkDestroyFence(device->device, pool->commandBuffers[i].inFlightFence, NULL);
+            pool->commandBuffers[i].inFlightFence = VK_NULL_HANDLE;
+         }
+      }
       free(pool->commandBuffers);
       pool->commandBuffers = nullptr;
    }
@@ -54,6 +75,12 @@ extern "C" bool veDestroyCommandPool(VEDeviceInternal *device, VECommandPool *po
    }
 
    pool->commandBufferCount = 0;
+
+   if (pool->allocationLock)
+   {
+      delete static_cast<std::mutex *>(pool->allocationLock);
+      pool->allocationLock = nullptr;
+   }
 
    if (pool->commandPool)
    {
@@ -72,13 +99,46 @@ extern "C" VECommandBufferInternal *veGetCommandBufferInternal(VECommandBuffer *
 extern "C" VEResult veAllocateCommandBuffer(VEDeviceInternal *device, VECommandPool *pool,
                                             VECommandBufferInternal **outCmd)
 {
+   std::lock_guard<std::mutex> lock(*static_cast<std::mutex *>(pool->allocationLock));
+
    // Find free command buffer
    uint32_t checkCount = 0;
    uint32_t nextBuffer = pool->nextFreeCommandBuffer;
    while (pool->commandBufferInUse[nextBuffer])
    {
-      nextBuffer++;
-      nextBuffer = nextBuffer % VE_MAX_COMMAND_BUFFERS; // wrap around looking for a free one
+      VECommandBufferInternal *candidate = &pool->commandBuffers[nextBuffer];
+
+      if (candidate->fenceActive)
+      {
+         VkFence fenceToCheck = candidate->activeFence ? candidate->activeFence : candidate->inFlightFence;
+         if (fenceToCheck)
+         {
+            VkResult fenceStatus = vkGetFenceStatus(device->device, fenceToCheck);
+            if (fenceStatus == VK_SUCCESS)
+            {
+               if (candidate->commandBuffer)
+               {
+                  vkResetCommandBuffer(candidate->commandBuffer, 0);
+               }
+
+               candidate->fenceActive = false;
+               candidate->activeFence = VK_NULL_HANDLE;
+               pool->commandBufferInUse[nextBuffer] = false;
+               if (pool->commandBufferCount > 0)
+               {
+                  pool->commandBufferCount--;
+               }
+               continue;
+            }
+            else if (fenceStatus != VK_NOT_READY)
+            {
+               veSetError("Failed to query command buffer fence status (VkResult: %d)", fenceStatus);
+               return VE_ERROR_UNKNOWN;
+            }
+         }
+      }
+
+      nextBuffer = (nextBuffer + 1) % VE_MAX_COMMAND_BUFFERS; // wrap around looking for a free one
       checkCount++;
       if (checkCount > VE_MAX_COMMAND_BUFFERS)
       {
@@ -109,12 +169,30 @@ extern "C" VEResult veAllocateCommandBuffer(VEDeviceInternal *device, VECommandP
 
       pool->commandBuffers[nextBuffer].commandPool = pool;
       pool->commandBuffers[nextBuffer].index = nextBuffer;
+
+      if (!pool->commandBuffers[nextBuffer].inFlightFence)
+      {
+         VkFenceCreateInfo fenceInfo = {};
+         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+         fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+         VkResult fenceResult =
+             vkCreateFence(device->device, &fenceInfo, NULL, &pool->commandBuffers[nextBuffer].inFlightFence);
+         if (fenceResult != VK_SUCCESS)
+         {
+            vkFreeCommandBuffers(device->device, pool->commandPool, 1, &pool->commandBuffers[nextBuffer].commandBuffer);
+            pool->commandBuffers[nextBuffer].commandBuffer = VK_NULL_HANDLE;
+            veSetError("Failed to create command buffer fence (VkResult: %d)", fenceResult);
+            return VE_ERROR_OUT_OF_MEMORY;
+         }
+      }
    }
 
    pool->commandBufferInUse[nextBuffer] = true;
    pool->commandBuffers[nextBuffer].device = device; // Store device reference
    pool->commandBuffers[nextBuffer].isRecording = false;
    pool->commandBuffers[nextBuffer].isOneTime = false;
+   pool->commandBuffers[nextBuffer].fenceActive = false;
+   pool->commandBuffers[nextBuffer].activeFence = VK_NULL_HANDLE;
 
    *outCmd = &pool->commandBuffers[nextBuffer];
 
@@ -128,8 +206,74 @@ extern "C" void veFreeCommandBuffer(VECommandBufferInternal *cmd)
       return;
 
    VECommandPool *pool = cmd->commandPool;
+
+   std::lock_guard<std::mutex> lock(*static_cast<std::mutex *>(pool->allocationLock));
+
    pool->commandBufferInUse[cmd->index] = false;
-   pool->commandBufferCount--;
+   if (pool->commandBufferCount > 0)
+   {
+      pool->commandBufferCount--;
+   }
    cmd->isRecording = false;
    cmd->isOneTime = false;
+   cmd->fenceActive = false;
+   cmd->activeFence = VK_NULL_HANDLE;
+
+   if (cmd->commandBuffer)
+   {
+      vkResetCommandBuffer(cmd->commandBuffer, 0);
+   }
+}
+
+static void veNotifyFenceInPool(VEDeviceInternal *device, VECommandPool *pool, VkFence fence)
+{
+   if (!device || !pool || fence == VK_NULL_HANDLE || !pool->commandBuffers)
+   {
+      return;
+   }
+
+   std::lock_guard<std::mutex> lock(*static_cast<std::mutex *>(pool->allocationLock));
+
+   for (uint32_t i = 0; i < VE_MAX_COMMAND_BUFFERS; ++i)
+   {
+      VECommandBufferInternal *cmd = &pool->commandBuffers[i];
+      if (cmd->activeFence == fence)
+      {
+         if (pool->commandBufferInUse[i])
+         {
+            pool->commandBufferInUse[i] = false;
+            if (pool->commandBufferCount > 0)
+            {
+               pool->commandBufferCount--;
+            }
+         }
+
+         cmd->fenceActive = false;
+         cmd->activeFence = VK_NULL_HANDLE;
+
+         if (cmd->commandBuffer)
+         {
+            vkResetCommandBuffer(cmd->commandBuffer, 0);
+         }
+      }
+   }
+}
+
+extern "C" void veNotifyCommandBufferFenceSignaled(VEDeviceInternal *device, VkFence fence)
+{
+   if (!device || fence == VK_NULL_HANDLE)
+   {
+      return;
+   }
+
+   veNotifyFenceInPool(device, device->graphicsCommandPool, fence);
+   if (device->computeCommandPool != device->graphicsCommandPool)
+   {
+      veNotifyFenceInPool(device, device->computeCommandPool, fence);
+   }
+   if (device->transferCommandPool != device->graphicsCommandPool &&
+       device->transferCommandPool != device->computeCommandPool)
+   {
+      veNotifyFenceInPool(device, device->transferCommandPool, fence);
+   }
 }

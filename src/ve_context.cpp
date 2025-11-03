@@ -5,6 +5,8 @@
 
 #include "ve_internal.h"
 
+#include <vector>
+
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -153,8 +155,8 @@ static bool checkInstanceExtensionSupport(const char **requiredExtensions, uint3
    uint32_t extensionCount;
    vkEnumerateInstanceExtensionProperties(NULL, &extensionCount, NULL);
 
-   VkExtensionProperties *extensions = malloc(extensionCount * sizeof(VkExtensionProperties));
-   vkEnumerateInstanceExtensionProperties(NULL, &extensionCount, extensions);
+   std::vector<VkExtensionProperties> extensions(extensionCount);
+   vkEnumerateInstanceExtensionProperties(NULL, &extensionCount, extensions.data());
 
    bool allSupported = true;
    for (uint32_t i = 0; i < requiredCount; i++)
@@ -176,7 +178,6 @@ static bool checkInstanceExtensionSupport(const char **requiredExtensions, uint3
       }
    }
 
-   free(extensions);
    return allSupported;
 }
 
@@ -186,8 +187,8 @@ static bool checkValidationLayerSupport(void)
    uint32_t layerCount;
    vkEnumerateInstanceLayerProperties(&layerCount, NULL);
 
-   VkLayerProperties *layers = malloc(layerCount * sizeof(VkLayerProperties));
-   vkEnumerateInstanceLayerProperties(&layerCount, layers);
+   std::vector<VkLayerProperties> layers(layerCount);
+   vkEnumerateInstanceLayerProperties(&layerCount, layers.data());
 
    bool found = false;
    for (uint32_t i = 0; i < layerCount; i++)
@@ -199,7 +200,6 @@ static bool checkValidationLayerSupport(void)
       }
    }
 
-   free(layers);
    return found;
 }
 #endif
@@ -210,8 +210,8 @@ static bool checkDeviceExtensionSupport(VkPhysicalDevice device, const char **re
    uint32_t extensionCount;
    vkEnumerateDeviceExtensionProperties(device, NULL, &extensionCount, NULL);
 
-   VkExtensionProperties *extensions = malloc(extensionCount * sizeof(VkExtensionProperties));
-   vkEnumerateDeviceExtensionProperties(device, NULL, &extensionCount, extensions);
+   std::vector<VkExtensionProperties> extensions(extensionCount);
+   vkEnumerateDeviceExtensionProperties(device, NULL, &extensionCount, extensions.data());
 
    bool allSupported = true;
    for (uint32_t i = 0; i < requiredCount; i++)
@@ -231,7 +231,6 @@ static bool checkDeviceExtensionSupport(VkPhysicalDevice device, const char **re
       }
    }
 
-   free(extensions);
    return allSupported;
 }
 
@@ -249,8 +248,8 @@ static bool validateMinimumGPUCapabilities(VkInstance instance)
       return false;
    }
 
-   VkPhysicalDevice *devices = malloc(deviceCount * sizeof(VkPhysicalDevice));
-   vkEnumeratePhysicalDevices(instance, &deviceCount, devices);
+   std::vector<VkPhysicalDevice> devices(deviceCount);
+   vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
 
    bool foundSuitableGPU = false;
 
@@ -279,22 +278,22 @@ static bool validateMinimumGPUCapabilities(VkInstance instance)
       }
 
       // Check for Vulkan 1.4 mandatory features
-      VkPhysicalDeviceVulkan14Features vulkan14Features = {0};
+      VkPhysicalDeviceVulkan14Features vulkan14Features{};
       vulkan14Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES;
 
-      VkPhysicalDeviceVulkan13Features vulkan13Features = {0};
+      VkPhysicalDeviceVulkan13Features vulkan13Features{};
       vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
       vulkan13Features.pNext = &vulkan14Features;
 
-      VkPhysicalDeviceVulkan12Features vulkan12Features = {0};
+      VkPhysicalDeviceVulkan12Features vulkan12Features{};
       vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
       vulkan12Features.pNext = &vulkan13Features;
 
-      VkPhysicalDeviceHostImageCopyFeatures hostImageCopyFeatures = {0};
+      VkPhysicalDeviceHostImageCopyFeatures hostImageCopyFeatures{};
       hostImageCopyFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_FEATURES;
       hostImageCopyFeatures.pNext = &vulkan12Features;
 
-      VkPhysicalDeviceFeatures2 features2 = {0};
+      VkPhysicalDeviceFeatures2 features2{};
       features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
       features2.pNext = &hostImageCopyFeatures;
 
@@ -312,45 +311,44 @@ static bool validateMinimumGPUCapabilities(VkInstance instance)
       }
    }
 
-   free(devices);
    return foundSuitableGPU;
 }
 
 static void queryDevice14Features(VkPhysicalDevice physicalDevice, VEDeviceFeatures *features)
 {
    // Host image copy features (optional but recommended)
-   VkPhysicalDeviceHostImageCopyFeaturesEXT hostImageCopyFeatures = {0};
+   VkPhysicalDeviceHostImageCopyFeaturesEXT hostImageCopyFeatures{};
    hostImageCopyFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_FEATURES;
 
    // Vulkan 1.4 core features
-   VkPhysicalDeviceVulkan14Features vulkan14Features = {0};
+   VkPhysicalDeviceVulkan14Features vulkan14Features{};
    vulkan14Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES;
    vulkan14Features.pNext = &hostImageCopyFeatures;
 
    // Vulkan 1.3 core features
-   VkPhysicalDeviceVulkan13Features vulkan13Features = {0};
+   VkPhysicalDeviceVulkan13Features vulkan13Features{};
    vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
    vulkan13Features.pNext = &vulkan14Features;
 
    // Vulkan 1.2 core features
-   VkPhysicalDeviceVulkan12Features vulkan12Features = {0};
+   VkPhysicalDeviceVulkan12Features vulkan12Features{};
    vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
    vulkan12Features.pNext = &vulkan13Features;
 
    // Extension features still required in 1.4
-   VkPhysicalDeviceExtendedDynamicState3FeaturesEXT extDynState3Features = {0};
+   VkPhysicalDeviceExtendedDynamicState3FeaturesEXT extDynState3Features{};
    extDynState3Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT;
    extDynState3Features.pNext = &vulkan12Features;
 
-   VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT vertexInputDynFeatures = {0};
+   VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT vertexInputDynFeatures{};
    vertexInputDynFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT;
    vertexInputDynFeatures.pNext = &extDynState3Features;
 
-   VkPhysicalDeviceShaderObjectFeaturesEXT shaderObjectFeatures = {0};
+   VkPhysicalDeviceShaderObjectFeaturesEXT shaderObjectFeatures{};
    shaderObjectFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT;
    shaderObjectFeatures.pNext = &vertexInputDynFeatures;
 
-   VkPhysicalDeviceFeatures2 features2 = {0};
+   VkPhysicalDeviceFeatures2 features2{};
    features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
    features2.pNext = &shaderObjectFeatures;
 
@@ -413,8 +411,8 @@ static int scorePhysicalDevice(VkPhysicalDevice device)
    uint32_t queueFamilyCount = 0;
    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, NULL);
 
-   VkQueueFamilyProperties *queueFamilies = malloc(queueFamilyCount * sizeof(VkQueueFamilyProperties));
-   vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies);
+   std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+   vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
 
    bool hasGraphicsQueue = false;
    bool hasComputeQueue = false;
@@ -430,8 +428,6 @@ static int scorePhysicalDevice(VkPhysicalDevice device)
          hasComputeQueue = true;
       }
    }
-
-   free(queueFamilies);
 
    if (!hasGraphicsQueue || !hasComputeQueue)
    {
@@ -480,8 +476,8 @@ static VkPhysicalDevice selectBestPhysicalDevice(VEContextInternal *context)
       return VK_NULL_HANDLE;
    }
 
-   VkPhysicalDevice *devices = malloc(deviceCount * sizeof(VkPhysicalDevice));
-   vkEnumeratePhysicalDevices(context->instance, &deviceCount, devices);
+   std::vector<VkPhysicalDevice> devices(deviceCount);
+   vkEnumeratePhysicalDevices(context->instance, &deviceCount, devices.data());
 
    VkPhysicalDevice bestDevice = VK_NULL_HANDLE;
    int bestScore = -1;
@@ -495,8 +491,6 @@ static VkPhysicalDevice selectBestPhysicalDevice(VEContextInternal *context)
          bestDevice = devices[i];
       }
    }
-
-   free(devices);
 
    if (bestDevice == VK_NULL_HANDLE)
    {
@@ -515,8 +509,8 @@ static bool findQueueFamilies(VkPhysicalDevice physicalDevice, VEQueueFamilies *
    uint32_t queueFamilyCount = 0;
    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, NULL);
 
-   VkQueueFamilyProperties *families = malloc(queueFamilyCount * sizeof(VkQueueFamilyProperties));
-   vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, families);
+   std::vector<VkQueueFamilyProperties> families(queueFamilyCount);
+   vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, families.data());
 
    queueFamilies->graphicsFamily = UINT32_MAX;
    queueFamilies->computeFamily = UINT32_MAX;
@@ -553,8 +547,6 @@ static bool findQueueFamilies(VkPhysicalDevice physicalDevice, VEQueueFamilies *
       queueFamilies->transferFamily = queueFamilies->graphicsFamily;
    }
 
-   free(families);
-
    return queueFamilies->graphicsFamily != UINT32_MAX;
 }
 
@@ -572,7 +564,7 @@ VEContext *veCreateContext(const char *applicationName)
       return NULL;
    }
 
-   VEContextInternal *context = calloc(1, sizeof(VEContextInternal));
+   VEContextInternal *context = static_cast<VEContextInternal *>(calloc(1, sizeof(VEContextInternal)));
    if (!context)
    {
       veSetError("Failed to allocate context memory");
@@ -616,7 +608,7 @@ VEContext *veCreateContext(const char *applicationName)
    strcpy(context->applicationName, applicationName);
    context->validationEnabled = validationEnabled;
 
-   VkApplicationInfo appInfo = {0};
+   VkApplicationInfo appInfo{};
    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
    appInfo.pApplicationName = applicationName;
    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
@@ -624,7 +616,7 @@ VEContext *veCreateContext(const char *applicationName)
    appInfo.engineVersion = VULKEASE_API_VERSION_2_0;
    appInfo.apiVersion = VK_API_VERSION_1_4; // Require Vulkan 1.4
 
-   VkInstanceCreateInfo createInfo = {0};
+   VkInstanceCreateInfo createInfo{};
    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
    createInfo.pApplicationInfo = &appInfo;
 
@@ -675,7 +667,7 @@ VEContext *veCreateContext(const char *applicationName)
 
    if (validationEnabled)
    {
-      VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo = {0};
+      VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
       debugCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
       debugCreateInfo.messageSeverity =
           VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
@@ -726,7 +718,7 @@ VEDevice *veCreateDevice(VEContext *context)
 
    VEContextInternal *contextInternal = (VEContextInternal *)context;
 
-   VEDeviceInternal *device = calloc(1, sizeof(VEDeviceInternal));
+   VEDeviceInternal *device = static_cast<VEDeviceInternal *>(calloc(1, sizeof(VEDeviceInternal)));
    if (!device)
    {
       veSetError("Failed to allocate device memory");
@@ -745,8 +737,8 @@ VEDevice *veCreateDevice(VEContext *context)
       return NULL;
    }
 
-   VkPhysicalDevice *devices = malloc(deviceCount * sizeof(VkPhysicalDevice));
-   vkEnumeratePhysicalDevices(contextInternal->instance, &deviceCount, devices);
+   std::vector<VkPhysicalDevice> devices(deviceCount);
+   vkEnumeratePhysicalDevices(contextInternal->instance, &deviceCount, devices.data());
 
    device->physicalDevice = selectBestPhysicalDevice(contextInternal);
 
@@ -780,7 +772,7 @@ VEDevice *veCreateDevice(VEContext *context)
       uniqueQueueFamilies[uniqueCount++] = device->queueFamilies.transferFamily;
    }
 
-   VkDeviceQueueCreateInfo queueCreateInfos[3] = {0};
+   VkDeviceQueueCreateInfo queueCreateInfos[3] = {};
    for (uint32_t i = 0; i < uniqueCount; i++)
    {
       queueCreateInfos[i].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -790,21 +782,21 @@ VEDevice *veCreateDevice(VEContext *context)
    }
 
    // Vulkan 1.4 core features (mandatory)
-   VkPhysicalDeviceVulkan14Features vulkan14Features = {0};
+   VkPhysicalDeviceVulkan14Features vulkan14Features{};
    vulkan14Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES;
    vulkan14Features.pushDescriptor = VK_TRUE; // Mandatory in 1.4
    vulkan14Features.hostImageCopy = VK_TRUE;
    vulkan14Features.dynamicRenderingLocalRead = device->features.dynamicRenderingLocalRead; // Optional
 
    // Vulkan 1.3 core features
-   VkPhysicalDeviceVulkan13Features vulkan13Features = {0};
+   VkPhysicalDeviceVulkan13Features vulkan13Features{};
    vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
    vulkan13Features.pNext = &vulkan14Features;
    vulkan13Features.dynamicRendering = VK_TRUE; // Core since 1.3
    vulkan13Features.synchronization2 = VK_TRUE;
 
    // Vulkan 1.2 core features (now mandatory in 1.4)
-   VkPhysicalDeviceVulkan12Features vulkan12Features = {0};
+   VkPhysicalDeviceVulkan12Features vulkan12Features{};
    vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
    vulkan12Features.pNext = &vulkan13Features;
    vulkan12Features.bufferDeviceAddress = VK_TRUE; // Core since 1.2
@@ -819,7 +811,7 @@ VEDevice *veCreateDevice(VEContext *context)
    vulkan12Features.shaderFloat16 = VK_TRUE;     // Mandatory in 1.4
 
    // Extension features (still required in 1.4)
-   VkPhysicalDeviceExtendedDynamicState3FeaturesEXT extDynState3Features = {0};
+   VkPhysicalDeviceExtendedDynamicState3FeaturesEXT extDynState3Features{};
    extDynState3Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT;
    extDynState3Features.pNext = &vulkan12Features;
    extDynState3Features.extendedDynamicState3PolygonMode = VK_TRUE;
@@ -827,18 +819,18 @@ VEDevice *veCreateDevice(VEContext *context)
    extDynState3Features.extendedDynamicState3ColorBlendEquation = VK_TRUE;
    extDynState3Features.extendedDynamicState3ColorWriteMask = VK_TRUE;
 
-   VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT vertexInputDynFeatures = {0};
+   VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT vertexInputDynFeatures{};
    vertexInputDynFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT;
    vertexInputDynFeatures.pNext = &extDynState3Features;
    vertexInputDynFeatures.vertexInputDynamicState = VK_TRUE;
 
-   VkPhysicalDeviceShaderObjectFeaturesEXT shaderObjectFeatures = {0};
+   VkPhysicalDeviceShaderObjectFeaturesEXT shaderObjectFeatures{};
    shaderObjectFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT;
    shaderObjectFeatures.pNext = &vertexInputDynFeatures;
    shaderObjectFeatures.shaderObject = VK_TRUE;
 
    // Basic features
-   VkPhysicalDeviceFeatures2 deviceFeatures2 = {0};
+   VkPhysicalDeviceFeatures2 deviceFeatures2{};
    deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
    deviceFeatures2.pNext = &shaderObjectFeatures;
    deviceFeatures2.features.samplerAnisotropy = device->features.samplerAnisotropy;
@@ -847,7 +839,7 @@ VEDevice *veCreateDevice(VEContext *context)
    deviceFeatures2.features.depthClamp = device->features.depthClamp;
    deviceFeatures2.features.shaderInt64 = VK_TRUE;
 
-   VkDeviceCreateInfo deviceCreateInfo = {0};
+   VkDeviceCreateInfo deviceCreateInfo{};
    deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
    deviceCreateInfo.pNext = &deviceFeatures2;
    deviceCreateInfo.queueCreateInfoCount = uniqueCount;
@@ -888,7 +880,7 @@ VEDevice *veCreateDevice(VEContext *context)
    }
 
    // Initialize command pools
-   device->graphicsCommandPool = calloc(1, sizeof(VECommandPool));
+   device->graphicsCommandPool = static_cast<VECommandPool *>(calloc(1, sizeof(VECommandPool)));
    if (!veInitCommandPool(device, device->queueFamilies.graphicsFamily, device->graphicsCommandPool))
    {
       vkDestroyDevice(device->device, NULL);
@@ -898,7 +890,7 @@ VEDevice *veCreateDevice(VEContext *context)
 
    if (device->computeQueue != device->graphicsQueue)
    {
-      device->computeCommandPool = calloc(1, sizeof(VECommandPool));
+      device->computeCommandPool = static_cast<VECommandPool *>(calloc(1, sizeof(VECommandPool)));
       if (!veInitCommandPool(device, device->queueFamilies.computeFamily, device->computeCommandPool))
       {
          vkDestroyDevice(device->device, NULL);
@@ -913,7 +905,7 @@ VEDevice *veCreateDevice(VEContext *context)
 
    if (device->transferQueue != device->graphicsQueue)
    {
-      device->transferCommandPool = calloc(1, sizeof(VECommandPool));
+      device->transferCommandPool = static_cast<VECommandPool *>(calloc(1, sizeof(VECommandPool)));
       if (!veInitCommandPool(device, device->queueFamilies.transferFamily, device->transferCommandPool))
       {
          vkDestroyDevice(device->device, NULL);
@@ -924,6 +916,33 @@ VEDevice *veCreateDevice(VEContext *context)
    else
    {
       device->transferCommandPool = device->graphicsCommandPool;
+   }
+
+   veInitializeQueueLocks(device);
+   if (!device->queueLocks)
+   {
+      veSetError("Failed to initialize device queue locks");
+      if (device->transferCommandPool && device->transferCommandPool != device->graphicsCommandPool)
+      {
+         veDestroyCommandPool(device, device->transferCommandPool);
+         free(device->transferCommandPool);
+         device->transferCommandPool = NULL;
+      }
+      if (device->computeCommandPool && device->computeCommandPool != device->graphicsCommandPool)
+      {
+         veDestroyCommandPool(device, device->computeCommandPool);
+         free(device->computeCommandPool);
+         device->computeCommandPool = NULL;
+      }
+      if (device->graphicsCommandPool)
+      {
+         veDestroyCommandPool(device, device->graphicsCommandPool);
+         free(device->graphicsCommandPool);
+         device->graphicsCommandPool = NULL;
+      }
+      vkDestroyDevice(device->device, NULL);
+      free(device);
+      return NULL;
    }
 
    // Initialize bindless descriptors
@@ -938,17 +957,20 @@ VEDevice *veCreateDevice(VEContext *context)
 
    // Initialize config arrays
    device->maxRenderConfigs = VE_MAX_RENDER_CONFIGS;
-   device->renderConfigs = calloc(VE_MAX_RENDER_CONFIGS, sizeof(VERenderConfigInternal));
+   device->renderConfigs = static_cast<VERenderConfigInternal *>(
+       calloc(VE_MAX_RENDER_CONFIGS, sizeof(VERenderConfigInternal)));
    device->renderConfigCount = 0;
 
    // initialize vertex configs
    device->maxVertexConfigs = VE_MAX_VERTEX_CONFIGS;
-   device->vertexConfigs = calloc(VE_MAX_VERTEX_CONFIGS, sizeof(VEVertexConfigInternal));
+   device->vertexConfigs = static_cast<VEVertexConfigInternal *>(
+       calloc(VE_MAX_VERTEX_CONFIGS, sizeof(VEVertexConfigInternal)));
    device->vertexConfigCount = 0;
 
    // initialize shader configs
    device->maxShaderConfigs = VE_MAX_SHADER_CONFIGS;
-   device->shaderConfigs = calloc(VE_MAX_SHADER_CONFIGS, sizeof(VEShaderConfigInternal));
+   device->shaderConfigs = static_cast<VEShaderConfigInternal *>(
+       calloc(VE_MAX_SHADER_CONFIGS, sizeof(VEShaderConfigInternal)));
    device->shaderConfigCount = 0;
 
    // Create global pipeline layouts with Vulkan 1.4 enhanced push constants (256 bytes)
@@ -958,17 +980,17 @@ VEDevice *veCreateDevice(VEContext *context)
    };
 
    // Graphics pipeline layout with 256-byte push constants
-   VkPushConstantRange gfxPushConstantRange = {
-       .stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS,
-       .offset = 0,
-       .size = VE_MAX_PUSH_CONSTANT_BYTES // Now 256 bytes in Vulkan 1.4
-   };
+   VkPushConstantRange gfxPushConstantRange{};
+   gfxPushConstantRange.stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
+   gfxPushConstantRange.offset = 0;
+   gfxPushConstantRange.size = VE_MAX_PUSH_CONSTANT_BYTES; // Now 256 bytes in Vulkan 1.4
 
-   VkPipelineLayoutCreateInfo gfxLayoutInfo = {.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-                                               .setLayoutCount = 2,
-                                               .pSetLayouts = setLayouts,
-                                               .pushConstantRangeCount = 1,
-                                               .pPushConstantRanges = &gfxPushConstantRange};
+   VkPipelineLayoutCreateInfo gfxLayoutInfo{};
+   gfxLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+   gfxLayoutInfo.setLayoutCount = 2;
+   gfxLayoutInfo.pSetLayouts = setLayouts;
+   gfxLayoutInfo.pushConstantRangeCount = 1;
+   gfxLayoutInfo.pPushConstantRanges = &gfxPushConstantRange;
 
    result = vkCreatePipelineLayout(device->device, &gfxLayoutInfo, NULL, &device->globalGraphicsPipelineLayout);
    if (result != VK_SUCCESS)
@@ -979,17 +1001,17 @@ VEDevice *veCreateDevice(VEContext *context)
    }
 
    // Compute pipeline layout with 256-byte push constants
-   VkPushConstantRange computePushConstantRange = {
-       .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-       .offset = 0,
-       .size = VE_MAX_PUSH_CONSTANT_BYTES // Now 256 bytes in Vulkan 1.4
-   };
+   VkPushConstantRange computePushConstantRange{};
+   computePushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+   computePushConstantRange.offset = 0;
+   computePushConstantRange.size = VE_MAX_PUSH_CONSTANT_BYTES; // Now 256 bytes in Vulkan 1.4
 
-   VkPipelineLayoutCreateInfo computeLayoutInfo = {.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-                                                   .setLayoutCount = 2,
-                                                   .pSetLayouts = setLayouts,
-                                                   .pushConstantRangeCount = 1,
-                                                   .pPushConstantRanges = &computePushConstantRange};
+   VkPipelineLayoutCreateInfo computeLayoutInfo{};
+   computeLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+   computeLayoutInfo.setLayoutCount = 2;
+   computeLayoutInfo.pSetLayouts = setLayouts;
+   computeLayoutInfo.pushConstantRangeCount = 1;
+   computeLayoutInfo.pPushConstantRanges = &computePushConstantRange;
 
    result = vkCreatePipelineLayout(device->device, &computeLayoutInfo, NULL, &device->globalComputePipelineLayout);
    if (result != VK_SUCCESS)
@@ -1043,6 +1065,8 @@ void veDestroyDevice(VEDevice *device)
       free(internal->graphicsCommandPool);
       internal->graphicsCommandPool = NULL;
    }
+
+   veDestroyQueueLocks(internal);
 
    veCleanupBindlessDescriptors(internal);
    veCleanupVMA(internal);

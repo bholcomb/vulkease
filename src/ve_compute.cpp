@@ -60,9 +60,9 @@ void veBindComputeShader(VECommandBuffer *cmd, VEShader *shader)
       return;
    }
 
-   VkSampleCountFlags stage = VK_SHADER_STAGE_COMPUTE_BIT;
+   VkShaderStageFlagBits stageBit = VK_SHADER_STAGE_COMPUTE_BIT;
 
-   veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, 1, &stage, &shaderInternal->shaderObject);
+   veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, 1, &stageBit, &shaderInternal->shaderObject);
 }
 
 // =============================================================================
@@ -142,14 +142,14 @@ void veBarrierComputeToGraphics(VECommandBuffer *cmd)
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
-   VkMemoryBarrier2 memoryBarrier = {0};
+   VkMemoryBarrier2 memoryBarrier{};
    memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
    memoryBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
    memoryBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
    memoryBarrier.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
    memoryBarrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
 
-   VkDependencyInfo dependencyInfo = {0};
+   VkDependencyInfo dependencyInfo{};
    dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
    dependencyInfo.memoryBarrierCount = 1;
    dependencyInfo.pMemoryBarriers = &memoryBarrier;
@@ -164,14 +164,14 @@ void veBarrierGraphicsToCompute(VECommandBuffer *cmd)
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
-   VkMemoryBarrier2 memoryBarrier = {0};
+   VkMemoryBarrier2 memoryBarrier{};
    memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
    memoryBarrier.srcStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
    memoryBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
    memoryBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
    memoryBarrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
 
-   VkDependencyInfo dependencyInfo = {0};
+   VkDependencyInfo dependencyInfo{};
    dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
    dependencyInfo.memoryBarrierCount = 1;
    dependencyInfo.pMemoryBarriers = &memoryBarrier;
@@ -186,14 +186,14 @@ void veBarrierComputeToTransfer(VECommandBuffer *cmd)
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
-   VkMemoryBarrier2 memoryBarrier = {0};
+   VkMemoryBarrier2 memoryBarrier{};
    memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
    memoryBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
    memoryBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
    memoryBarrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
    memoryBarrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
 
-   VkDependencyInfo dependencyInfo = {0};
+   VkDependencyInfo dependencyInfo{};
    dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
    dependencyInfo.memoryBarrierCount = 1;
    dependencyInfo.pMemoryBarriers = &memoryBarrier;
@@ -208,14 +208,14 @@ void veBarrierTransferToCompute(VECommandBuffer *cmd)
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
-   VkMemoryBarrier2 memoryBarrier = {0};
+   VkMemoryBarrier2 memoryBarrier{};
    memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
    memoryBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
    memoryBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
    memoryBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
    memoryBarrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
 
-   VkDependencyInfo dependencyInfo = {0};
+   VkDependencyInfo dependencyInfo{};
    dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
    dependencyInfo.memoryBarrierCount = 1;
    dependencyInfo.pMemoryBarriers = &memoryBarrier;
@@ -244,14 +244,14 @@ void veBarrierBuffer(VECommandBuffer *cmd, VEBufferAddress buffer, uint32_t srcS
    if (!device)
    {
       // Fallback to memory barrier
-      VkMemoryBarrier2 memoryBarrier = {0};
+      VkMemoryBarrier2 memoryBarrier{};
       memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
       memoryBarrier.srcStageMask = srcStage;
       memoryBarrier.srcAccessMask = srcAccess;
       memoryBarrier.dstStageMask = dstStage;
       memoryBarrier.dstAccessMask = dstAccess;
 
-      VkDependencyInfo dependencyInfo = {0};
+      VkDependencyInfo dependencyInfo{};
       dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
       dependencyInfo.memoryBarrierCount = 1;
       dependencyInfo.pMemoryBarriers = &memoryBarrier;
@@ -267,7 +267,7 @@ void veBarrierBuffer(VECommandBuffer *cmd, VEBufferAddress buffer, uint32_t srcS
       return;
    }
 
-   VkBufferMemoryBarrier2 bufferBarrier = {0};
+   VkBufferMemoryBarrier2 bufferBarrier{};
    bufferBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
    bufferBarrier.srcStageMask = srcStage;
    bufferBarrier.srcAccessMask = srcAccess;
@@ -279,7 +279,7 @@ void veBarrierBuffer(VECommandBuffer *cmd, VEBufferAddress buffer, uint32_t srcS
    bufferBarrier.offset = 0;
    bufferBarrier.size = VK_WHOLE_SIZE;
 
-   VkDependencyInfo dependencyInfo = {0};
+   VkDependencyInfo dependencyInfo{};
    dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
    dependencyInfo.bufferMemoryBarrierCount = 1;
    dependencyInfo.pBufferMemoryBarriers = &bufferBarrier;
@@ -311,14 +311,14 @@ void veBarrierImage(VECommandBuffer *cmd, VETextureIndex texture, uint32_t oldLa
       return;
    }
 
-   VkImageMemoryBarrier2 imageBarrier = {0};
+   VkImageMemoryBarrier2 imageBarrier{};
    imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
    imageBarrier.srcStageMask = srcStage;
    imageBarrier.srcAccessMask = srcAccess;
    imageBarrier.dstStageMask = dstStage;
    imageBarrier.dstAccessMask = dstAccess;
-   imageBarrier.oldLayout = (VkImageLayout)oldLayout;
-   imageBarrier.newLayout = (VkImageLayout)newLayout;
+   imageBarrier.oldLayout = static_cast<VkImageLayout>(oldLayout);
+   imageBarrier.newLayout = static_cast<VkImageLayout>(newLayout);
    imageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
    imageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
    imageBarrier.image = textureInternal->image;
@@ -340,7 +340,7 @@ void veBarrierImage(VECommandBuffer *cmd, VETextureIndex texture, uint32_t oldLa
       }
    }
 
-   VkDependencyInfo dependencyInfo = {0};
+   VkDependencyInfo dependencyInfo{};
    dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
    dependencyInfo.imageMemoryBarrierCount = 1;
    dependencyInfo.pImageMemoryBarriers = &imageBarrier;
@@ -390,10 +390,10 @@ uint32_t veGetOptimalWorkgroupSize(VEDevice *device)
    // Use subgroup size as a hint for optimal workgroup size
    // This is a heuristic - actual optimal size depends on the specific compute
    // shader
-   VkPhysicalDeviceSubgroupProperties subgroupProps = {0};
+   VkPhysicalDeviceSubgroupProperties subgroupProps{};
    subgroupProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES;
 
-   VkPhysicalDeviceProperties2 props2 = {0};
+   VkPhysicalDeviceProperties2 props2{};
    props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
    props2.pNext = &subgroupProps;
 

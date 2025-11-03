@@ -4,7 +4,9 @@
  */
 
 #include "ve_internal.h"
-#include <math.h>
+
+#include <algorithm>
+#include <cmath>
 
 // =============================================================================
 // Bindless Descriptor Management
@@ -12,11 +14,91 @@
 
 VEResult veInitializeBindlessDescriptors(VEDeviceInternal *device)
 {
-   // Create descriptor pool for bindless textures and samplers
-   VkDescriptorPoolSize poolSizes[] = {{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VE_MAX_TEXTURES},
-                                       {VK_DESCRIPTOR_TYPE_SAMPLER, VE_MAX_SAMPLERS}};
+   VkPhysicalDeviceDescriptorIndexingProperties indexingProps{};
+   indexingProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES;
 
-   VkDescriptorPoolCreateInfo poolInfo = {0};
+   VkPhysicalDeviceProperties2 props2{};
+   props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+   props2.pNext = &indexingProps;
+   vkGetPhysicalDeviceProperties2(device->physicalDevice, &props2);
+
+   uint32_t textureCapacity = VE_MAX_TEXTURES;
+   uint32_t samplerCapacity = VE_MAX_SAMPLERS;
+
+   uint32_t textureSetLimit = device->deviceProperties.limits.maxDescriptorSetSampledImages;
+   if (indexingProps.maxDescriptorSetUpdateAfterBindSampledImages > 0)
+   {
+      textureSetLimit = textureSetLimit < indexingProps.maxDescriptorSetUpdateAfterBindSampledImages
+                            ? textureSetLimit
+                            : indexingProps.maxDescriptorSetUpdateAfterBindSampledImages;
+   }
+   if (indexingProps.maxPerStageDescriptorUpdateAfterBindSampledImages > 0)
+   {
+      textureSetLimit = textureSetLimit < indexingProps.maxPerStageDescriptorUpdateAfterBindSampledImages
+                            ? textureSetLimit
+                            : indexingProps.maxPerStageDescriptorUpdateAfterBindSampledImages;
+   }
+   if (textureSetLimit > 0)
+   {
+      textureCapacity = textureCapacity < textureSetLimit ? textureCapacity : textureSetLimit;
+   }
+
+   uint32_t samplerSetLimit = device->deviceProperties.limits.maxDescriptorSetSamplers;
+   if (indexingProps.maxDescriptorSetUpdateAfterBindSamplers > 0)
+   {
+      samplerSetLimit = samplerSetLimit < indexingProps.maxDescriptorSetUpdateAfterBindSamplers
+                            ? samplerSetLimit
+                            : indexingProps.maxDescriptorSetUpdateAfterBindSamplers;
+   }
+   if (indexingProps.maxPerStageDescriptorUpdateAfterBindSamplers > 0)
+   {
+      samplerSetLimit = samplerSetLimit < indexingProps.maxPerStageDescriptorUpdateAfterBindSamplers
+                            ? samplerSetLimit
+                            : indexingProps.maxPerStageDescriptorUpdateAfterBindSamplers;
+   }
+   if (samplerSetLimit > 0)
+   {
+      samplerCapacity = samplerCapacity < samplerSetLimit ? samplerCapacity : samplerSetLimit;
+   }
+
+   uint64_t combinedCapacity = (uint64_t)textureCapacity + (uint64_t)samplerCapacity;
+   if (indexingProps.maxUpdateAfterBindDescriptorsInAllPools > 0 &&
+       combinedCapacity > indexingProps.maxUpdateAfterBindDescriptorsInAllPools)
+   {
+      uint64_t excess = combinedCapacity - indexingProps.maxUpdateAfterBindDescriptorsInAllPools;
+
+      uint64_t reducibleTextures = textureCapacity > 2 ? (uint64_t)(textureCapacity - 2) : 0;
+      uint64_t reduceTextures = excess < reducibleTextures ? excess : reducibleTextures;
+      textureCapacity -= (uint32_t)reduceTextures;
+      excess -= reduceTextures;
+
+      if (excess > 0)
+      {
+         uint64_t reducibleSamplers = samplerCapacity > 2 ? (uint64_t)(samplerCapacity - 2) : 0;
+         uint64_t reduceSamplers = excess < reducibleSamplers ? excess : reducibleSamplers;
+         samplerCapacity -= (uint32_t)reduceSamplers;
+         excess -= reduceSamplers;
+      }
+
+      if (excess > 0)
+      {
+         veSetError("Descriptor indexing limits too low for bindless configuration");
+         return VE_ERROR_FEATURE_NOT_SUPPORTED;
+      }
+   }
+
+   if (textureCapacity < 2 || samplerCapacity < 2)
+   {
+      veSetError("Device descriptor indexing limits are insufficient: textures=%u samplers=%u", textureCapacity,
+                 samplerCapacity);
+      return VE_ERROR_FEATURE_NOT_SUPPORTED;
+   }
+
+   // Create descriptor pool for bindless textures and samplers
+   VkDescriptorPoolSize poolSizes[] = {{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, textureCapacity},
+                                       {VK_DESCRIPTOR_TYPE_SAMPLER, samplerCapacity}};
+
+   VkDescriptorPoolCreateInfo poolInfo{};
    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
    poolInfo.maxSets = 2;
@@ -35,18 +117,18 @@ VEResult veInitializeBindlessDescriptors(VEDeviceInternal *device)
                                                   VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT |
                                                   VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
 
-   VkDescriptorSetLayoutBinding textureBinding = {0};
+   VkDescriptorSetLayoutBinding textureBinding{};
    textureBinding.binding = 0;
    textureBinding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-   textureBinding.descriptorCount = VE_MAX_TEXTURES;
+   textureBinding.descriptorCount = textureCapacity;
    textureBinding.stageFlags = VK_SHADER_STAGE_ALL;
 
-   VkDescriptorSetLayoutBindingFlagsCreateInfo textureBindingFlags_info = {0};
+   VkDescriptorSetLayoutBindingFlagsCreateInfo textureBindingFlags_info{};
    textureBindingFlags_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
    textureBindingFlags_info.bindingCount = 1;
    textureBindingFlags_info.pBindingFlags = &textureBindingFlags;
 
-   VkDescriptorSetLayoutCreateInfo textureLayoutInfo = {0};
+   VkDescriptorSetLayoutCreateInfo textureLayoutInfo{};
    textureLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
    textureLayoutInfo.pNext = &textureBindingFlags_info;
    textureLayoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
@@ -66,18 +148,18 @@ VEResult veInitializeBindlessDescriptors(VEDeviceInternal *device)
                                                   VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT |
                                                   VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
 
-   VkDescriptorSetLayoutBinding samplerBinding = {0};
+   VkDescriptorSetLayoutBinding samplerBinding{};
    samplerBinding.binding = 0;
    samplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
-   samplerBinding.descriptorCount = VE_MAX_SAMPLERS;
+   samplerBinding.descriptorCount = samplerCapacity;
    samplerBinding.stageFlags = VK_SHADER_STAGE_ALL;
 
-   VkDescriptorSetLayoutBindingFlagsCreateInfo samplerBindingFlags_info = {0};
+   VkDescriptorSetLayoutBindingFlagsCreateInfo samplerBindingFlags_info{};
    samplerBindingFlags_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
    samplerBindingFlags_info.bindingCount = 1;
    samplerBindingFlags_info.pBindingFlags = &samplerBindingFlags;
 
-   VkDescriptorSetLayoutCreateInfo samplerLayoutInfo = {0};
+   VkDescriptorSetLayoutCreateInfo samplerLayoutInfo{};
    samplerLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
    samplerLayoutInfo.pNext = &samplerBindingFlags_info;
    samplerLayoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
@@ -94,15 +176,15 @@ VEResult veInitializeBindlessDescriptors(VEDeviceInternal *device)
    }
 
    // Allocate descriptor sets
-   uint32_t maxDescriptorCounts[] = {VE_MAX_TEXTURES, VE_MAX_SAMPLERS};
+   uint32_t maxDescriptorCounts[] = {textureCapacity, samplerCapacity};
    VkDescriptorSetLayout layouts[] = {device->textureDescriptorSetLayout, device->samplerDescriptorSetLayout};
 
-   VkDescriptorSetVariableDescriptorCountAllocateInfo variableCountInfo = {0};
+   VkDescriptorSetVariableDescriptorCountAllocateInfo variableCountInfo{};
    variableCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO;
    variableCountInfo.descriptorSetCount = 2;
    variableCountInfo.pDescriptorCounts = maxDescriptorCounts;
 
-   VkDescriptorSetAllocateInfo allocInfo = {0};
+   VkDescriptorSetAllocateInfo allocInfo{};
    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
    allocInfo.pNext = &variableCountInfo;
    allocInfo.descriptorPool = device->descriptorPool;
@@ -122,9 +204,9 @@ VEResult veInitializeBindlessDescriptors(VEDeviceInternal *device)
    device->samplerDescriptorSet = descriptorSets[1];
 
    // Initialize texture management
-   device->maxTextures = VE_MAX_TEXTURES;
-   device->textures = calloc(device->maxTextures, sizeof(VETextureInternal));
-   device->freeTextureIndices = calloc(device->maxTextures, sizeof(uint32_t));
+   device->maxTextures = textureCapacity;
+   device->textures = static_cast<VETextureInternal *>(calloc(device->maxTextures, sizeof(VETextureInternal)));
+   device->freeTextureIndices = static_cast<uint32_t *>(calloc(device->maxTextures, sizeof(uint32_t)));
 
    if (!device->textures || !device->freeTextureIndices)
    {
@@ -142,9 +224,9 @@ VEResult veInitializeBindlessDescriptors(VEDeviceInternal *device)
    device->textureCount = 0;
 
    // Initialize sampler management
-   device->maxSamplers = VE_MAX_SAMPLERS;
-   device->samplers = calloc(device->maxSamplers, sizeof(VESamplerInternal));
-   device->freeSamplerIndices = calloc(device->maxSamplers, sizeof(uint32_t));
+   device->maxSamplers = samplerCapacity;
+   device->samplers = static_cast<VESamplerInternal *>(calloc(device->maxSamplers, sizeof(VESamplerInternal)));
+   device->freeSamplerIndices = static_cast<uint32_t *>(calloc(device->maxSamplers, sizeof(uint32_t)));
 
    if (!device->samplers || !device->freeSamplerIndices)
    {
@@ -295,13 +377,13 @@ static VEResult veUploadTextureData(VEDeviceInternal *device, VETextureInternal 
    }
 
    // Create staging buffer for upload
-   VkBufferCreateInfo stagingBufferInfo = {0};
+   VkBufferCreateInfo stagingBufferInfo{};
    stagingBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
    stagingBufferInfo.size = dataSize;
    stagingBufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
    stagingBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-   VmaAllocationCreateInfo stagingAllocInfo = {0};
+   VmaAllocationCreateInfo stagingAllocInfo{};
    stagingAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
    stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
@@ -332,7 +414,7 @@ static VEResult veUploadTextureData(VEDeviceInternal *device, VETextureInternal 
    VECommandBufferInternal *cmd = (VECommandBufferInternal *)cmdPublic;
 
    // Transition image to transfer destination layout
-   VkImageMemoryBarrier barrier = {0};
+   VkImageMemoryBarrier barrier{};
    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -351,7 +433,7 @@ static VEResult veUploadTextureData(VEDeviceInternal *device, VETextureInternal 
                         NULL, 0, NULL, 1, &barrier);
 
    // Copy buffer to image
-   VkBufferImageCopy region = {0};
+   VkBufferImageCopy region{};
    region.bufferOffset = 0;
    region.bufferRowLength = 0;
    region.bufferImageHeight = 0;
@@ -437,7 +519,7 @@ VETextureIndex veCreateTexture(VEDevice *device, const VETextureDesc *desc)
       snprintf(texture->debugName, VE_MAX_DEBUG_NAME_LENGTH, "Texture_%u", index);
    }
 
-   VkImageCreateInfo imageInfo = {0};
+   VkImageCreateInfo imageInfo{};
    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
    imageInfo.imageType = desc->depth > 1 ? VK_IMAGE_TYPE_3D : (desc->height > 1 ? VK_IMAGE_TYPE_2D : VK_IMAGE_TYPE_1D);
    imageInfo.extent.width = desc->width;
@@ -449,7 +531,7 @@ VETextureIndex veCreateTexture(VEDevice *device, const VETextureDesc *desc)
    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
    imageInfo.usage = desc->usage;
-   imageInfo.samples = desc->sampleCount;
+   imageInfo.samples = static_cast<VkSampleCountFlagBits>(desc->sampleCount);
    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
    imageInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT; // Always add transfer dst for potential
@@ -460,7 +542,7 @@ VETextureIndex veCreateTexture(VEDevice *device, const VETextureDesc *desc)
       imageInfo.flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
    }
 
-   VmaAllocationCreateInfo allocInfo = {0};
+   VmaAllocationCreateInfo allocInfo{};
    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
    VkResult result = vmaCreateImage(deviceInternal->allocator, &imageInfo, &allocInfo, &texture->image,
@@ -474,7 +556,7 @@ VETextureIndex veCreateTexture(VEDevice *device, const VETextureDesc *desc)
    }
 
    // Create image view
-   VkImageViewCreateInfo viewInfo = {0};
+   VkImageViewCreateInfo viewInfo{};
    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
    viewInfo.image = texture->image;
    viewInfo.viewType = imageInfo.imageType == VK_IMAGE_TYPE_3D
@@ -618,17 +700,18 @@ VkFormat veGetTextureFormat(VEDevice *device, VETextureIndex index)
 VETextureIndex veCreateTexture1D(VEDevice *device, uint32_t width, VkFormat format, VkImageUsageFlags usage,
                                  const char *debugName)
 {
-   VETextureDesc desc = {.width = width,
-                         .height = 1,
-                         .depth = 1,
-                         .mipLevels = 1,
-                         .arrayLayers = 1,
-                         .format = format,
-                         .usage = usage,
-                         .sampleCount = VK_SAMPLE_COUNT_1_BIT,
-                         .initialData = NULL,
-                         .initialDataSize = 0,
-                         .debugName = debugName};
+   VETextureDesc desc{};
+   desc.width = width;
+   desc.height = 1;
+   desc.depth = 1;
+   desc.mipLevels = 1;
+   desc.arrayLayers = 1;
+   desc.format = format;
+   desc.usage = usage;
+   desc.sampleCount = VK_SAMPLE_COUNT_1_BIT;
+   desc.initialData = NULL;
+   desc.initialDataSize = 0;
+   desc.debugName = debugName;
 
    return veCreateTexture(device, &desc);
 }
@@ -636,17 +719,18 @@ VETextureIndex veCreateTexture1D(VEDevice *device, uint32_t width, VkFormat form
 VETextureIndex veCreateTexture2D(VEDevice *device, uint32_t width, uint32_t height, VkFormat format,
                                  VkImageUsageFlags usage, const char *debugName)
 {
-   VETextureDesc desc = {.width = width,
-                         .height = height,
-                         .depth = 1,
-                         .mipLevels = 1,
-                         .arrayLayers = 1,
-                         .format = format,
-                         .usage = usage,
-                         .sampleCount = VK_SAMPLE_COUNT_1_BIT,
-                         .initialData = NULL,
-                         .initialDataSize = 0,
-                         .debugName = debugName};
+   VETextureDesc desc{};
+   desc.width = width;
+   desc.height = height;
+   desc.depth = 1;
+   desc.mipLevels = 1;
+   desc.arrayLayers = 1;
+   desc.format = format;
+   desc.usage = usage;
+   desc.sampleCount = VK_SAMPLE_COUNT_1_BIT;
+   desc.initialData = NULL;
+   desc.initialDataSize = 0;
+   desc.debugName = debugName;
 
    return veCreateTexture(device, &desc);
 }
@@ -654,17 +738,18 @@ VETextureIndex veCreateTexture2D(VEDevice *device, uint32_t width, uint32_t heig
 VETextureIndex veCreateTexture3D(VEDevice *device, uint32_t width, uint32_t height, uint32_t depth, VkFormat format,
                                  VkImageUsageFlags usage, const char *debugName)
 {
-   VETextureDesc desc = {.width = width,
-                         .height = height,
-                         .depth = depth,
-                         .mipLevels = 1,
-                         .arrayLayers = 1,
-                         .format = format,
-                         .usage = usage,
-                         .sampleCount = VK_SAMPLE_COUNT_1_BIT,
-                         .initialData = NULL,
-                         .initialDataSize = 0,
-                         .debugName = debugName};
+   VETextureDesc desc{};
+   desc.width = width;
+   desc.height = height;
+   desc.depth = depth;
+   desc.mipLevels = 1;
+   desc.arrayLayers = 1;
+   desc.format = format;
+   desc.usage = usage;
+   desc.sampleCount = VK_SAMPLE_COUNT_1_BIT;
+   desc.initialData = NULL;
+   desc.initialDataSize = 0;
+   desc.debugName = debugName;
 
    return veCreateTexture(device, &desc);
 }
@@ -672,17 +757,18 @@ VETextureIndex veCreateTexture3D(VEDevice *device, uint32_t width, uint32_t heig
 VETextureIndex veCreateTexture2DArray(VEDevice *device, uint32_t width, uint32_t height, uint32_t layers,
                                       VkFormat format, VkImageUsageFlags usage, const char *debugName)
 {
-   VETextureDesc desc = {.width = width,
-                         .height = height,
-                         .depth = 1,
-                         .mipLevels = 1,
-                         .arrayLayers = layers,
-                         .format = format,
-                         .usage = usage,
-                         .sampleCount = VK_SAMPLE_COUNT_1_BIT,
-                         .initialData = NULL,
-                         .initialDataSize = 0,
-                         .debugName = debugName};
+   VETextureDesc desc{};
+   desc.width = width;
+   desc.height = height;
+   desc.depth = 1;
+   desc.mipLevels = 1;
+   desc.arrayLayers = layers;
+   desc.format = format;
+   desc.usage = usage;
+   desc.sampleCount = VK_SAMPLE_COUNT_1_BIT;
+   desc.initialData = NULL;
+   desc.initialDataSize = 0;
+   desc.debugName = debugName;
 
    return veCreateTexture(device, &desc);
 }
@@ -690,17 +776,18 @@ VETextureIndex veCreateTexture2DArray(VEDevice *device, uint32_t width, uint32_t
 VETextureIndex veCreateTextureCube(VEDevice *device, uint32_t size, VkFormat format, VkImageUsageFlags usage,
                                    const char *debugName)
 {
-   VETextureDesc desc = {.width = size,
-                         .height = size,
-                         .depth = 1,
-                         .mipLevels = 1,
-                         .arrayLayers = 6,
-                         .format = format,
-                         .usage = usage,
-                         .sampleCount = VK_SAMPLE_COUNT_1_BIT,
-                         .initialData = NULL,
-                         .initialDataSize = 0,
-                         .debugName = debugName};
+   VETextureDesc desc{};
+   desc.width = size;
+   desc.height = size;
+   desc.depth = 1;
+   desc.mipLevels = 1;
+   desc.arrayLayers = 6;
+   desc.format = format;
+   desc.usage = usage;
+   desc.sampleCount = VK_SAMPLE_COUNT_1_BIT;
+   desc.initialData = NULL;
+   desc.initialDataSize = 0;
+   desc.debugName = debugName;
 
    return veCreateTexture(device, &desc);
 }
@@ -709,17 +796,18 @@ VETextureIndex veCreateTexture2DMultisample(VEDevice *device, uint32_t width, ui
                                             VkSampleCountFlags sampleCount, VkImageUsageFlags usage,
                                             const char *debugName)
 {
-   VETextureDesc desc = {.width = width,
-                         .height = height,
-                         .depth = 1,
-                         .mipLevels = 1,
-                         .arrayLayers = 1,
-                         .format = format,
-                         .usage = usage,
-                         .sampleCount = sampleCount,
-                         .initialData = NULL,
-                         .initialDataSize = 0,
-                         .debugName = debugName};
+   VETextureDesc desc{};
+   desc.width = width;
+   desc.height = height;
+   desc.depth = 1;
+   desc.mipLevels = 1;
+   desc.arrayLayers = 1;
+   desc.format = format;
+   desc.usage = usage;
+   desc.sampleCount = sampleCount;
+   desc.initialData = NULL;
+   desc.initialDataSize = 0;
+   desc.debugName = debugName;
 
    return veCreateTexture(device, &desc);
 }
@@ -751,22 +839,24 @@ VETextureIndex veLoadTexture(VEDevice *device, const char *filename, VkImageUsag
    uint32_t mipLevels = 0;
    if (generateMips)
    {
-      mipLevels = (uint32_t)floor(log2(fmax(width, height))) + 1;
+      uint32_t longestSide = static_cast<uint32_t>(std::max(width, height));
+      mipLevels = static_cast<uint32_t>(std::floor(std::log2(static_cast<double>(longestSide)))) + 1;
       usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
       usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
    }
 
-   VETextureDesc desc = {.width = (uint32_t)width,
-                         .height = (uint32_t)height,
-                         .depth = 1,
-                         .mipLevels = mipLevels,
-                         .arrayLayers = 1,
-                         .format = VK_FORMAT_R8G8B8A8_SRGB,
-                         .usage = usage,
-                         .sampleCount = VK_SAMPLE_COUNT_1_BIT,
-                         .initialData = pixels,
-                         .initialDataSize = (uint64_t)(width * height * 4),
-                         .debugName = filename};
+   VETextureDesc desc{};
+   desc.width = static_cast<uint32_t>(width);
+   desc.height = static_cast<uint32_t>(height);
+   desc.depth = 1;
+   desc.mipLevels = mipLevels;
+   desc.arrayLayers = 1;
+   desc.format = VK_FORMAT_R8G8B8A8_SRGB;
+   desc.usage = usage;
+   desc.sampleCount = VK_SAMPLE_COUNT_1_BIT;
+   desc.initialData = pixels;
+   desc.initialDataSize = static_cast<uint64_t>(width * height * 4);
+   desc.debugName = filename;
 
    VETextureIndex result = veCreateTexture(device, &desc);
 
@@ -804,17 +894,18 @@ VETextureIndex veLoadHDRTexture(VEDevice *device, const char *filename, VkImageU
       return VE_INVALID_TEXTURE_INDEX;
    }
 
-   VETextureDesc desc = {.width = (uint32_t)width,
-                         .height = (uint32_t)height,
-                         .depth = 1,
-                         .mipLevels = generateMips ? 0 : 1,
-                         .arrayLayers = 1,
-                         .format = VK_FORMAT_R32G32B32A32_SFLOAT,
-                         .usage = usage,
-                         .sampleCount = VK_SAMPLE_COUNT_1_BIT,
-                         .initialData = pixels,
-                         .initialDataSize = (uint64_t)(width * height * 4) * (uint64_t)sizeof(float),
-                         .debugName = filename};
+   VETextureDesc desc{};
+   desc.width = static_cast<uint32_t>(width);
+   desc.height = static_cast<uint32_t>(height);
+   desc.depth = 1;
+   desc.mipLevels = generateMips ? 0u : 1u;
+   desc.arrayLayers = 1;
+   desc.format = VK_FORMAT_R32G32B32A32_SFLOAT;
+   desc.usage = usage;
+   desc.sampleCount = VK_SAMPLE_COUNT_1_BIT;
+   desc.initialData = pixels;
+   desc.initialDataSize = static_cast<uint64_t>(width * height * 4 * sizeof(float));
+   desc.debugName = filename;
 
    VETextureIndex result = veCreateTexture(device, &desc);
 
@@ -904,7 +995,7 @@ VEResult veGenerateMipmaps(VEDevice *device, VECommandBuffer *cmd, VETextureInde
    // Transition mip level 0 from its current layout to TRANSFER_SRC_OPTIMAL
    // This handles the case where texture was already transitioned to
    // SHADER_READ_ONLY
-   VkImageMemoryBarrier2 initialBarrier = {0};
+   VkImageMemoryBarrier2 initialBarrier{};
    initialBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
    initialBarrier.srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT; // Where it might be used
    initialBarrier.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;            // Current access
@@ -921,7 +1012,7 @@ VEResult veGenerateMipmaps(VEDevice *device, VECommandBuffer *cmd, VETextureInde
    initialBarrier.subresourceRange.baseArrayLayer = 0;
    initialBarrier.subresourceRange.layerCount = textureInternal->arrayLayers;
 
-   VkDependencyInfo initialDependencyInfo = {0};
+   VkDependencyInfo initialDependencyInfo{};
    initialDependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
    initialDependencyInfo.imageMemoryBarrierCount = 1;
    initialDependencyInfo.pImageMemoryBarriers = &initialBarrier;
@@ -931,7 +1022,7 @@ VEResult veGenerateMipmaps(VEDevice *device, VECommandBuffer *cmd, VETextureInde
    // Transition all OTHER mip levels (1+) from UNDEFINED to TRANSFER_DST_OPTIMAL
    if (textureInternal->mipLevels > 1)
    {
-      VkImageMemoryBarrier2 otherMipsBarrier = {0};
+      VkImageMemoryBarrier2 otherMipsBarrier{};
       otherMipsBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
       otherMipsBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT; // No prior usage
       otherMipsBarrier.srcAccessMask = 0;                                  // No prior access
@@ -961,7 +1052,7 @@ VEResult veGenerateMipmaps(VEDevice *device, VECommandBuffer *cmd, VETextureInde
       uint32_t nextMipHeight = mipHeight > 1 ? mipHeight / 2 : 1;
 
       // Blit from previous level to current level
-      VkImageBlit blit = {0};
+      VkImageBlit blit{};
       blit.srcOffsets[0] = (VkOffset3D){0, 0, 0};
       blit.srcOffsets[1] = (VkOffset3D){(int32_t)mipWidth, (int32_t)mipHeight, 1};
       blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -982,7 +1073,7 @@ VEResult veGenerateMipmaps(VEDevice *device, VECommandBuffer *cmd, VETextureInde
       // After blit, transition level i from DST to SRC for next iteration
       if (i < textureInternal->mipLevels - 1)
       {
-         VkImageMemoryBarrier2 barrier = {0};
+         VkImageMemoryBarrier2 barrier{};
          barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
          barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
          barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
@@ -999,7 +1090,7 @@ VEResult veGenerateMipmaps(VEDevice *device, VECommandBuffer *cmd, VETextureInde
          barrier.subresourceRange.baseArrayLayer = 0;
          barrier.subresourceRange.layerCount = textureInternal->arrayLayers;
 
-         VkDependencyInfo dependencyInfo = {0};
+         VkDependencyInfo dependencyInfo{};
          dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
          dependencyInfo.imageMemoryBarrierCount = 1;
          dependencyInfo.pImageMemoryBarriers = &barrier;
@@ -1013,7 +1104,7 @@ VEResult veGenerateMipmaps(VEDevice *device, VECommandBuffer *cmd, VETextureInde
    }
 
    // transition ALL levels to SHADER_READ_ONLY at once
-   VkImageMemoryBarrier2 finalBarrier = {0};
+   VkImageMemoryBarrier2 finalBarrier{};
    finalBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
    finalBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
    finalBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
@@ -1030,7 +1121,7 @@ VEResult veGenerateMipmaps(VEDevice *device, VECommandBuffer *cmd, VETextureInde
    finalBarrier.subresourceRange.baseArrayLayer = 0;
    finalBarrier.subresourceRange.layerCount = textureInternal->arrayLayers;
 
-   VkDependencyInfo finalDependencyInfo = {0};
+   VkDependencyInfo finalDependencyInfo{};
    finalDependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
    finalDependencyInfo.imageMemoryBarrierCount = 1;
    finalDependencyInfo.pImageMemoryBarriers = &finalBarrier;
@@ -1098,11 +1189,11 @@ VEResult veUpdateTextureDescriptor(VEDeviceInternal *device, VETextureIndex inde
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   VkDescriptorImageInfo imageInfo = {0};
+   VkDescriptorImageInfo imageInfo{};
    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
    imageInfo.imageView = texture->imageView;
 
-   VkWriteDescriptorSet descriptorWrite = {0};
+   VkWriteDescriptorSet descriptorWrite{};
    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
    descriptorWrite.dstSet = device->textureDescriptorSet;
    descriptorWrite.dstBinding = 0;

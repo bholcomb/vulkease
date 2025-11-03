@@ -5,6 +5,7 @@
 
 #include "ve_internal.h"
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -341,40 +342,42 @@ static VEResult veSubmitTransferCommandBuffer(VECommandBuffer *cmd, bool waitFor
    submitInfo.commandBufferCount = 1;
    submitInfo.pCommandBuffers = &internalCmd->commandBuffer;
 
-   VkFence fence = VK_NULL_HANDLE;
-   if (waitForCompletion)
+   VkFence fence = internalCmd->inFlightFence;
+   if (fence == VK_NULL_HANDLE)
    {
-      // Create fence for synchronization
       VkFenceCreateInfo fenceInfo = {};
       fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-
-      result = vkCreateFence(internalCmd->device->device, &fenceInfo, NULL, &fence);
-      if (result != VK_SUCCESS)
+      fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+      VkResult fenceResult = vkCreateFence(internalCmd->device->device, &fenceInfo, NULL, &fence);
+      if (fenceResult != VK_SUCCESS)
       {
-         veSetError("Failed to create fence for transfer command buffer "
-                    "submission (VkResult: %d)",
-                    result);
+         veSetError("Failed to create transfer fence (VkResult: %d)", fenceResult);
          return VE_ERROR_OUT_OF_MEMORY;
       }
+      internalCmd->inFlightFence = fence;
    }
 
-   result = vkQueueSubmit(internalCmd->device->transferQueue, 1, &submitInfo, fence);
+   result = vkResetFences(internalCmd->device->device, 1, &fence);
    if (result != VK_SUCCESS)
    {
-      if (fence != VK_NULL_HANDLE)
-      {
-         vkDestroyFence(internalCmd->device->device, fence, NULL);
-      }
+      veSetError("Failed to reset transfer fence (VkResult: %d)", result);
+      return VE_ERROR_OUT_OF_MEMORY;
+   }
+
+   std::mutex &queueMutex = veGetTransferQueueMutex(internalCmd->device);
+   {
+      std::lock_guard<std::mutex> lock(queueMutex);
+      result = vkQueueSubmit(internalCmd->device->transferQueue, 1, &submitInfo, fence);
+   }
+   if (result != VK_SUCCESS)
+   {
       veSetError("Failed to submit command buffer (VkResult: %d)", result);
       return VE_ERROR_OUT_OF_MEMORY;
    }
 
    if (waitForCompletion)
    {
-      // Wait for completion and cleanup fence
       result = vkWaitForFences(internalCmd->device->device, 1, &fence, VK_TRUE, UINT64_MAX);
-      vkDestroyFence(internalCmd->device->device, fence, NULL);
-
       if (result != VK_SUCCESS)
       {
          veSetError("Failed to wait for transfer command buffer completion "
@@ -382,10 +385,16 @@ static VEResult veSubmitTransferCommandBuffer(VECommandBuffer *cmd, bool waitFor
                     result);
          return VE_ERROR_OUT_OF_MEMORY;
       }
-   }
 
-   // Free the command buffer for reuse
-   veFreeCommandBuffer(internalCmd);
+      internalCmd->fenceActive = false;
+      internalCmd->activeFence = VK_NULL_HANDLE;
+      veFreeCommandBuffer(internalCmd);
+   }
+   else
+   {
+      internalCmd->activeFence = fence;
+      internalCmd->fenceActive = true;
+   }
 
    return VE_SUCCESS;
 }

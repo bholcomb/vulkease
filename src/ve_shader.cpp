@@ -5,6 +5,11 @@
 
 #include "ve_internal.h"
 
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <vector>
+
 // =============================================================================
 // Shader Compilation (Stub - would need glslang integration)
 // =============================================================================
@@ -107,28 +112,27 @@ static bool compileGLSLToSPIRV(const char *glslSource, VkShaderStageFlags stage,
    }
 
    // Allocate and read SPIR-V code
-   *spirvCode = malloc(fileSize);
-   if (!*spirvCode)
-   {
-      veSetError("Failed to allocate memory for SPIR-V code");
-      fclose(spirvFile);
-      remove(tempSPIRV);
-      return false;
-   }
-
-   size_t bytesRead = fread(*spirvCode, 1, fileSize, spirvFile);
+   std::vector<uint32_t> buffer(fileSize / sizeof(uint32_t));
+   size_t bytesRead = fread(buffer.data(), sizeof(uint32_t), buffer.size(), spirvFile);
    fclose(spirvFile);
    remove(tempSPIRV); // Clean up SPIR-V file
 
-   if (bytesRead != fileSize)
+   if (bytesRead != buffer.size())
    {
       veSetError("Failed to read complete SPIR-V file");
-      free(*spirvCode);
-      *spirvCode = NULL;
       return false;
    }
 
    *spirvSize = fileSize;
+   uint32_t *spirvData = static_cast<uint32_t *>(malloc(fileSize));
+   if (!spirvData)
+   {
+      veSetError("Failed to allocate memory for SPIR-V code");
+      return false;
+   }
+
+   memcpy(spirvData, buffer.data(), fileSize);
+   *spirvCode = spirvData;
    return true;
 }
 
@@ -169,7 +173,7 @@ VEShader *veCreateShaderFromSPIRV(VEDevice *device, VkShaderStageFlags stage, co
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
 
    // Allocate shader object
-   VEShaderInternal *shader = calloc(1, sizeof(VEShaderInternal));
+   VEShaderInternal *shader = static_cast<VEShaderInternal *>(calloc(1, sizeof(VEShaderInternal)));
    if (!shader)
    {
       veSetError("Failed to allocate shader memory");
@@ -194,13 +198,23 @@ VEShader *veCreateShaderFromSPIRV(VEDevice *device, VkShaderStageFlags stage, co
        deviceInternal->samplerDescriptorSetLayout  // will be set = 1 in shaders
    };
 
+   VkShaderStageFlagBits stageFlags;
+   if(stage == VK_SHADER_STAGE_COMPUTE_BIT)
+   {
+      stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+   }
+   else
+   {
+      stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
+   }
+
    VkPushConstantRange shaderPushRange = {
-       .stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS, .offset = 0, .size = VE_MAX_PUSH_CONSTANT_BYTES};
+       .stageFlags = stageFlags, .offset = 0, .size = VE_MAX_PUSH_CONSTANT_BYTES};
 
    // Create shader object using VK_EXT_shader_object
-   VkShaderCreateInfoEXT shaderCreateInfo = {0};
+   VkShaderCreateInfoEXT shaderCreateInfo{};
    shaderCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT;
-   shaderCreateInfo.stage = stage;
+   shaderCreateInfo.stage = static_cast<VkShaderStageFlagBits>(stage);
    shaderCreateInfo.nextStage = getPossibleNextStages(stage);
    shaderCreateInfo.codeType = VK_SHADER_CODE_TYPE_SPIRV_EXT;
    shaderCreateInfo.codeSize = codeSize;
@@ -281,25 +295,19 @@ VEShader *veLoadShader(VEDevice *device, const char *filename, VkShaderStageFlag
       return NULL;
    }
 
-   uint32_t *code = malloc(fileSize);
-   if (!code)
-   {
-      veSetError("Failed to allocate memory for shader code");
-      fclose(file);
-      return NULL;
-   }
-
-   size_t bytesRead = fread(code, 1, fileSize, file);
+   std::vector<uint32_t> code(fileSize / sizeof(uint32_t));
+   size_t bytesRead = fread(code.data(), sizeof(uint32_t), code.size(), file);
    fclose(file);
 
-   if (bytesRead != fileSize)
+   if (bytesRead != code.size())
    {
       veSetError("Failed to read entire shader file");
-      free(code);
       return NULL;
    }
 
-   VEShader *shader = veCreateShaderFromSPIRV(device, stage, code, fileSize, entryPoint, debugName);
+   VEShader *shader =
+       veCreateShaderFromSPIRV(device, stage, reinterpret_cast<const uint32_t *>(code.data()), fileSize, entryPoint,
+                               debugName);
 
    if (shader)
    {
@@ -308,7 +316,6 @@ VEShader *veLoadShader(VEDevice *device, const char *filename, VkShaderStageFlag
       internal->device = (VEDeviceInternal *)device;
    }
 
-   free(code);
    return shader;
 }
 

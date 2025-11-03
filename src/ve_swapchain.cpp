@@ -13,7 +13,10 @@
  */
 
 #include "ve_internal.h"
-#include <math.h>
+
+#include <algorithm>
+#include <vector>
+#include <cmath>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -40,10 +43,10 @@ VkResult veCreateSurface(VEContextInternal *context, void *windowHandle, VkSurfa
 
 #ifdef _WIN32
    // Windows surface creation
-   VkWin32SurfaceCreateInfoKHR createInfo = {0};
+   VkWin32SurfaceCreateInfoKHR createInfo{};
    createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
    createInfo.hinstance = GetModuleHandle(NULL);
-   createInfo.hwnd = (HWND)windowHandle;
+   createInfo.hwnd = reinterpret_cast<HWND>(windowHandle);
 
    PFN_vkCreateWin32SurfaceKHR vkCreateWin32SurfaceKHR =
        (PFN_vkCreateWin32SurfaceKHR)vkGetInstanceProcAddr(context->instance, "vkCreateWin32SurfaceKHR");
@@ -66,10 +69,11 @@ VkResult veCreateSurface(VEContextInternal *context, void *windowHandle, VkSurfa
 
    if (vkCreateXlibSurfaceKHR)
    {
-      VkXlibSurfaceCreateInfoKHR createInfo = {0};
+      VkXlibSurfaceCreateInfoKHR createInfo{};
       createInfo.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
-      createInfo.dpy = (Display *)((uintptr_t *)windowHandle)[0]; // Display* passed as first element
-      createInfo.window = (Window)((uintptr_t *)windowHandle)[1]; // Window passed as second element
+      auto handles = reinterpret_cast<uintptr_t *>(windowHandle);
+      createInfo.dpy = reinterpret_cast<Display *>(handles[0]);
+      createInfo.window = static_cast<Window>(handles[1]);
 
       return vkCreateXlibSurfaceKHR(context->instance, &createInfo, NULL, surface);
    }
@@ -80,10 +84,11 @@ VkResult veCreateSurface(VEContextInternal *context, void *windowHandle, VkSurfa
 
    if (vkCreateWaylandSurfaceKHR)
    {
-      VkWaylandSurfaceCreateInfoKHR createInfo = {0};
+      VkWaylandSurfaceCreateInfoKHR createInfo{};
       createInfo.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
-      createInfo.display = (struct wl_display *)((uintptr_t *)windowHandle)[0];
-      createInfo.surface = (struct wl_surface *)((uintptr_t *)windowHandle)[1];
+      auto handles = reinterpret_cast<uintptr_t *>(windowHandle);
+      createInfo.display = reinterpret_cast<struct wl_display *>(handles[0]);
+      createInfo.surface = reinterpret_cast<struct wl_surface *>(handles[1]);
 
       return vkCreateWaylandSurfaceKHR(context->instance, &createInfo, NULL, surface);
    }
@@ -92,7 +97,7 @@ VkResult veCreateSurface(VEContextInternal *context, void *windowHandle, VkSurfa
 
 #elif defined(__APPLE__)
    // macOS surface creation
-   VkMacOSSurfaceCreateInfoMVK createInfo = {0};
+   VkMacOSSurfaceCreateInfoMVK createInfo{};
    createInfo.sType = VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK;
    createInfo.pView = windowHandle;
 
@@ -136,8 +141,8 @@ static VkSurfaceFormatKHR chooseSwapSurfaceFormat(VkPhysicalDevice device, VkSur
    uint32_t formatCount;
    vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, NULL);
 
-   VkSurfaceFormatKHR *availableFormats = malloc(formatCount * sizeof(VkSurfaceFormatKHR));
-   vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, availableFormats);
+   std::vector<VkSurfaceFormatKHR> availableFormats(formatCount);
+   vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, availableFormats.data());
 
    // Look for preferred format
    for (uint32_t i = 0; i < formatCount; i++)
@@ -145,16 +150,12 @@ static VkSurfaceFormatKHR chooseSwapSurfaceFormat(VkPhysicalDevice device, VkSur
       if (availableFormats[i].format == preferredFormat &&
           availableFormats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
       {
-         VkSurfaceFormatKHR result = availableFormats[i];
-         free(availableFormats);
-         return result;
+         return availableFormats[i];
       }
    }
 
    // Fallback to first available format
-   VkSurfaceFormatKHR result = availableFormats[0];
-   free(availableFormats);
-   return result;
+   return availableFormats.empty() ? VkSurfaceFormatKHR{} : availableFormats[0];
 }
 
 static VkPresentModeKHR chooseSwapPresentMode(VkPhysicalDevice device, VkSurfaceKHR surface, bool vsync)
@@ -167,38 +168,22 @@ static VkPresentModeKHR chooseSwapPresentMode(VkPhysicalDevice device, VkSurface
    uint32_t presentModeCount;
    vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, NULL);
 
-   VkPresentModeKHR *availablePresentModes = malloc(presentModeCount * sizeof(VkPresentModeKHR));
-   vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, availablePresentModes);
+   std::vector<VkPresentModeKHR> availablePresentModes(presentModeCount);
+   vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, availablePresentModes.data());
 
-   VkPresentModeKHR ret = 0;
+   VkPresentModeKHR selectedMode = VK_PRESENT_MODE_FIFO_KHR;
    // Prefer mailbox mode for low latency
    for (uint32_t i = 0; i < presentModeCount; i++)
    {
       if (availablePresentModes[i] == VK_PRESENT_MODE_MAILBOX_KHR)
       {
-         ret = VK_PRESENT_MODE_MAILBOX_KHR;
+         selectedMode = VK_PRESENT_MODE_MAILBOX_KHR;
+         break;
       }
    }
 
-   if (ret == 0)
-   {
-      // Fallback to FIFO (always supported)
-      ret = VK_PRESENT_MODE_FIFO_KHR;
-   }
-
-   free(availablePresentModes);
-   return ret;
+   return selectedMode;
 }
-
-#ifndef MIN
-#define UNDEFMIN
-#define MIN(a,b) (((a)<(b))?(a):(b))
-#endif
-
-#ifndef MAX
-#define UNDEFMAX
-#define MAX(a,b) (((a)>(b))?(a):(b))
-#endif
 
 static VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR *capabilities, uint32_t width, uint32_t height)
 {
@@ -207,22 +192,17 @@ static VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR *capabilities,
       return capabilities->currentExtent;
    }
 
-   VkExtent2D actualExtent = {width, height};
+   VkExtent2D actualExtent{};
+   actualExtent.width = width;
+   actualExtent.height = height;
 
-   actualExtent.width =
-       MAX(capabilities->minImageExtent.width, MIN(capabilities->maxImageExtent.width, actualExtent.width));
-   actualExtent.height =
-       MAX(capabilities->minImageExtent.height, MIN(capabilities->maxImageExtent.height, actualExtent.height));
+   actualExtent.width = std::clamp(actualExtent.width, capabilities->minImageExtent.width,
+                                   capabilities->maxImageExtent.width);
+   actualExtent.height = std::clamp(actualExtent.height, capabilities->minImageExtent.height,
+                                    capabilities->maxImageExtent.height);
 
    return actualExtent;
 }
-
-#ifdef UNDEFMIN
-#undef MIN
-#endif
-#ifdef UNDEFMAX
-#undef MAX
-#endif
 
 // =============================================================================
 // Swapchain Implementation
@@ -239,7 +219,8 @@ VESwapchain *veCreateSwapchain(VEDevice *device, void *windowHandle, uint32_t wi
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
 
-   VESwapchainInternal *swapchain = calloc(1, sizeof(VESwapchainInternal));
+   VESwapchainInternal *swapchain =
+       static_cast<VESwapchainInternal *>(calloc(1, sizeof(VESwapchainInternal)));
    if (!swapchain)
    {
       veSetError("Failed to allocate swapchain memory");
@@ -299,7 +280,7 @@ VESwapchain *veCreateSwapchain(VEDevice *device, void *windowHandle, uint32_t wi
    }
 
    // Create swapchain
-   VkSwapchainCreateInfoKHR createInfo = {0};
+   VkSwapchainCreateInfoKHR createInfo{};
    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
    createInfo.surface = swapchain->surface;
    createInfo.minImageCount = imageCount;
@@ -340,7 +321,7 @@ VESwapchain *veCreateSwapchain(VEDevice *device, void *windowHandle, uint32_t wi
    // Create image views
    for (uint32_t i = 0; i < swapchain->imageCount; i++)
    {
-      VkImageViewCreateInfo viewInfo = {0};
+      VkImageViewCreateInfo viewInfo{};
       viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
       viewInfo.image = swapchain->images[i];
       viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -398,15 +379,12 @@ VESwapchain *veCreateSwapchain(VEDevice *device, void *windowHandle, uint32_t wi
    // Create per-frame synchronization objects
    for (uint32_t i = 0; i < VE_MAX_FRAMES_IN_FLIGHT; i++)
    {
-      VkSemaphoreCreateInfo semInfo = {0};
+      VkSemaphoreCreateInfo semInfo{};
       semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-      semInfo.flags = 0;
-      semInfo.pNext = NULL;
 
-      VkFenceCreateInfo fenceInfo = {0};
+      VkFenceCreateInfo fenceInfo{};
       fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
       fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // Start signaled
-      fenceInfo.pNext = NULL;
 
       if (vkCreateSemaphore(deviceInternal->device, &semInfo, NULL, &swapchain->imageAvailableSemaphores[i]) !=
               VK_SUCCESS ||
@@ -420,10 +398,8 @@ VESwapchain *veCreateSwapchain(VEDevice *device, void *windowHandle, uint32_t wi
    // Create per-swapchain-image semaphores
    for (uint32_t i = 0; i < swapchain->imageCount; i++)
    {
-      VkSemaphoreCreateInfo semInfo = {0};
+      VkSemaphoreCreateInfo semInfo{};
       semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-      semInfo.flags = 0;
-      semInfo.pNext = NULL;
       if (vkCreateSemaphore(deviceInternal->device, &semInfo, NULL, &swapchain->renderFinishedSemaphores[i]) !=
           VK_SUCCESS)
       {
@@ -536,6 +512,8 @@ VETextureIndex veAcquireNextImage(VESwapchain *swapchain)
       vkWaitForFences(device->device, 1, &currentFrameFence, VK_TRUE, UINT64_MAX);
    }
 
+   veNotifyCommandBufferFenceSignaled(device, currentFrameFence);
+
    // Use current frame's acquire semaphore
    VkSemaphore acquireSemaphore = internal->imageAvailableSemaphores[internal->currentFrame];
 
@@ -609,7 +587,7 @@ VEResult vePresentImage(VESwapchain *swapchain, VECommandBuffer *cmd)
    VkFence frameFence = internal->inFlightFences[internal->currentFrame];
 
    // Submit command buffer
-   VkSubmitInfo submitInfo = {0};
+   VkSubmitInfo submitInfo{};
    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
@@ -621,15 +599,18 @@ VEResult vePresentImage(VESwapchain *swapchain, VECommandBuffer *cmd)
    submitInfo.signalSemaphoreCount = 1;
    submitInfo.pSignalSemaphores = &renderSemaphore; // Per-image semaphore
 
+   veLockGraphicsQueue(device);
+
    VkResult result = vkQueueSubmit(device->graphicsQueue, 1, &submitInfo, frameFence);
    if (result != VK_SUCCESS)
    {
+      veUnlockGraphicsQueue(device);
       veSetError("Failed to submit draw command buffer (VkResult: %d)", result);
       return VE_ERROR_UNKNOWN;
    }
 
    // Present using per-image semaphore
-   VkPresentInfoKHR presentInfo = {0};
+   VkPresentInfoKHR presentInfo{};
    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
    presentInfo.waitSemaphoreCount = 1;
    presentInfo.pWaitSemaphores = &renderSemaphore; // Same per-image semaphore
@@ -637,7 +618,12 @@ VEResult vePresentImage(VESwapchain *swapchain, VECommandBuffer *cmd)
    presentInfo.pSwapchains = &internal->swapchain;
    presentInfo.pImageIndices = &internal->currentImageIndex;
 
+   cmdInternal->activeFence = frameFence;
+   cmdInternal->fenceActive = true;
+
    result = vkQueuePresentKHR(device->graphicsQueue, &presentInfo);
+
+   veUnlockGraphicsQueue(device);
 
    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
    {
@@ -645,7 +631,6 @@ VEResult vePresentImage(VESwapchain *swapchain, VECommandBuffer *cmd)
       internal->currentImageIndex = UINT32_MAX;
       // Advance to next frame
       internal->currentFrame = (internal->currentFrame + 1) % internal->maxFramesInFlight;
-      veFreeCommandBuffer(cmdInternal);
       return VE_ERROR_SWAPCHAIN_OUT_OF_DATE;
    }
    else if (result != VK_SUCCESS)
@@ -653,7 +638,6 @@ VEResult vePresentImage(VESwapchain *swapchain, VECommandBuffer *cmd)
       veSetError("Failed to present swapchain image (VkResult: %d)", result);
       internal->currentImageIndex = UINT32_MAX;
       internal->currentFrame = (internal->currentFrame + 1) % internal->maxFramesInFlight;
-      veFreeCommandBuffer(cmdInternal);
       return VE_ERROR_UNKNOWN;
    }
 
@@ -662,7 +646,6 @@ VEResult vePresentImage(VESwapchain *swapchain, VECommandBuffer *cmd)
    // Advance to next frame
    internal->currentFrame = (internal->currentFrame + 1) % internal->maxFramesInFlight;
 
-   veFreeCommandBuffer(cmdInternal);
    return VE_SUCCESS;
 }
 
@@ -710,3 +693,4 @@ VkFormat veGetSwapchainFormat(VESwapchain *swapchain)
    VESwapchainInternal *internal = (VESwapchainInternal *)swapchain;
    return internal->format;
 }
+

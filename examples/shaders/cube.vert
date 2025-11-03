@@ -30,19 +30,19 @@ layout(push_constant) uniform PushConstants {
     // Buffer addresses (64-bit)
     uint64_t vertexBufferAddress;  // 8 bytes
     uint64_t indexBuffer;       // 8 bytes  
-    uint64_t uniformBuffers[4]; // 32 bytes
+    uint64_t uniformBuffers[8]; // 64 bytes
     
     // Bindless indices (32-bit)
-    uint textures[8];           // 32 bytes
-    uint samplers[8];           // 32 bytes
+    uint textures[16];           // 64 bytes
+    uint samplers[16];           // 64 bytes
     
     // Per-object data
     float objectScale;          // 4 bytes
     uint activeTextureCount;    // 4 bytes
     uint activeSamplerCount;    // 4 bytes
     uint activeUniformCount;    // 4 bytes
+    uint reserved[7];           // 28 bytes
 } pc;
-
 
 void main() {
     // Access uniform buffer via buffer device address

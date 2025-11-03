@@ -5,8 +5,9 @@
 
 #include "ve_internal.h"
 
-VkColorComponentFlagBits VK_COLOR_COMPONENT_ALL =
-    VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+const VkColorComponentFlagBits VK_COLOR_COMPONENT_ALL =
+    static_cast<VkColorComponentFlagBits>(VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+                                          VK_COLOR_COMPONENT_A_BIT);
 
 // =============================================================================
 // Default Configuration Creators
@@ -14,7 +15,7 @@ VkColorComponentFlagBits VK_COLOR_COMPONENT_ALL =
 
 VERasterConfig veDefaultRasterConfig(void)
 {
-   VERasterConfig config = {0};
+   VERasterConfig config{};
    config.cullMode = VK_CULL_MODE_BACK_BIT;
    config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
    config.polygonMode = VK_POLYGON_MODE_FILL;
@@ -30,7 +31,7 @@ VERasterConfig veDefaultRasterConfig(void)
 
 VEDepthConfig veDefaultDepthConfig(void)
 {
-   VEDepthConfig config = {0};
+   VEDepthConfig config{};
    config.depthTestEnable = true;
    config.depthWriteEnable = true;
    config.depthCompareOp = VK_COMPARE_OP_LESS;
@@ -61,7 +62,7 @@ VEDepthConfig veDefaultDepthConfig(void)
 
 VEBlendConfig veDefaultOpaqueBlendConfig(void)
 {
-   VEBlendConfig config = {0};
+   VEBlendConfig config{};
    config.logicOpEnable = false;
    config.logicOp = VK_LOGIC_OP_COPY;
    config.attachmentCount = 1;
@@ -85,7 +86,7 @@ VEBlendConfig veDefaultOpaqueBlendConfig(void)
 
 VEBlendConfig veDefaultAlphaBlendConfig(void)
 {
-   VEBlendConfig config = {0};
+   VEBlendConfig config{};
    config.logicOpEnable = false;
    config.logicOp = VK_LOGIC_OP_COPY;
    config.attachmentCount = 1;
@@ -109,7 +110,7 @@ VEBlendConfig veDefaultAlphaBlendConfig(void)
 
 VEBlendConfig veDefaultAdditiveBlendConfig(void)
 {
-   VEBlendConfig config = {0};
+   VEBlendConfig config{};
    config.logicOpEnable = false;
    config.logicOp = VK_LOGIC_OP_COPY;
    config.attachmentCount = 1;
@@ -133,7 +134,7 @@ VEBlendConfig veDefaultAdditiveBlendConfig(void)
 
 VEMultisampleConfig veDefaultMultisampleConfig(void)
 {
-   VEMultisampleConfig config = {0};
+   VEMultisampleConfig config{};
    config.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
    config.sampleShadingEnable = false;
    config.minSampleShading = 1.0f;
@@ -144,7 +145,7 @@ VEMultisampleConfig veDefaultMultisampleConfig(void)
 
 VEVertexInputConfig veDefaultVertexInputConfig(void)
 {
-   VEVertexInputConfig config = {0};
+   VEVertexInputConfig config{};
    config.bindingCount = 0;
    config.bindings = NULL;
    config.attributeCount = 0;
@@ -156,7 +157,7 @@ VEVertexInputConfig veDefaultVertexInputConfig(void)
 
 VEViewport veDefaultViewportConfig()
 {
-   VEViewport config = {0};
+   VEViewport config{};
    config.x = 0.0f;
    config.y = 0.0f;
    config.width = 800.0f;
@@ -168,7 +169,7 @@ VEViewport veDefaultViewportConfig()
 
 VERect2D veDefaultScissorConfig()
 {
-   VERect2D config = {0};
+   VERect2D config{};
    config.x = 0;
    config.y = 0;
    config.width = 800;
@@ -182,9 +183,9 @@ VERect2D veDefaultScissorConfig()
 
 VEVertexInputConfig copyVertexInputConfig(const VEVertexInputConfig *orig)
 {
-   VEVertexInputConfig config = {0};
+   VEVertexInputConfig config{};
    config.bindingCount = orig->bindingCount;
-   config.bindings = calloc(orig->bindingCount, sizeof(VEVertexBinding));
+   config.bindings = static_cast<VEVertexBinding *>(calloc(orig->bindingCount, sizeof(VEVertexBinding)));
    for (uint32_t i = 0; i < orig->bindingCount; i++)
    {
       config.bindings[i].binding = orig->bindings[i].binding;
@@ -193,7 +194,7 @@ VEVertexInputConfig copyVertexInputConfig(const VEVertexInputConfig *orig)
       config.bindings[i].divisor = orig->bindings[i].divisor;
    }
    config.attributeCount = orig->attributeCount;
-   config.attributes = calloc(orig->attributeCount, sizeof(VEVertexAttribute));
+   config.attributes = static_cast<VEVertexAttribute *>(calloc(orig->attributeCount, sizeof(VEVertexAttribute)));
    for (uint32_t i = 0; i < orig->attributeCount; i++)
    {
       config.attributes[i].binding = orig->attributes[i].binding;
@@ -371,16 +372,17 @@ VERenderConfig *veCreateOpaqueRenderConfig(VEDevice *device, const char *debugNa
    VEBlendConfig blend = veDefaultOpaqueBlendConfig();
    VEMultisampleConfig multisample = veDefaultMultisampleConfig();
 
-   VERenderConfigDesc desc = {.configTypes = VE_CONFIG_TYPE_RASTERIZATION | VE_CONFIG_TYPE_DEPTH_STENCIL |
-                                             VE_CONFIG_TYPE_COLOR_BLEND | VE_CONFIG_TYPE_MULTISAMPLE,
-                              .rasterConfig = &raster,
-                              .depthConfig = &depth,
-                              .blendConfig = &blend,
-                              .multisampleConfig = &multisample,
-                              .vertexInputConfig = NULL,
-                              .shaderCount = 0,
-                              .shaders = NULL,
-                              .debugName = debugName ? debugName : "OpaqueRenderConfig"};
+   VERenderConfigDesc desc{};
+   desc.configTypes = VE_CONFIG_TYPE_RASTERIZATION | VE_CONFIG_TYPE_DEPTH_STENCIL | VE_CONFIG_TYPE_COLOR_BLEND |
+                      VE_CONFIG_TYPE_MULTISAMPLE;
+   desc.rasterConfig = &raster;
+   desc.depthConfig = &depth;
+   desc.blendConfig = &blend;
+   desc.multisampleConfig = &multisample;
+   desc.vertexInputConfig = NULL;
+   desc.shaderCount = 0;
+   desc.shaders = NULL;
+   desc.debugName = debugName ? debugName : "OpaqueRenderConfig";
 
    return veCreateRenderConfig(device, &desc);
 }
@@ -393,16 +395,17 @@ VERenderConfig *veCreateTransparentRenderConfig(VEDevice *device, const char *de
    VEBlendConfig blend = veDefaultAlphaBlendConfig();
    VEMultisampleConfig multisample = veDefaultMultisampleConfig();
 
-   VERenderConfigDesc desc = {.configTypes = VE_CONFIG_TYPE_RASTERIZATION | VE_CONFIG_TYPE_DEPTH_STENCIL |
-                                             VE_CONFIG_TYPE_COLOR_BLEND | VE_CONFIG_TYPE_MULTISAMPLE,
-                              .rasterConfig = &raster,
-                              .depthConfig = &depth,
-                              .blendConfig = &blend,
-                              .multisampleConfig = &multisample,
-                              .vertexInputConfig = NULL,
-                              .shaderCount = 0,
-                              .shaders = NULL,
-                              .debugName = debugName ? debugName : "TransparentRenderConfig"};
+   VERenderConfigDesc desc{};
+   desc.configTypes = VE_CONFIG_TYPE_RASTERIZATION | VE_CONFIG_TYPE_DEPTH_STENCIL | VE_CONFIG_TYPE_COLOR_BLEND |
+                      VE_CONFIG_TYPE_MULTISAMPLE;
+   desc.rasterConfig = &raster;
+   desc.depthConfig = &depth;
+   desc.blendConfig = &blend;
+   desc.multisampleConfig = &multisample;
+   desc.vertexInputConfig = NULL;
+   desc.shaderCount = 0;
+   desc.shaders = NULL;
+   desc.debugName = debugName ? debugName : "TransparentRenderConfig";
 
    return veCreateRenderConfig(device, &desc);
 }
@@ -416,16 +419,17 @@ VERenderConfig *veCreateWireframeRenderConfig(VEDevice *device, const char *debu
    VEBlendConfig blend = veDefaultOpaqueBlendConfig();
    VEMultisampleConfig multisample = veDefaultMultisampleConfig();
 
-   VERenderConfigDesc desc = {.configTypes = VE_CONFIG_TYPE_RASTERIZATION | VE_CONFIG_TYPE_DEPTH_STENCIL |
-                                             VE_CONFIG_TYPE_COLOR_BLEND | VE_CONFIG_TYPE_MULTISAMPLE,
-                              .rasterConfig = &raster,
-                              .depthConfig = &depth,
-                              .blendConfig = &blend,
-                              .multisampleConfig = &multisample,
-                              .vertexInputConfig = NULL,
-                              .shaderCount = 0,
-                              .shaders = NULL,
-                              .debugName = debugName ? debugName : "WireframeRenderConfig"};
+   VERenderConfigDesc desc{};
+   desc.configTypes = VE_CONFIG_TYPE_RASTERIZATION | VE_CONFIG_TYPE_DEPTH_STENCIL | VE_CONFIG_TYPE_COLOR_BLEND |
+                      VE_CONFIG_TYPE_MULTISAMPLE;
+   desc.rasterConfig = &raster;
+   desc.depthConfig = &depth;
+   desc.blendConfig = &blend;
+   desc.multisampleConfig = &multisample;
+   desc.vertexInputConfig = NULL;
+   desc.shaderCount = 0;
+   desc.shaders = NULL;
+   desc.debugName = debugName ? debugName : "WireframeRenderConfig";
 
    return veCreateRenderConfig(device, &desc);
 }
@@ -446,16 +450,17 @@ VERenderConfig *veCreateShadowRenderConfig(VEDevice *device, const char *debugNa
 
    VEMultisampleConfig multisample = veDefaultMultisampleConfig();
 
-   VERenderConfigDesc desc = {.configTypes = VE_CONFIG_TYPE_RASTERIZATION | VE_CONFIG_TYPE_DEPTH_STENCIL |
-                                             VE_CONFIG_TYPE_COLOR_BLEND | VE_CONFIG_TYPE_MULTISAMPLE,
-                              .rasterConfig = &raster,
-                              .depthConfig = &depth,
-                              .blendConfig = &blend,
-                              .multisampleConfig = &multisample,
-                              .vertexInputConfig = NULL,
-                              .shaderCount = 0,
-                              .shaders = NULL,
-                              .debugName = debugName ? debugName : "ShadowRenderConfig"};
+   VERenderConfigDesc desc{};
+   desc.configTypes = VE_CONFIG_TYPE_RASTERIZATION | VE_CONFIG_TYPE_DEPTH_STENCIL | VE_CONFIG_TYPE_COLOR_BLEND |
+                      VE_CONFIG_TYPE_MULTISAMPLE;
+   desc.rasterConfig = &raster;
+   desc.depthConfig = &depth;
+   desc.blendConfig = &blend;
+   desc.multisampleConfig = &multisample;
+   desc.vertexInputConfig = NULL;
+   desc.shaderCount = 0;
+   desc.shaders = NULL;
+   desc.debugName = debugName ? debugName : "ShadowRenderConfig";
 
    return veCreateRenderConfig(device, &desc);
 }
@@ -472,16 +477,17 @@ VERenderConfig *veCreateUIRenderConfig(VEDevice *device, const char *debugName)
    VEBlendConfig blend = veDefaultAlphaBlendConfig();
    VEMultisampleConfig multisample = veDefaultMultisampleConfig();
 
-   VERenderConfigDesc desc = {.configTypes = VE_CONFIG_TYPE_RASTERIZATION | VE_CONFIG_TYPE_DEPTH_STENCIL |
-                                             VE_CONFIG_TYPE_COLOR_BLEND | VE_CONFIG_TYPE_MULTISAMPLE,
-                              .rasterConfig = &raster,
-                              .depthConfig = &depth,
-                              .blendConfig = &blend,
-                              .multisampleConfig = &multisample,
-                              .vertexInputConfig = NULL,
-                              .shaderCount = 0,
-                              .shaders = NULL,
-                              .debugName = debugName ? debugName : "UIRenderConfig"};
+   VERenderConfigDesc desc{};
+   desc.configTypes = VE_CONFIG_TYPE_RASTERIZATION | VE_CONFIG_TYPE_DEPTH_STENCIL | VE_CONFIG_TYPE_COLOR_BLEND |
+                      VE_CONFIG_TYPE_MULTISAMPLE;
+   desc.rasterConfig = &raster;
+   desc.depthConfig = &depth;
+   desc.blendConfig = &blend;
+   desc.multisampleConfig = &multisample;
+   desc.vertexInputConfig = NULL;
+   desc.shaderCount = 0;
+   desc.shaders = NULL;
+   desc.debugName = debugName ? debugName : "UIRenderConfig";
 
    return veCreateRenderConfig(device, &desc);
 }
@@ -501,7 +507,7 @@ VERenderConfig *veCreateConfigVariant(VERenderConfig *baseConfig, const VERender
    VERenderConfigInternal *base = (VERenderConfigInternal *)baseConfig;
 
    // Create a new config descriptor based on the base config
-   VERenderConfigDesc desc = {0};
+   VERenderConfigDesc desc{};
    desc.configTypes = overrides->configTypes != 0 ? overrides->configTypes : base->configTypes;
    desc.rasterConfig = overrides->rasterConfig ? overrides->rasterConfig : &base->rasterConfig;
    desc.depthConfig = overrides->depthConfig ? overrides->depthConfig : &base->depthConfig;
