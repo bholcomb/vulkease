@@ -36,7 +36,7 @@ VEResult VEDeviceInternal::initializeVma()
    allocatorInfo.device = device;
    allocatorInfo.instance = context->instance;
    // allocatorInfo.vulkanApiVersion = deviceProperties.apiVersion;
-   allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_4;
+   allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3;
    allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
    allocatorInfo.pVulkanFunctions = &vulkanFunctions;
 

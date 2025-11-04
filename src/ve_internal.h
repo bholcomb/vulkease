@@ -85,25 +85,17 @@ struct VEDeviceFeatures
    bool wideLines;
    bool depthClamp;
 
-   // Core Vulkan 1.2 features (mandatory in 1.4)
+   // Core Vulkan 1.2 features we rely on
    bool bufferDeviceAddress;
    bool descriptorIndexing;
-   bool scalarBlockLayout; // Mandatory in 1.4
+   bool scalarBlockLayout;
    bool updateAfterBind;
-   bool shaderInt8;  // Mandatory in 1.4
-   bool shaderInt16; // Mandatory in 1.4
 
-   // Core Vulkan 1.3 features (mandatory)
+   // Core Vulkan 1.3 features the engine depends on
    bool dynamicRendering;
 
-   // Core Vulkan 1.4 features (new mandatory features)
-   bool pushDescriptor;            // Mandatory in 1.4 - replaces VK_KHR_push_descriptor
-   bool dynamicRenderingLocalRead; // Optional but highly recommended
-
-   // Optional Vulkan 1.4 features
-   bool hostImageCopy; // Optional - VK_EXT_host_image_copy
-
-   // Extension features (still required in 1.4)
+   // Optional extensions/features
+   bool hostImageCopy;           // VK_EXT_host_image_copy
    bool extendedDynamicState3;   // VK_EXT_extended_dynamic_state3
    bool vertexInputDynamicState; // VK_EXT_vertex_input_dynamic_state
    bool shaderObject;            // VK_EXT_shader_object
@@ -477,10 +469,6 @@ struct VEFuncs
 
    // VK_EXT_vertex_input_dynamic_state (still required)
    PFN_vkCmdSetVertexInputEXT vkCmdSetVertexInputEXT;
-
-   // Push Descriptors (now core in 1.4 - use core function names)
-   PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR;
-   PFN_vkCmdPushDescriptorSetWithTemplateKHR vkCmdPushDescriptorSetWithTemplateKHR;
 
    // Host Image Copy (optional extension)
    PFN_vkCopyMemoryToImageEXT vkCopyMemoryToImageEXT;

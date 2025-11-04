@@ -128,17 +128,17 @@ $(BIN_DIR)/$(LIBRARY): $(OBJECTS) | $(BIN_DIR)
 $(BIN_DIR)/%.vert.spv: %.vert | $(BIN_DIR)
 	@echo "Compiling vertex shader $<"
 	@mkdir -p $(dir $@)
-	glslangValidator -V --target-env vulkan1.4 -o $@ $<
+	glslangValidator -V --target-env vulkan1.3 -o $@ $<
 
 $(BIN_DIR)/%.frag.spv: %.frag | $(BIN_DIR)
 	@echo "Compiling fragment shader $<"
 	@mkdir -p $(dir $@)
-	glslangValidator -V --target-env vulkan1.4 -o $@ $<
+	glslangValidator -V --target-env vulkan1.3 -o $@ $<
 
 $(BIN_DIR)/%.comp.spv: %.comp | $(BIN_DIR)
 	@echo "Compiling compute shader $<"
 	@mkdir -p $(dir $@)
-	glslangValidator -V --target-env vulkan1.4 -o $@ $<
+	glslangValidator -V --target-env vulkan1.3 -o $@ $<
 
 $(DATA_BIN): $(DATA_SRC_DIR)/$(TEXTURE_FILE) | $(DATA_BIN_DIR)
 	@echo "Copying data: $< -> $@"
