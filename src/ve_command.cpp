@@ -163,7 +163,7 @@ void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo
       colorAttachments[i].sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
 
       // Get image view from texture index
-      VkImageView imageView = veGetImageViewFromTexture(internal->device, renderingInfo->colorAttachments[i].texture);
+      VkImageView imageView = internal->device->getImageViewFromTexture(renderingInfo->colorAttachments[i].texture);
       if (imageView == VK_NULL_HANDLE)
       {
          veSetError("Invalid texture index %u for color attachment %u", renderingInfo->colorAttachments[i].texture, i);
@@ -183,7 +183,7 @@ void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo
       if (renderingInfo->colorAttachments[i].resolveTexture != VE_INVALID_TEXTURE_INDEX)
       {
          VkImageView resolveImageView =
-             veGetImageViewFromTexture(internal->device, renderingInfo->colorAttachments[i].resolveTexture);
+             internal->device->getImageViewFromTexture(renderingInfo->colorAttachments[i].resolveTexture);
          if (resolveImageView == VK_NULL_HANDLE)
          {
             veSetError("Invalid resolve texture index %u for color attachment %u",
@@ -205,7 +205,7 @@ void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo
       depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
 
       // Get image view from texture index
-      VkImageView depthImageView = veGetImageViewFromTexture(internal->device, renderingInfo->depthAttachment->texture);
+      VkImageView depthImageView = internal->device->getImageViewFromTexture(renderingInfo->depthAttachment->texture);
       if (depthImageView == VK_NULL_HANDLE)
       {
          veSetError("Invalid texture index %u for depth attachment", renderingInfo->depthAttachment->texture);
@@ -223,7 +223,7 @@ void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo
       if (renderingInfo->depthAttachment->resolveTexture != VE_INVALID_TEXTURE_INDEX)
       {
          VkImageView resolveImageView =
-             veGetImageViewFromTexture(internal->device, renderingInfo->depthAttachment->resolveTexture);
+             internal->device->getImageViewFromTexture(renderingInfo->depthAttachment->resolveTexture);
          if (resolveImageView == VK_NULL_HANDLE)
          {
             veSetError("Invalid resolve texture index %u for depth attachment",
@@ -245,7 +245,7 @@ void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo
 
       // Get image view from texture index
       VkImageView stencilImageView =
-          veGetImageViewFromTexture(internal->device, renderingInfo->stencilAttachment->texture);
+          internal->device->getImageViewFromTexture(renderingInfo->stencilAttachment->texture);
       if (stencilImageView == VK_NULL_HANDLE)
       {
          veSetError("Invalid texture index %u for stencil attachment", renderingInfo->stencilAttachment->texture);
@@ -263,7 +263,7 @@ void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo
       if (renderingInfo->stencilAttachment->resolveTexture != VE_INVALID_TEXTURE_INDEX)
       {
          VkImageView resolveImageView =
-             veGetImageViewFromTexture(internal->device, renderingInfo->stencilAttachment->resolveTexture);
+             internal->device->getImageViewFromTexture(renderingInfo->stencilAttachment->resolveTexture);
          if (resolveImageView == VK_NULL_HANDLE)
          {
             veSetError("Invalid resolve texture index %u for stencil attachment",
@@ -288,6 +288,10 @@ void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo
                            2,              // set count
                            descriptorSets, // sets
                            0, NULL);       // dynamic offsset
+  if (internal->device)
+  {
+     internal->device->frameStats.descriptorBinds += 1;
+  }
 }
 
 void veEndRendering(VECommandBuffer *cmd)
@@ -348,6 +352,16 @@ void veApplyRenderConfig(VECommandBuffer *cmd, VERenderConfig *config)
       topology = configInternal->vertexInputConfig.topology;
    }
    vkCmdSetPrimitiveTopology(vkCmd, topology);
+   internal->currentTopology = topology;
+
+   if (configInternal->configTypes & VE_CONFIG_TYPE_VERTEX_INPUT)
+   {
+      internal->currentPatchControlPoints = configInternal->vertexInputConfig.patchControlPoints;
+   }
+   else
+   {
+      internal->currentPatchControlPoints = 0;
+   }
 
    // 3. PRIMITIVE RESTART (REQUIRED)
    VkBool32 primitiveRestart = VK_FALSE;
@@ -638,6 +652,10 @@ void veBindShader(VECommandBuffer *cmd, VEShader *shader)
 
    VkShaderStageFlagBits stageBit = static_cast<VkShaderStageFlagBits>(shaderInternal->stage);
 
+   if (internal->device)
+   {
+      internal->device->frameStats.pipelineBinds += 1;
+   }
    veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, 1, &stageBit, &shaderInternal->shaderObject);
 }
 
@@ -664,6 +682,10 @@ void veBindShaders(VECommandBuffer *cmd, uint32_t shaderCount, VEShader *const *
    if (validCount > 0)
    {
       VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+      if (internal->device)
+      {
+         internal->device->frameStats.pipelineBinds += validCount;
+      }
       veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, validCount, stageBits, shaderObjects);
    }
 }

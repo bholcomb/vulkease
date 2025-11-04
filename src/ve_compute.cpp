@@ -17,6 +17,10 @@ void veDispatch(VECommandBuffer *cmd, uint32_t groupCountX, uint32_t groupCountY
    }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   if (internal->device)
+   {
+      internal->device->frameStats.computeDispatches += 1;
+   }
    vkCmdDispatch(internal->commandBuffer, groupCountX, groupCountY, groupCountZ);
 }
 
@@ -28,7 +32,7 @@ void veDispatchIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, ui
    }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
-   VkBuffer buffer = veGetVkBufferFromAddress(internal->device, indirectBuffer);
+   VkBuffer buffer = internal->device->getVkBufferFromAddress(indirectBuffer);
 
    if (buffer == VK_NULL_HANDLE)
    {
@@ -37,6 +41,10 @@ void veDispatchIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, ui
    }
 
    vkCmdDispatchIndirect(internal->commandBuffer, buffer, offset);
+   if (internal->device)
+   {
+      internal->device->frameStats.computeDispatches += 1;
+   }
 }
 
 // =============================================================================
@@ -62,6 +70,10 @@ void veBindComputeShader(VECommandBuffer *cmd, VEShader *shader)
 
    VkShaderStageFlagBits stageBit = VK_SHADER_STAGE_COMPUTE_BIT;
 
+   if (internal->device)
+   {
+      internal->device->frameStats.pipelineBinds += 1;
+   }
    veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, 1, &stageBit, &shaderInternal->shaderObject);
 }
 
@@ -237,30 +249,15 @@ void veBarrierBuffer(VECommandBuffer *cmd, VEBufferAddress buffer, uint32_t srcS
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
-   // Convert buffer address to VkBuffer
-   // This requires device access which we don't have in this context
-   VEDeviceInternal *device = NULL; // Would need proper device reference
+   VEDeviceInternal *device = internal->device;
 
    if (!device)
    {
-      // Fallback to memory barrier
-      VkMemoryBarrier2 memoryBarrier{};
-      memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-      memoryBarrier.srcStageMask = srcStage;
-      memoryBarrier.srcAccessMask = srcAccess;
-      memoryBarrier.dstStageMask = dstStage;
-      memoryBarrier.dstAccessMask = dstAccess;
-
-      VkDependencyInfo dependencyInfo{};
-      dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-      dependencyInfo.memoryBarrierCount = 1;
-      dependencyInfo.pMemoryBarriers = &memoryBarrier;
-
-      vkCmdPipelineBarrier2(internal->commandBuffer, &dependencyInfo);
+      veSetError("Command buffer has no device reference");
       return;
    }
 
-   VEBufferInternal *bufferInternal = veGetBufferFromAddress(device, buffer);
+   VEBufferInternal *bufferInternal = device->getBufferFromAddress(buffer);
    if (!bufferInternal || !bufferInternal->isValid)
    {
       veSetError("Invalid buffer address: 0x%llx", buffer);
@@ -304,7 +301,7 @@ void veBarrierImage(VECommandBuffer *cmd, VETextureIndex texture, uint32_t oldLa
       return;
    }
 
-   VETextureInternal *textureInternal = veGetTexture(device, texture);
+   VETextureInternal *textureInternal = device->getTexture(texture);
    if (!textureInternal || !textureInternal->isValid)
    {
       veSetError("Invalid texture index: %u", texture);

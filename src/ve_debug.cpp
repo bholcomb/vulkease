@@ -44,7 +44,7 @@ VEResult veSetBufferDebugName(VEDevice *device, VEBufferAddress address, const c
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
 
    // Get the VkBuffer handle from the address
-   VkBuffer buffer = veGetVkBufferFromAddress(deviceInternal, address);
+   VkBuffer buffer = deviceInternal->getVkBufferFromAddress(address);
    if (buffer == VK_NULL_HANDLE)
    {
       veSetError("Invalid buffer address: 0x%llx", address);
@@ -67,7 +67,7 @@ VEResult veSetTextureDebugName(VEDevice *device, VETextureIndex texture, const c
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
 
    // Get the texture internal structure
-   VETextureInternal *textureInternal = veGetTexture(deviceInternal, texture);
+   VETextureInternal *textureInternal = deviceInternal->getTexture(texture);
    if (!textureInternal || !textureInternal->isValid)
    {
       veSetError("Invalid texture index: %u", texture);
@@ -91,7 +91,7 @@ VEResult veSetSamplerDebugName(VEDevice *device, VESamplerIndex sampler, const c
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
 
    // Get the sampler internal structure
-   VESamplerInternal *samplerInternal = veGetSampler(deviceInternal, sampler);
+   VESamplerInternal *samplerInternal = deviceInternal->getSampler(sampler);
    if (!samplerInternal || !samplerInternal->isValid)
    {
       veSetError("Invalid sampler index: %u", sampler);
@@ -309,7 +309,9 @@ void veResetPerformanceStats(VEDevice *device)
       return;
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
-   memset(&deviceInternal->performanceStats, 0, sizeof(VEPerformanceStats));
+   deviceInternal->performanceStats = {};
+   deviceInternal->frameStats = {};
+   deviceInternal->lastFrameTimestampSeconds = 0.0;
 }
 
 VEResult veGetMemoryStats(VEDevice *device, VEMemoryStats *stats)
@@ -577,7 +579,7 @@ bool veValidateBuffer(VEDevice *device, VEBufferAddress address)
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
-   return veValidateBufferAddress(deviceInternal, address);
+   return deviceInternal->validateBufferAddress(address);
 }
 
 bool veValidateTexture(VEDevice *device, VETextureIndex index)
@@ -588,7 +590,7 @@ bool veValidateTexture(VEDevice *device, VETextureIndex index)
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
-   VETextureInternal *texture = veGetTexture(deviceInternal, index);
+   VETextureInternal *texture = deviceInternal->getTexture(index);
 
    return texture != NULL;
 }
@@ -601,7 +603,7 @@ bool veValidateSampler(VEDevice *device, VESamplerIndex index)
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
-   VESamplerInternal *sampler = veGetSampler(deviceInternal, index);
+   VESamplerInternal *sampler = deviceInternal->getSampler(index);
 
    return sampler != NULL;
 }
@@ -644,19 +646,6 @@ void vePrintDebugInfo(VEDevice *device)
              (double)memStats.totalUsed / (1024.0 * 1024.0));
    }
 
-   // Performance stats
-   VEPerformanceStats perfStats;
-   if (veGetPerformanceStats(device, &perfStats) == VE_SUCCESS)
-   {
-      printf("\nPerformance Stats:\n");
-      printf("  Frame Time: %llu ns (%.2f ms)\n", (unsigned long long)perfStats.frameTime,
-             (double)perfStats.frameTime / 1000000.0);
-      printf("  Draw Calls: %u\n", perfStats.drawCalls);
-      printf("  Compute Dispatches: %u\n", perfStats.computeDispatches);
-      printf("  Vertices Rendered: %llu\n", (unsigned long long)perfStats.verticesRendered);
-      printf("  Triangles Rendered: %llu\n", (unsigned long long)perfStats.trianglesRendered);
-   }
-
    // Feature support
    printf("\nFeature Support:\n");
    printf("  Buffer Device Address: %s\n",
@@ -670,6 +659,51 @@ void vePrintDebugInfo(VEDevice *device)
           deviceInternal->supportsVertexInputDynamicState() ? "Yes" : "No");
 
    printf("================================\n");
+}
+
+void vePrintProfileInfo(VEDevice *device)
+{
+   if (!device)
+   {
+      printf("VulkEase Profile Info: Device is NULL\n");
+      return;
+   }
+
+   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+
+   // Resource counts
+   printf("\nResource Usage:\n");
+   printf("  Buffers: %u\n", veGetBufferCount(device));
+   printf("  Textures: %u / %u\n", deviceInternal->textureCount, deviceInternal->maxTextures);
+   printf("  Samplers: %u / %u\n", deviceInternal->samplerCount, deviceInternal->maxSamplers);
+   printf("  Shaders: %u / %u\n", deviceInternal->shaderCount, deviceInternal->maxShaders);
+   printf("  Render Configs: %u / %u\n", deviceInternal->renderConfigCount, deviceInternal->maxRenderConfigs);
+
+   // Memory information
+   VEMemoryStats memStats;
+   if (veGetMemoryStats(device, &memStats) == VE_SUCCESS)
+   {
+      printf("\nMemory Usage:\n");
+      printf("  Total Allocated: %llu bytes (%.2f MB)\n", (unsigned long long)memStats.totalAllocated,
+            (double)memStats.totalAllocated / (1024.0 * 1024.0));
+      printf("  Total Used: %llu bytes (%.2f MB)\n", (unsigned long long)memStats.totalUsed,
+            (double)memStats.totalUsed / (1024.0 * 1024.0));
+   }
+
+   // Performance stats
+   VEPerformanceStats perfStats;
+   if (veGetPerformanceStats(device, &perfStats) == VE_SUCCESS)
+   {
+      printf("\nPerformance Stats:\n");
+      printf("  Frame Time: %llu ns (%.2f ms)\n", (unsigned long long)perfStats.frameTime,
+            (double)perfStats.frameTime / 1000000.0);
+      printf("  Draw Calls: %u\n", perfStats.drawCalls);
+      printf("  Compute Dispatches: %u\n", perfStats.computeDispatches);
+      printf("  Vertices Rendered: %llu\n", (unsigned long long)perfStats.verticesRendered);
+      printf("  Triangles Rendered: %llu\n", (unsigned long long)perfStats.trianglesRendered);
+   }   
+
+   printf("================================\n");   
 }
 
 void vePrintRenderConfig(VERenderConfig *config)

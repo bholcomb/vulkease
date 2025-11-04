@@ -143,6 +143,8 @@ struct VECommandBufferInternal
    VkFence inFlightFence{VK_NULL_HANDLE};
    VkFence activeFence{VK_NULL_HANDLE};
    bool fenceActive{false};
+   VkPrimitiveTopology currentTopology{VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
+   uint32_t currentPatchControlPoints{0};
 
    void clearFenceTracking();
    void markFenceActive(VkFence fence);
@@ -388,10 +390,33 @@ struct VEDeviceInternal
    VkPipelineLayout globalComputePipelineLayout;
 
    VEPerformanceStats performanceStats;
+   VEPerformanceStats frameStats;
    VEMemoryStats memoryStats;
    VERenderConfigStats renderConfigStats;
+   double lastFrameTimestampSeconds{0.0};
 
    std::unique_ptr<VEDeviceQueueLocks> queueLocks;
+
+   VEResult initializeVma();
+   void cleanupVma();
+   VEBufferInternal *getBufferFromAddress(VEBufferAddress address);
+   bool validateBufferAddress(VEBufferAddress address) const;
+   VkBuffer getVkBufferFromAddress(VEBufferAddress address) const;
+   VEResult initializeBindlessDescriptors();
+   void cleanupBindlessDescriptors();
+   uint32_t allocateTextureIndex();
+   void freeTextureIndex(uint32_t index);
+   VETextureInternal *getTexture(VETextureIndex index);
+   const VETextureInternal *getTexture(VETextureIndex index) const;
+   VkImageView getImageViewFromTexture(VETextureIndex index) const;
+   uint32_t allocateSamplerIndex();
+   void freeSamplerIndex(uint32_t index);
+   VESamplerInternal *getSampler(VESamplerIndex index);
+   const VESamplerInternal *getSampler(VESamplerIndex index) const;
+   VEResult updateTextureDescriptor(VETextureIndex index);
+   VEResult updateSamplerDescriptor(VESamplerIndex index);
+   VECommandBufferInternal *beginTransferCommandBuffer();
+   VEResult submitTransferCommandBuffer(VECommandBufferInternal *cmd, bool waitForCompletion);
 
    [[nodiscard]] bool supportsBufferDeviceAddress() const noexcept { return features.bufferDeviceAddress; }
    [[nodiscard]] bool supportsDescriptorIndexing() const noexcept { return features.descriptorIndexing; }
@@ -412,10 +437,6 @@ struct VEDeviceInternal
    const char *veResultToString(VkResult result);
    void vePrintVkResult(const char *operation, VkResult result);
 
-   // VMA management functions
-   VEResult veInitializeVMA(VEDeviceInternal *device);
-   void veCleanupVMA(VEDeviceInternal *device);
-
    // Command pool managment
    VECommandBufferInternal *veGetCommandBufferInternal(VECommandBuffer *cmd);
    VEResult veAllocateCommandBuffer(VEDeviceInternal *device, VECommandPool *pool, VECommandBufferInternal **outCmd);
@@ -425,27 +446,6 @@ struct VEDeviceInternal
    void veNotifyCommandBufferFenceSignaled(VEDeviceInternal *device, VkFence fence);
 
    // Resource index management functions
-   uint32_t veAllocateBufferIndex(VEDeviceInternal *device);
-   void veFreeBufferIndex(VEDeviceInternal *device, uint32_t index);
-   VEBufferInternal *veGetBufferFromAddress(VEDeviceInternal *device, VEBufferAddress address);
-   bool veValidateBufferAddress(VEDeviceInternal *device, VEBufferAddress address);
-   VkBuffer veGetVkBufferFromAddress(VEDeviceInternal *device, VEBufferAddress address);
-
-   uint32_t veAllocateTextureIndex(VEDeviceInternal *device);
-   void veFreeTextureIndex(VEDeviceInternal *device, uint32_t index);
-   VETextureInternal *veGetTexture(VEDeviceInternal *device, VETextureIndex index);
-   VkImageView veGetImageViewFromTexture(VEDeviceInternal *device, VETextureIndex index);
-
-   uint32_t veAllocateSamplerIndex(VEDeviceInternal *device);
-   void veFreeSamplerIndex(VEDeviceInternal *device, uint32_t index);
-   VESamplerInternal *veGetSampler(VEDeviceInternal *device, VESamplerIndex index);
-
-   // Bindless descriptor management
-   VEResult veInitializeBindlessDescriptors(VEDeviceInternal *device);
-   void veCleanupBindlessDescriptors(VEDeviceInternal *device);
-   VEResult veUpdateTextureDescriptor(VEDeviceInternal *device, VETextureIndex index);
-   VEResult veUpdateSamplerDescriptor(VEDeviceInternal *device, VESamplerIndex index);
-
    // Utility functions
    void veSetObjectDebugName(VEDeviceInternal *device, uint64_t objectHandle, VkObjectType objectType,
                              const char *name);

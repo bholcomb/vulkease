@@ -15,6 +15,7 @@
 #include "ve_internal.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <memory>
 #include <mutex>
@@ -170,6 +171,25 @@ VEResult VESwapchainInternal::present(VECommandBufferInternal &cmd)
    currentImageIndex = UINT32_MAX;
    currentFrame = (currentFrame + 1) % maxFramesInFlight;
 
+  if (device)
+  {
+     using namespace std::chrono;
+     const double nowSeconds = duration<double>(steady_clock::now().time_since_epoch()).count();
+
+     if (device->lastFrameTimestampSeconds > 0.0)
+     {
+        double delta = nowSeconds - device->lastFrameTimestampSeconds;
+        if (delta >= 0.0)
+        {
+           device->frameStats.frameTime = static_cast<uint64_t>(delta * 1'000'000'000.0);
+        }
+     }
+
+     device->lastFrameTimestampSeconds = nowSeconds;
+     device->performanceStats = device->frameStats;
+     device->frameStats = {};
+  }
+
    return VE_SUCCESS;
 }
 
@@ -258,7 +278,7 @@ void VESwapchainInternal::releaseTextureIndices()
    {
       if (textureIndices[i] != VE_INVALID_TEXTURE_INDEX)
       {
-         veFreeTextureIndex(device, textureIndices[i]);
+         device->freeTextureIndex(textureIndices[i]);
          memset(&device->textures[textureIndices[i]], 0, sizeof(VETextureInternal));
          textureIndices[i] = VE_INVALID_TEXTURE_INDEX;
       }
@@ -640,7 +660,7 @@ VESwapchain *veCreateSwapchain(VEDevice *device, void *windowHandle, uint32_t wi
       }
 
       // Create texture index for bindless access
-      uint32_t textureIndex = veAllocateTextureIndex(deviceInternal);
+      uint32_t textureIndex = deviceInternal->allocateTextureIndex();
       if (textureIndex != VE_INVALID_TEXTURE_INDEX)
       {
          VETextureInternal *texture = &deviceInternal->textures[textureIndex];
@@ -659,7 +679,7 @@ VESwapchain *veCreateSwapchain(VEDevice *device, void *windowHandle, uint32_t wi
          snprintf(texture->debugName, sizeof(texture->debugName), "SwapchainImage_%u", i);
 
          swapchain->textureIndices[i] = textureIndex;
-         veUpdateTextureDescriptor(deviceInternal, textureIndex);
+         deviceInternal->updateTextureDescriptor(textureIndex);
       }
       else
       {

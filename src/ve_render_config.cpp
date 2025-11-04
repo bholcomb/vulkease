@@ -207,6 +207,27 @@ VEVertexInputConfig copyVertexInputConfig(const VEVertexInputConfig *orig)
    return config;
 }
 
+static void destroyVertexInputConfigData(VEVertexInputConfig &config)
+{
+   if (config.bindings)
+   {
+      free(config.bindings);
+      config.bindings = nullptr;
+   }
+
+   if (config.attributes)
+   {
+      free(config.attributes);
+      config.attributes = nullptr;
+   }
+
+   config.bindingCount = 0;
+   config.attributeCount = 0;
+   config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+   config.primitiveRestartEnable = false;
+   config.patchControlPoints = 0;
+}
+
 VERenderConfig *veCreateRenderConfig(VEDevice *device, const VERenderConfigDesc *desc)
 {
    if (!device || !desc)
@@ -243,7 +264,6 @@ VERenderConfig *veCreateRenderConfig(VEDevice *device, const VERenderConfigDesc 
    config->depthConfig = desc->depthConfig ? *desc->depthConfig : veDefaultDepthConfig();
    config->blendConfig = desc->blendConfig ? *desc->blendConfig : veDefaultOpaqueBlendConfig();
    config->multisampleConfig = desc->multisampleConfig ? *desc->multisampleConfig : veDefaultMultisampleConfig();
-   // TODO: this is going to leak a little
    config->vertexInputConfig =
        desc->vertexInputConfig ? copyVertexInputConfig(desc->vertexInputConfig) : veDefaultVertexInputConfig();
    config->viewport = desc->viewportConfig ? *desc->viewportConfig : veDefaultViewportConfig();
@@ -278,6 +298,7 @@ void veDestroyRenderConfig(VERenderConfig *config)
       return;
 
    VERenderConfigInternal *internal = (VERenderConfigInternal *)config;
+   destroyVertexInputConfigData(internal->vertexInputConfig);
    internal->device->renderConfigCount--;
 
    memset(internal, 0, sizeof(VERenderConfigInternal));
@@ -525,28 +546,159 @@ VERenderConfig *veCreateConfigVariant(VERenderConfig *baseConfig, const VERender
 VERenderConfig *veMergeRenderConfigs(VEDevice *device, uint32_t configCount, VERenderConfig *const *configs,
                                      const char *debugName)
 {
-   (void)debugName; // suppress unused parameter warning
    if (!device || configCount == 0 || !configs)
    {
       veSetError("Invalid parameters for config merging");
       return NULL;
    }
 
-   // TODO: Implement config merging
-   veSetError("Config merging not implemented");
-   return NULL;
+   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+
+   VEViewport mergedViewport{};
+   VERect2D mergedScissor{};
+   VERasterConfig mergedRaster{};
+   VEDepthConfig mergedDepth{};
+   VEBlendConfig mergedBlend{};
+   VEMultisampleConfig mergedMultisample{};
+
+   const VEVertexInputConfig *vertexInputSource = nullptr;
+   VEShader *mergedShaders[6] = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+   uint32_t mergedShaderCount = 0;
+
+   bool hasViewport = false;
+   bool hasScissor = false;
+   bool hasRaster = false;
+   bool hasDepth = false;
+   bool hasBlend = false;
+   bool hasMultisample = false;
+   bool hasVertexInput = false;
+   bool hasShaders = false;
+
+   VEConfigTypeFlags combinedTypes = 0;
+
+   for (uint32_t i = 0; i < configCount; ++i)
+   {
+      VERenderConfigInternal *internal = (VERenderConfigInternal *)configs[i];
+      if (!internal || !internal->isValid)
+      {
+         veSetError("Render config %u is invalid", i);
+         return NULL;
+      }
+
+      if (internal->device != deviceInternal)
+      {
+         veSetError("Render config device mismatch during merge");
+         return NULL;
+      }
+
+      if (internal->configTypes & VE_CONFIG_TYPE_VIEWPORT)
+      {
+         mergedViewport = internal->viewport;
+         hasViewport = true;
+      }
+
+      if (internal->configTypes & VE_CONFIG_TYPE_SCISSOR)
+      {
+         mergedScissor = internal->scissor;
+         hasScissor = true;
+      }
+
+      if (internal->configTypes & VE_CONFIG_TYPE_RASTERIZATION)
+      {
+         mergedRaster = internal->rasterConfig;
+         hasRaster = true;
+      }
+
+      if (internal->configTypes & VE_CONFIG_TYPE_DEPTH_STENCIL)
+      {
+         mergedDepth = internal->depthConfig;
+         hasDepth = true;
+      }
+
+      if (internal->configTypes & VE_CONFIG_TYPE_COLOR_BLEND)
+      {
+         mergedBlend = internal->blendConfig;
+         hasBlend = true;
+      }
+
+      if (internal->configTypes & VE_CONFIG_TYPE_MULTISAMPLE)
+      {
+         mergedMultisample = internal->multisampleConfig;
+         hasMultisample = true;
+      }
+
+      if (internal->configTypes & VE_CONFIG_TYPE_VERTEX_INPUT)
+      {
+         vertexInputSource = &internal->vertexInputConfig;
+         hasVertexInput = true;
+      }
+
+      if ((internal->configTypes & VE_CONFIG_TYPE_SHADERS) && internal->shaderCount > 0)
+      {
+         mergedShaderCount = internal->shaderCount > 6 ? 6 : internal->shaderCount;
+         for (uint32_t s = 0; s < mergedShaderCount; ++s)
+         {
+            mergedShaders[s] = internal->shaders[s];
+         }
+         hasShaders = true;
+      }
+
+      combinedTypes |= internal->configTypes;
+   }
+
+   VERenderConfigDesc desc{};
+   desc.configTypes = combinedTypes;
+   desc.viewportConfig = hasViewport ? &mergedViewport : NULL;
+   desc.scissorConfig = hasScissor ? &mergedScissor : NULL;
+   desc.rasterConfig = hasRaster ? &mergedRaster : NULL;
+   desc.depthConfig = hasDepth ? &mergedDepth : NULL;
+   desc.blendConfig = hasBlend ? &mergedBlend : NULL;
+   desc.multisampleConfig = hasMultisample ? &mergedMultisample : NULL;
+   desc.vertexInputConfig = hasVertexInput ? vertexInputSource : NULL;
+
+   if (hasShaders)
+   {
+      desc.shaderCount = mergedShaderCount;
+      desc.shaders = mergedShaders;
+   }
+
+   desc.debugName = debugName ? debugName : "MergedRenderConfig";
+
+   return veCreateRenderConfig(device, &desc);
 }
 
 VERenderConfig *veCloneRenderConfig(VERenderConfig *config, const char *debugName)
 {
-   (void)debugName; // suppress unused parameter warning
    if (!config)
    {
       veSetError("Config cannot be NULL");
       return NULL;
    }
 
-   // TODO: Implement config cloning
-   veSetError("Config cloning not implemented");
-   return NULL;
+   VERenderConfigInternal *internal = (VERenderConfigInternal *)config;
+   if (!internal->isValid || !internal->device)
+   {
+      veSetError("Cannot clone invalid render config");
+      return NULL;
+   }
+
+   VERenderConfigDesc desc{};
+   desc.configTypes = internal->configTypes;
+   desc.viewportConfig = (internal->configTypes & VE_CONFIG_TYPE_VIEWPORT) ? &internal->viewport : NULL;
+   desc.scissorConfig = (internal->configTypes & VE_CONFIG_TYPE_SCISSOR) ? &internal->scissor : NULL;
+   desc.rasterConfig = (internal->configTypes & VE_CONFIG_TYPE_RASTERIZATION) ? &internal->rasterConfig : NULL;
+   desc.depthConfig = (internal->configTypes & VE_CONFIG_TYPE_DEPTH_STENCIL) ? &internal->depthConfig : NULL;
+   desc.blendConfig = (internal->configTypes & VE_CONFIG_TYPE_COLOR_BLEND) ? &internal->blendConfig : NULL;
+   desc.multisampleConfig = (internal->configTypes & VE_CONFIG_TYPE_MULTISAMPLE) ? &internal->multisampleConfig : NULL;
+   desc.vertexInputConfig = (internal->configTypes & VE_CONFIG_TYPE_VERTEX_INPUT) ? &internal->vertexInputConfig : NULL;
+
+   if ((internal->configTypes & VE_CONFIG_TYPE_SHADERS) && internal->shaderCount > 0)
+   {
+      desc.shaderCount = internal->shaderCount;
+      desc.shaders = internal->shaders;
+   }
+
+   desc.debugName = debugName ? debugName : internal->debugName;
+
+   return veCreateRenderConfig((VEDevice *)internal->device, &desc);
 }

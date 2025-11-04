@@ -11,42 +11,47 @@
 // Sampler Index Management
 // =============================================================================
 
-uint32_t veAllocateSamplerIndex(VEDeviceInternal *device)
+uint32_t VEDeviceInternal::allocateSamplerIndex()
 {
-   if (device->freeSamplerCount == 0)
+   if (freeSamplerCount == 0)
    {
-      veSetError("No free sampler indices available (max: %u)", device->maxSamplers);
+      veSetError("No free sampler indices available (max: %u)", maxSamplers);
       return VE_INVALID_SAMPLER_INDEX;
    }
 
-   device->freeSamplerCount--;
-   uint32_t index = device->freeSamplerIndices[device->freeSamplerCount];
-   device->samplerCount++;
+   freeSamplerCount--;
+   uint32_t index = freeSamplerIndices[freeSamplerCount];
+   samplerCount++;
 
    return index;
 }
 
-void veFreeSamplerIndex(VEDeviceInternal *device, uint32_t index)
+void VEDeviceInternal::freeSamplerIndex(uint32_t index)
 {
-   if (index == 0 || index >= device->maxSamplers)
+   if (index == 0 || index >= maxSamplers)
    {
       return;
    }
 
-   device->freeSamplerIndices[device->freeSamplerCount] = index;
-   device->freeSamplerCount++;
-   device->samplerCount--;
+   freeSamplerIndices[freeSamplerCount] = index;
+   freeSamplerCount++;
+   samplerCount--;
 }
 
-VESamplerInternal *veGetSampler(VEDeviceInternal *device, VESamplerIndex index)
+VESamplerInternal *VEDeviceInternal::getSampler(VESamplerIndex index)
 {
-   if (index == VE_INVALID_SAMPLER_INDEX || index >= device->maxSamplers)
+   if (index == VE_INVALID_SAMPLER_INDEX || index >= maxSamplers)
    {
       return NULL;
    }
 
-   VESamplerInternal *sampler = &device->samplers[index];
+   VESamplerInternal *sampler = &samplers[index];
    return sampler->isValid ? sampler : NULL;
+}
+
+const VESamplerInternal *VEDeviceInternal::getSampler(VESamplerIndex index) const
+{
+   return const_cast<VEDeviceInternal *>(this)->getSampler(index);
 }
 
 // =============================================================================
@@ -63,7 +68,7 @@ VESamplerIndex veCreateSampler(VEDevice *device, const VESamplerDesc *desc)
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
 
-   uint32_t index = veAllocateSamplerIndex(deviceInternal);
+   uint32_t index = deviceInternal->allocateSamplerIndex();
    if (index == VE_INVALID_SAMPLER_INDEX)
    {
       return VE_INVALID_SAMPLER_INDEX;
@@ -106,7 +111,7 @@ VESamplerIndex veCreateSampler(VEDevice *device, const VESamplerDesc *desc)
    if (result != VK_SUCCESS)
    {
       veSetError("Failed to create sampler (VkResult: %d)", result);
-      veFreeSamplerIndex(deviceInternal, index);
+      deviceInternal->freeSamplerIndex(index);
       return VE_INVALID_SAMPLER_INDEX;
    }
 
@@ -118,7 +123,7 @@ VESamplerIndex veCreateSampler(VEDevice *device, const VESamplerDesc *desc)
    sampler->isValid = true;
 
    // Update bindless descriptor
-   veUpdateSamplerDescriptor(deviceInternal, index);
+   deviceInternal->updateSamplerDescriptor(index);
 
    return index;
 }
@@ -131,7 +136,7 @@ void veDestroySampler(VEDevice *device, VESamplerIndex index)
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
-   VESamplerInternal *sampler = veGetSampler(deviceInternal, index);
+   VESamplerInternal *sampler = deviceInternal->getSampler(index);
 
    if (!sampler || !sampler->isValid)
    {
@@ -143,7 +148,7 @@ void veDestroySampler(VEDevice *device, VESamplerIndex index)
       vkDestroySampler(deviceInternal->device, sampler->sampler, NULL);
    }
 
-   veFreeSamplerIndex(deviceInternal, index);
+   deviceInternal->freeSamplerIndex(index);
    memset(sampler, 0, sizeof(VESamplerInternal));
 }
 
@@ -231,9 +236,9 @@ VESamplerIndex veCreateShadowSampler(VEDevice *device)
 // Descriptor Updates
 // =============================================================================
 
-VEResult veUpdateSamplerDescriptor(VEDeviceInternal *device, VESamplerIndex index)
+VEResult VEDeviceInternal::updateSamplerDescriptor(VESamplerIndex index)
 {
-   VESamplerInternal *sampler = veGetSampler(device, index);
+   VESamplerInternal *sampler = getSampler(index);
    if (!sampler)
    {
       return VE_ERROR_INVALID_PARAMETER;
@@ -244,14 +249,14 @@ VEResult veUpdateSamplerDescriptor(VEDeviceInternal *device, VESamplerIndex inde
 
    VkWriteDescriptorSet descriptorWrite{};
    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-   descriptorWrite.dstSet = device->samplerDescriptorSet;
+   descriptorWrite.dstSet = samplerDescriptorSet;
    descriptorWrite.dstBinding = 0;
    descriptorWrite.dstArrayElement = index;
    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
    descriptorWrite.descriptorCount = 1;
    descriptorWrite.pImageInfo = &imageInfo;
 
-   vkUpdateDescriptorSets(device->device, 1, &descriptorWrite, 0, NULL);
+   vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, NULL);
 
    return VE_SUCCESS;
 }

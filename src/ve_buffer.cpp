@@ -19,77 +19,72 @@ static BufferMap *getBufferMap(VEDeviceInternal *device) { return static_cast<Bu
 // VMA Integration
 // =============================================================================
 
-VEResult veInitializeVMA(VEDeviceInternal *device)
+VEResult VEDeviceInternal::initializeVma()
 {
-   // Require buffer device address support - no fallback
-   if (!device->features.bufferDeviceAddress)
+   if (!features.bufferDeviceAddress)
    {
       veSetError("Buffer device address support is required - no fallback strategy");
       return VE_ERROR_UNSUPPORTED;
    }
 
-   VmaVulkanFunctions vulkanFunctions = {};
+   VmaVulkanFunctions vulkanFunctions{};
    vulkanFunctions.vkGetInstanceProcAddr = &vkGetInstanceProcAddr;
    vulkanFunctions.vkGetDeviceProcAddr = &vkGetDeviceProcAddr;
 
-   VmaAllocatorCreateInfo allocatorInfo = {};
-   allocatorInfo.physicalDevice = device->physicalDevice;
-   allocatorInfo.device = device->device;
-   allocatorInfo.instance = device->context->instance;
-   // allocatorInfo.vulkanApiVersion = device->deviceProperties.apiVersion;
-   allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3; // TODO: move to 1.4
+   VmaAllocatorCreateInfo allocatorInfo{};
+   allocatorInfo.physicalDevice = physicalDevice;
+   allocatorInfo.device = device;
+   allocatorInfo.instance = context->instance;
+   // allocatorInfo.vulkanApiVersion = deviceProperties.apiVersion;
+   allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_4;
    allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
    allocatorInfo.pVulkanFunctions = &vulkanFunctions;
 
-   VkResult result = vmaCreateAllocator(&allocatorInfo, &device->allocator);
+   VkResult result = vmaCreateAllocator(&allocatorInfo, &allocator);
    if (result != VK_SUCCESS)
    {
       veSetError("Failed to create VMA allocator (VkResult: %d)", result);
       return VE_ERROR_OUT_OF_MEMORY;
    }
 
-   // Create the buffer map using STL
-   device->bufferMap = new (std::nothrow) BufferMap();
-   if (!device->bufferMap)
+   bufferMap = new (std::nothrow) BufferMap();
+   if (!bufferMap)
    {
       veSetError("Failed to allocate buffer map");
-      vmaDestroyAllocator(device->allocator);
+      vmaDestroyAllocator(allocator);
+      allocator = VK_NULL_HANDLE;
       return VE_ERROR_OUT_OF_MEMORY;
    }
 
    return VE_SUCCESS;
 }
 
-void veCleanupVMA(VEDeviceInternal *device)
+void VEDeviceInternal::cleanupVma()
 {
-   if (!device)
-      return;
-
-   if (device->device)
+   if (device)
    {
-      vkDeviceWaitIdle(device->device);
+      vkDeviceWaitIdle(device);
    }
 
-   // Clean up all buffers using STL map
-   if (device->bufferMap)
+   if (bufferMap)
    {
-      BufferMap *bufferMap = getBufferMap(device);
-      for (auto &pair : *bufferMap)
+      BufferMap *map = getBufferMap(this);
+      for (auto &pair : *map)
       {
          auto &buffer = pair.second;
          if (buffer && buffer->isValid)
          {
-            vmaDestroyBuffer(device->allocator, buffer->buffer, buffer->allocation);
+            vmaDestroyBuffer(allocator, buffer->buffer, buffer->allocation);
          }
       }
-      delete bufferMap;
-      device->bufferMap = nullptr;
+      delete map;
+      bufferMap = nullptr;
    }
 
-   if (device->allocator)
+   if (allocator)
    {
-      vmaDestroyAllocator(device->allocator);
-      device->allocator = VK_NULL_HANDLE;
+      vmaDestroyAllocator(allocator);
+      allocator = VK_NULL_HANDLE;
    }
 }
 
@@ -98,28 +93,147 @@ void veCleanupVMA(VEDeviceInternal *device)
 // =============================================================================
 
 // Get buffer from address using O(1) hash map lookup
-VEBufferInternal *veGetBufferFromAddress(VEDeviceInternal *device, VEBufferAddress address)
+VEBufferInternal *VEDeviceInternal::getBufferFromAddress(VEBufferAddress address)
 {
-   if (address == VE_INVALID_ADDRESS || !device->bufferMap)
+   if (address == VE_INVALID_ADDRESS || !bufferMap)
    {
       return nullptr;
    }
 
-   BufferMap *bufferMap = getBufferMap(device);
-   auto it = bufferMap->find(address);
-   return (it != bufferMap->end()) ? it->second.get() : nullptr;
+   BufferMap *map = getBufferMap(this);
+   auto it = map->find(address);
+   return (it != map->end()) ? it->second.get() : nullptr;
 }
 
-bool veValidateBufferAddress(VEDeviceInternal *device, VEBufferAddress address)
+bool VEDeviceInternal::validateBufferAddress(VEBufferAddress address) const
 {
-   return veGetBufferFromAddress(device, address) != nullptr;
+   return const_cast<VEDeviceInternal *>(this)->getBufferFromAddress(address) != nullptr;
 }
 
-// Get VkBuffer handle from buffer address for command buffer operations
-VkBuffer veGetVkBufferFromAddress(VEDeviceInternal *device, VEBufferAddress address)
+VkBuffer VEDeviceInternal::getVkBufferFromAddress(VEBufferAddress address) const
 {
-   VEBufferInternal *buffer = veGetBufferFromAddress(device, address);
+   VEBufferInternal *buffer = const_cast<VEDeviceInternal *>(this)->getBufferFromAddress(address);
    return (buffer && buffer->isValid) ? buffer->buffer : VK_NULL_HANDLE;
+}
+
+VECommandBufferInternal *VEDeviceInternal::beginTransferCommandBuffer()
+{
+   if (!transferCommandPool)
+   {
+      veSetError("Transfer command pool not initialized");
+      return nullptr;
+   }
+
+   VECommandBufferInternal *cmd = nullptr;
+   if (transferCommandPool->allocate(&cmd) != VE_SUCCESS || cmd == nullptr)
+   {
+      veSetError("Failed to allocate transfer command buffer");
+      return nullptr;
+   }
+
+   VkCommandBufferBeginInfo beginInfo{};
+   beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+   beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+   VkResult vkResult = vkBeginCommandBuffer(cmd->commandBuffer, &beginInfo);
+   if (vkResult != VK_SUCCESS)
+   {
+      veSetError("Failed to begin transfer command buffer (VkResult: %d)", vkResult);
+      transferCommandPool->release(*cmd);
+      return nullptr;
+   }
+
+   cmd->isRecording = true;
+   cmd->isOneTime = true;
+   return cmd;
+}
+
+VEResult VEDeviceInternal::submitTransferCommandBuffer(VECommandBufferInternal *cmd, bool waitForCompletion)
+{
+   if (!cmd)
+   {
+      veSetError("Command buffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   if (!cmd->isRecording)
+   {
+      veSetError("Command buffer is not recording");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VkResult result = vkEndCommandBuffer(cmd->commandBuffer);
+   if (result != VK_SUCCESS)
+   {
+      veSetError("Failed to end command buffer (VkResult: %d)", result);
+      return VE_ERROR_UNKNOWN;
+   }
+
+   cmd->isRecording = false;
+
+   VkFence fence = cmd->inFlightFence;
+   if (fence == VK_NULL_HANDLE)
+   {
+      VkFenceCreateInfo fenceInfo{};
+      fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+      fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+      VkResult fenceResult = vkCreateFence(device, &fenceInfo, NULL, &fence);
+      if (fenceResult != VK_SUCCESS)
+      {
+         veSetError("Failed to create transfer fence (VkResult: %d)", fenceResult);
+         return VE_ERROR_OUT_OF_MEMORY;
+      }
+      cmd->inFlightFence = fence;
+   }
+
+   result = vkResetFences(device, 1, &fence);
+   if (result != VK_SUCCESS)
+   {
+      veSetError("Failed to reset transfer fence (VkResult: %d)", result);
+      return VE_ERROR_OUT_OF_MEMORY;
+   }
+
+   VEDeviceQueueLocks *locks = queueLocks.get();
+   if (!locks)
+   {
+      veSetError("Device queue locks not initialized");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VkSubmitInfo submitInfo{};
+   submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+   submitInfo.commandBufferCount = 1;
+   submitInfo.pCommandBuffers = &cmd->commandBuffer;
+
+   {
+      std::lock_guard<std::mutex> lock(locks->transferMutex());
+      result = vkQueueSubmit(transferQueue, 1, &submitInfo, fence);
+   }
+
+   if (result != VK_SUCCESS)
+   {
+      veSetError("Failed to submit command buffer (VkResult: %d)", result);
+      return VE_ERROR_OUT_OF_MEMORY;
+   }
+
+   if (waitForCompletion)
+   {
+      result = vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
+      if (result != VK_SUCCESS)
+      {
+         veSetError("Failed to wait for transfer command buffer completion (VkResult: %d)", result);
+         return VE_ERROR_OUT_OF_MEMORY;
+      }
+
+      cmd->clearFenceTracking();
+      veFreeCommandBuffer(cmd);
+   }
+   else
+   {
+      cmd->markFenceActive(fence);
+   }
+
+   return VE_SUCCESS;
 }
 
 // =============================================================================
@@ -278,191 +392,6 @@ extern "C" void veDestroyBuffer(VEDevice *device, VEBufferAddress address)
 // Transfer Commands
 // =============================================================================
 
-static VECommandBuffer *veBeginTransferCommandBuffer(VEDeviceInternal *device)
-{
-   if (!device)
-   {
-      veSetError("Device cannot be NULL");
-      return NULL;
-   }
-
-   VECommandBufferInternal *cmd;
-   VEResult result = veAllocateCommandBuffer(device, device->transferCommandPool, &cmd);
-   if (result != VE_SUCCESS)
-   {
-      return NULL;
-   }
-
-   VkCommandBufferBeginInfo beginInfo = {};
-   beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-   beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-   VkResult vkResult = vkBeginCommandBuffer(cmd->commandBuffer, &beginInfo);
-   if (vkResult != VK_SUCCESS)
-   {
-      veSetError("Failed to begin transfer command buffer (VkResult: %d)", vkResult);
-      veFreeCommandBuffer(cmd);
-      return NULL;
-   }
-
-   cmd->isRecording = true;
-   cmd->isOneTime = true;
-
-   return (VECommandBuffer *)cmd;
-}
-
-static VEResult veSubmitTransferCommandBuffer(VECommandBuffer *cmd, bool waitForCompletion)
-{
-   if (!cmd)
-   {
-      veSetError("Command buffer cannot be NULL");
-      return VE_ERROR_INVALID_PARAMETER;
-   }
-
-   VECommandBufferInternal *internalCmd = (VECommandBufferInternal *)cmd;
-
-   if (!internalCmd->isRecording)
-   {
-      veSetError("Command buffer is not recording");
-      return VE_ERROR_INVALID_PARAMETER;
-   }
-
-   VkResult result = vkEndCommandBuffer(internalCmd->commandBuffer);
-   if (result != VK_SUCCESS)
-   {
-      veSetError("Failed to end command buffer (VkResult: %d)", result);
-      return VE_ERROR_UNKNOWN;
-   }
-
-   internalCmd->isRecording = false;
-
-   // Submit command buffer using stored device reference
-   VkSubmitInfo submitInfo = {};
-   submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-   submitInfo.commandBufferCount = 1;
-   submitInfo.pCommandBuffers = &internalCmd->commandBuffer;
-
-   VkFence fence = internalCmd->inFlightFence;
-   if (fence == VK_NULL_HANDLE)
-   {
-      VkFenceCreateInfo fenceInfo = {};
-      fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-      fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-      VkResult fenceResult = vkCreateFence(internalCmd->device->device, &fenceInfo, NULL, &fence);
-      if (fenceResult != VK_SUCCESS)
-      {
-         veSetError("Failed to create transfer fence (VkResult: %d)", fenceResult);
-         return VE_ERROR_OUT_OF_MEMORY;
-      }
-      internalCmd->inFlightFence = fence;
-   }
-
-   result = vkResetFences(internalCmd->device->device, 1, &fence);
-   if (result != VK_SUCCESS)
-   {
-      veSetError("Failed to reset transfer fence (VkResult: %d)", result);
-      return VE_ERROR_OUT_OF_MEMORY;
-   }
-
-   VEDeviceQueueLocks *locks = internalCmd->device->queueLocks.get();
-   if (!locks)
-   {
-      veSetError("Device queue locks not initialized");
-      return VE_ERROR_INVALID_PARAMETER;
-   }
-
-   {
-      std::lock_guard<std::mutex> lock(locks->transferMutex());
-      result = vkQueueSubmit(internalCmd->device->transferQueue, 1, &submitInfo, fence);
-   }
-   if (result != VK_SUCCESS)
-   {
-      veSetError("Failed to submit command buffer (VkResult: %d)", result);
-      return VE_ERROR_OUT_OF_MEMORY;
-   }
-
-   if (waitForCompletion)
-   {
-      result = vkWaitForFences(internalCmd->device->device, 1, &fence, VK_TRUE, UINT64_MAX);
-      if (result != VK_SUCCESS)
-      {
-         veSetError("Failed to wait for transfer command buffer completion "
-                    "(VkResult: %d)",
-                    result);
-         return VE_ERROR_OUT_OF_MEMORY;
-      }
-
-      internalCmd->clearFenceTracking();
-      veFreeCommandBuffer(internalCmd);
-   }
-   else
-   {
-      internalCmd->markFenceActive(fence);
-   }
-
-   return VE_SUCCESS;
-}
-
-// =============================================================================
-// Buffer Memory Operations
-// =============================================================================
-
-extern "C" VEResult veMapBuffer(VEDevice *device, VEBufferAddress address, void **mappedData)
-{
-   if (!device || address == VE_INVALID_ADDRESS || !mappedData)
-   {
-      veSetError("Invalid parameters for buffer mapping");
-      return VE_ERROR_INVALID_PARAMETER;
-   }
-
-   VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
-   VEBufferInternal *buffer = veGetBufferFromAddress(deviceInternal, address);
-
-   if (!buffer || !buffer->isValid)
-   {
-      veSetError("Invalid buffer address");
-      return VE_ERROR_INVALID_PARAMETER;
-   }
-
-   if (buffer->persistentlyMapped && buffer->mappedData)
-   {
-      *mappedData = buffer->mappedData;
-      return VE_SUCCESS;
-   }
-
-   VkResult result = vmaMapMemory(deviceInternal->allocator, buffer->allocation, mappedData);
-   if (result != VK_SUCCESS)
-   {
-      veSetError("Failed to map buffer (VkResult: %d)", result);
-      return VE_ERROR_OUT_OF_MEMORY;
-   }
-
-   buffer->mappedData = *mappedData;
-   return VE_SUCCESS;
-}
-
-extern "C" void veUnmapBuffer(VEDevice *device, VEBufferAddress address)
-{
-   if (!device || address == VE_INVALID_ADDRESS)
-   {
-      return;
-   }
-
-   VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
-   VEBufferInternal *buffer = veGetBufferFromAddress(deviceInternal, address);
-
-   if (!buffer || !buffer->isValid || buffer->persistentlyMapped)
-   {
-      return;
-   }
-
-   if (buffer->mappedData)
-   {
-      vmaUnmapMemory(deviceInternal->allocator, buffer->allocation);
-      buffer->mappedData = nullptr;
-   }
-}
-
 static VEResult veUpdateBufferWithStaging(VEDeviceInternal *device, VEBufferInternal *dstBuffer, const void *data,
                                           uint64_t size, uint64_t offset)
 {
@@ -494,10 +423,8 @@ static VEResult veUpdateBufferWithStaging(VEDeviceInternal *device, VEBufferInte
    vmaFlushAllocation(device->allocator, stagingAllocation, 0, size);
 
    // Get command buffer for transfer
-   VECommandBuffer *transferCmd = veBeginTransferCommandBuffer(device);
-   VECommandBufferInternal *transferCmdIternal = (VECommandBufferInternal *)transferCmd;
-
-   if (transferCmdIternal->commandBuffer == VK_NULL_HANDLE)
+   VECommandBufferInternal *transferCmd = device->beginTransferCommandBuffer();
+   if (transferCmd == nullptr)
    {
       vmaDestroyBuffer(device->allocator, stagingBuffer, stagingAllocation);
       veSetError("Failed to get transfer command buffer");
@@ -510,7 +437,7 @@ static VEResult veUpdateBufferWithStaging(VEDeviceInternal *device, VEBufferInte
    copyRegion.dstOffset = offset;
    copyRegion.size = size;
 
-   vkCmdCopyBuffer(transferCmdIternal->commandBuffer, stagingBuffer, dstBuffer->buffer, 1, &copyRegion);
+   vkCmdCopyBuffer(transferCmd->commandBuffer, stagingBuffer, dstBuffer->buffer, 1, &copyRegion);
 
    // Add memory barrier if destination buffer will be used in different stage
    if (dstBuffer->usage & (VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
@@ -530,11 +457,11 @@ static VEResult veUpdateBufferWithStaging(VEDeviceInternal *device, VEBufferInte
       dependencyInfo.memoryBarrierCount = 1;
       dependencyInfo.pMemoryBarriers = &memoryBarrier;
 
-      vkCmdPipelineBarrier2(transferCmdIternal->commandBuffer, &dependencyInfo);
+      vkCmdPipelineBarrier2(transferCmd->commandBuffer, &dependencyInfo);
    }
 
    // Submit transfer command and wait for completion
-   VEResult submitResult = veSubmitTransferCommandBuffer(transferCmd, true);
+   VEResult submitResult = device->submitTransferCommandBuffer(transferCmd, true);
 
    vmaDestroyBuffer(device->allocator, stagingBuffer, stagingAllocation);
 
@@ -551,7 +478,7 @@ extern "C" VEResult veUpdateBuffer(VEDevice *device, VEBufferAddress address, co
    }
 
    VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
-   VEBufferInternal *buffer = veGetBufferFromAddress(deviceInternal, address);
+   VEBufferInternal *buffer = deviceInternal->getBufferFromAddress(address);
 
    if (!buffer || !buffer->isValid)
    {
@@ -607,7 +534,7 @@ extern "C" uint64_t veGetBufferSize(VEDevice *device, VEBufferAddress address)
       return 0;
 
    VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
-   VEBufferInternal *buffer = veGetBufferFromAddress(deviceInternal, address);
+   VEBufferInternal *buffer = deviceInternal->getBufferFromAddress(address);
 
    return (buffer && buffer->isValid) ? buffer->size : 0;
 }
@@ -618,7 +545,7 @@ extern "C" VkBufferUsageFlags veGetBufferUsage(VEDevice *device, VEBufferAddress
       return static_cast<VkBufferUsageFlags>(0);
 
    VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
-   VEBufferInternal *buffer = veGetBufferFromAddress(deviceInternal, address);
+   VEBufferInternal *buffer = deviceInternal->getBufferFromAddress(address);
 
    return (buffer && buffer->isValid) ? buffer->usage : static_cast<VkBufferUsageFlags>(0);
 }

@@ -5,6 +5,7 @@
 
 #include "ve_internal.h"
 
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -136,6 +137,152 @@ static bool compileGLSLToSPIRV(const char *glslSource, VkShaderStageFlags stage,
    return true;
 }
 
+static VkShaderStageFlags getPossibleNextStages(VkShaderStageFlags stage);
+
+static bool hasExtension(const char *path, const char *ext)
+{
+   if (!path || !ext)
+   {
+      return false;
+   }
+
+   const char *dot = strrchr(path, '.');
+   if (!dot)
+   {
+      return false;
+   }
+
+   dot++; // Skip the '.'
+   if (*ext == '.')
+   {
+      ext++;
+   }
+
+   while (*dot && *ext)
+   {
+      if (std::tolower(static_cast<unsigned char>(*dot)) != std::tolower(static_cast<unsigned char>(*ext)))
+      {
+         return false;
+      }
+      dot++;
+      ext++;
+   }
+
+    return *dot == '\0' && *ext == '\0';
+}
+
+static VkShaderEXT createShaderObject(VEDeviceInternal *deviceInternal, VkShaderStageFlags stage, const uint32_t *code,
+                                      uint64_t codeSize, const char *entryPoint, const char *debugName)
+{
+   if (!deviceInternal || !code || codeSize == 0 || !entryPoint)
+   {
+      veSetError("Invalid parameters for shader creation");
+      return VK_NULL_HANDLE;
+   }
+
+   VkDescriptorSetLayout setLayouts[2] = {
+       deviceInternal->textureDescriptorSetLayout,
+       deviceInternal->samplerDescriptorSetLayout};
+
+   VkShaderStageFlagBits stageFlags =
+       (stage == VK_SHADER_STAGE_COMPUTE_BIT) ? VK_SHADER_STAGE_COMPUTE_BIT : VK_SHADER_STAGE_ALL_GRAPHICS;
+
+   VkPushConstantRange shaderPushRange = {
+       .stageFlags = stageFlags,
+       .offset = 0,
+       .size = VE_MAX_PUSH_CONSTANT_BYTES};
+
+   VkShaderCreateInfoEXT shaderCreateInfo{};
+   shaderCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT;
+   shaderCreateInfo.stage = static_cast<VkShaderStageFlagBits>(stage);
+   shaderCreateInfo.nextStage = getPossibleNextStages(stage);
+   shaderCreateInfo.codeType = VK_SHADER_CODE_TYPE_SPIRV_EXT;
+   shaderCreateInfo.codeSize = codeSize;
+   shaderCreateInfo.pCode = code;
+   shaderCreateInfo.pName = entryPoint;
+   shaderCreateInfo.setLayoutCount = 2;
+   shaderCreateInfo.pSetLayouts = setLayouts;
+   shaderCreateInfo.pushConstantRangeCount = 1;
+   shaderCreateInfo.pPushConstantRanges = &shaderPushRange;
+
+   VkShaderEXT shaderObject = VK_NULL_HANDLE;
+   VkResult result = veFuncs.vkCreateShadersEXT(deviceInternal->device, 1, &shaderCreateInfo, NULL, &shaderObject);
+   if (result != VK_SUCCESS)
+   {
+      veSetError("Failed to create shader object (VkResult: %d)", result);
+      return VK_NULL_HANDLE;
+   }
+
+   if (deviceInternal->context && deviceInternal->context->validationEnabled)
+   {
+      const char *name = (debugName && debugName[0]) ? debugName : "Shader";
+      veSetObjectDebugName(deviceInternal, (uint64_t)shaderObject, VK_OBJECT_TYPE_SHADER_EXT, name);
+   }
+
+   return shaderObject;
+}
+
+static bool loadSpirvFromFile(const char *filename, std::vector<uint32_t> &outCode, uint64_t &outSize)
+{
+   FILE *file = fopen(filename, "rb");
+   if (!file)
+   {
+      veSetError("Failed to open shader file: %s", filename);
+      return false;
+   }
+
+   fseek(file, 0, SEEK_END);
+   size_t fileSize = (size_t)ftell(file);
+   fseek(file, 0, SEEK_SET);
+
+   if (fileSize <= 0 || fileSize % 4 != 0)
+   {
+      veSetError("Invalid SPIR-V file size: %ld", fileSize);
+      fclose(file);
+      return false;
+   }
+
+   outCode.resize(fileSize / sizeof(uint32_t));
+   size_t bytesRead = fread(outCode.data(), sizeof(uint32_t), outCode.size(), file);
+   fclose(file);
+
+   if (bytesRead != outCode.size())
+   {
+      veSetError("Failed to read entire shader file: %s", filename);
+      return false;
+   }
+
+   outSize = static_cast<uint64_t>(fileSize);
+   return true;
+}
+
+static bool loadTextFile(const char *filename, std::vector<char> &outBuffer)
+{
+   FILE *file = fopen(filename, "rb");
+   if (!file)
+   {
+      veSetError("Failed to open shader source file: %s", filename);
+      return false;
+   }
+
+   fseek(file, 0, SEEK_END);
+   size_t fileSize = (size_t)ftell(file);
+   fseek(file, 0, SEEK_SET);
+
+   outBuffer.resize(fileSize + 1);
+   size_t bytesRead = fread(outBuffer.data(), 1, fileSize, file);
+   fclose(file);
+
+   if (bytesRead != fileSize)
+   {
+      veSetError("Failed to read shader source file: %s", filename);
+      return false;
+   }
+
+   outBuffer[bytesRead] = '\0';
+   return true;
+}
+
 // =============================================================================
 // Shader Creation
 // =============================================================================
@@ -172,6 +319,12 @@ VEShader *veCreateShaderFromSPIRV(VEDevice *device, VkShaderStageFlags stage, co
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
 
+   if (deviceInternal->shaderCount >= deviceInternal->maxShaders)
+   {
+      veSetError("Maximum number of shaders reached");
+      return NULL;
+   }
+
    // Allocate shader object
    VEShaderInternal *shader = static_cast<VEShaderInternal *>(calloc(1, sizeof(VEShaderInternal)));
    if (!shader)
@@ -192,54 +345,16 @@ VEShader *veCreateShaderFromSPIRV(VEDevice *device, VkShaderStageFlags stage, co
       snprintf(shader->debugName, sizeof(shader->debugName), "Shader_%p", shader);
    }
 
-   // create descriptor set
-   VkDescriptorSetLayout setLayouts[2] = {
-       deviceInternal->textureDescriptorSetLayout, // will be set = 0 in shaders
-       deviceInternal->samplerDescriptorSetLayout  // will be set = 1 in shaders
-   };
-
-   VkShaderStageFlagBits stageFlags;
-   if (stage == VK_SHADER_STAGE_COMPUTE_BIT)
+   shader->shaderObject = createShaderObject(deviceInternal, stage, code, codeSize, entryPoint, shader->debugName);
+   if (shader->shaderObject == VK_NULL_HANDLE)
    {
-      stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-   }
-   else
-   {
-      stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
-   }
-
-   VkPushConstantRange shaderPushRange = {.stageFlags = stageFlags, .offset = 0, .size = VE_MAX_PUSH_CONSTANT_BYTES};
-
-   // Create shader object using VK_EXT_shader_object
-   VkShaderCreateInfoEXT shaderCreateInfo{};
-   shaderCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT;
-   shaderCreateInfo.stage = static_cast<VkShaderStageFlagBits>(stage);
-   shaderCreateInfo.nextStage = getPossibleNextStages(stage);
-   shaderCreateInfo.codeType = VK_SHADER_CODE_TYPE_SPIRV_EXT;
-   shaderCreateInfo.codeSize = codeSize;
-   shaderCreateInfo.pCode = code;
-   shaderCreateInfo.pName = entryPoint;
-   shaderCreateInfo.setLayoutCount = 2;
-   shaderCreateInfo.pSetLayouts = setLayouts;
-   shaderCreateInfo.pushConstantRangeCount = 1;
-   shaderCreateInfo.pPushConstantRanges = &shaderPushRange;
-
-   VkResult result =
-       veFuncs.vkCreateShadersEXT(deviceInternal->device, 1, &shaderCreateInfo, NULL, &shader->shaderObject);
-   if (result != VK_SUCCESS)
-   {
-      veSetError("Failed to create shader object (VkResult: %d)", result);
       free(shader);
       return NULL;
    }
 
-   if (deviceInternal->context->validationEnabled)
-   {
-      veSetObjectDebugName(deviceInternal, (uint64_t)shader->shaderObject, VK_OBJECT_TYPE_SHADER_EXT,
-                           shader->debugName);
-   }
-
+   shader->device = deviceInternal;
    shader->isValid = true;
+   deviceInternal->shaderCount += 1;
 
    return (VEShader *)shader;
 }
@@ -329,6 +444,11 @@ void veDestroyShader(VEShader *shader)
       veFuncs.vkDestroyShaderEXT(internal->device->device, internal->shaderObject, NULL);
    }
 
+   if (internal->device && internal->device->shaderCount > 0)
+   {
+      internal->device->shaderCount -= 1;
+   }
+
    free(internal);
 }
 
@@ -368,9 +488,65 @@ VEResult veReloadShader(VEShader *shader)
       return VE_ERROR_FEATURE_NOT_SUPPORTED;
    }
 
-   // TODO: Implement shader reloading
-   veSetError("Shader hot-reload not implemented");
-   return VE_ERROR_FEATURE_NOT_SUPPORTED;
+   VEDeviceInternal *deviceInternal = internal->device;
+   if (!deviceInternal)
+   {
+      veSetError("Shader is not associated with a device");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   const char *sourcePath = internal->sourceFile;
+
+   std::vector<uint32_t> fileCode;
+   std::vector<char> textSource;
+   uint32_t *compiledCode = NULL;
+   uint64_t codeSize = 0;
+   const uint32_t *codePtr = NULL;
+
+   if (hasExtension(sourcePath, "spv") || hasExtension(sourcePath, "spirv"))
+   {
+      if (!loadSpirvFromFile(sourcePath, fileCode, codeSize))
+      {
+         return VE_ERROR_INVALID_PARAMETER;
+      }
+      codePtr = fileCode.data();
+   }
+   else
+   {
+      if (!loadTextFile(sourcePath, textSource))
+      {
+         return VE_ERROR_INVALID_PARAMETER;
+      }
+
+      if (!compileGLSLToSPIRV(textSource.data(), internal->stage, &compiledCode, &codeSize))
+      {
+         return VE_ERROR_SHADER_COMPILATION_FAILED;
+      }
+      codePtr = compiledCode;
+   }
+
+   VkShaderEXT newShaderObject =
+       createShaderObject(deviceInternal, internal->stage, codePtr, codeSize, internal->entryPoint, internal->debugName);
+
+   if (compiledCode)
+   {
+      free(compiledCode);
+   }
+
+   if (newShaderObject == VK_NULL_HANDLE)
+   {
+      return VE_ERROR_UNKNOWN;
+   }
+
+   if (internal->shaderObject)
+   {
+      veFuncs.vkDestroyShaderEXT(deviceInternal->device, internal->shaderObject, NULL);
+   }
+
+   internal->shaderObject = newShaderObject;
+   internal->isValid = true;
+
+   return VE_SUCCESS;
 }
 
 // =============================================================================

@@ -26,6 +26,8 @@ void VECommandBufferInternal::resetState()
    isOneTime = false;
    boundShaders = 0;
    clearFenceTracking();
+   currentTopology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+   currentPatchControlPoints = 0;
 }
 
 VECommandPool::~VECommandPool() { destroy(); }
