@@ -53,7 +53,7 @@ static const char *REQUIRED_DEVICE_EXTENSIONS[] = {
     VK_EXT_SHADER_OBJECT_EXTENSION_NAME,              // Still required - not promoted to core
     VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME,   // Still required - not promoted to core
     VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME, // Still required - not promoted to core
-    VK_EXT_HOST_IMAGE_COPY_EXTENSION_NAME             // Optional but highly beneficial
+    VK_EXT_HOST_IMAGE_COPY_EXTENSION_NAME             // Required for host image copy helpers
 };
 
 static const char *VALIDATION_LAYERS[] = {"VK_LAYER_KHRONOS_validation"};
@@ -256,23 +256,22 @@ static bool validateMinimumGPUCapabilities(VkInstance instance)
    std::vector<VkPhysicalDevice> devices(deviceCount);
    vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
 
-   bool foundSuitableGPU = false;
-
    for (uint32_t i = 0; i < deviceCount; i++)
    {
       VkPhysicalDeviceProperties properties;
       vkGetPhysicalDeviceProperties(devices[i], &properties);
 
-      // Require Vulkan 1.4 API support on the GPU - no fallbacks
-      if (properties.apiVersion < VK_API_VERSION_1_4)
+      // Require Vulkan 1.3 API support on the GPU - no fallbacks
+      if (properties.apiVersion < VK_API_VERSION_1_3)
       {
          continue;
       }
 
-      // Check for critical extensions that are still required in 1.4
+      // Check for critical extensions that we rely on
       const char *criticalExtensions[] = {VK_EXT_SHADER_OBJECT_EXTENSION_NAME,
                                           VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME,
-                                          VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME};
+                                          VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME,
+                                          VK_EXT_HOST_IMAGE_COPY_EXTENSION_NAME};
 
       bool hasAllExtensions = checkDeviceExtensionSupport(devices[i], criticalExtensions,
                                                           sizeof(criticalExtensions) / sizeof(criticalExtensions[0]));
@@ -282,65 +281,55 @@ static bool validateMinimumGPUCapabilities(VkInstance instance)
          continue;
       }
 
-      // Check for Vulkan 1.4 mandatory features
-      VkPhysicalDeviceVulkan14Features vulkan14Features{};
-      vulkan14Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES;
-
+      // Check for Vulkan 1.2/1.3 features the engine depends on
       VkPhysicalDeviceVulkan13Features vulkan13Features{};
       vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-      vulkan13Features.pNext = &vulkan14Features;
 
       VkPhysicalDeviceVulkan12Features vulkan12Features{};
       vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
       vulkan12Features.pNext = &vulkan13Features;
 
-      VkPhysicalDeviceHostImageCopyFeatures hostImageCopyFeatures{};
-      hostImageCopyFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_FEATURES;
-      hostImageCopyFeatures.pNext = &vulkan12Features;
-
       VkPhysicalDeviceFeatures2 features2{};
       features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-      features2.pNext = &hostImageCopyFeatures;
+      features2.pNext = &vulkan12Features;
 
       vkGetPhysicalDeviceFeatures2(devices[i], &features2);
 
-      // Validate mandatory Vulkan 1.4 features
-      if (vulkan12Features.bufferDeviceAddress && // Core since 1.2
-          vulkan12Features.descriptorIndexing &&  // Core since 1.2
-          vulkan12Features.scalarBlockLayout &&   // Mandatory in 1.4
-          vulkan13Features.dynamicRendering &&    // Core since 1.3
-          vulkan14Features.pushDescriptor)
-      { // Mandatory in 1.4
-         foundSuitableGPU = true;
-         break;
+      if (vulkan12Features.bufferDeviceAddress &&
+          vulkan12Features.descriptorIndexing &&
+          vulkan12Features.scalarBlockLayout &&
+          vulkan13Features.dynamicRendering)
+      {
+         return true;
       }
    }
 
-   return foundSuitableGPU;
+   return false;
 }
 
-static void queryDevice14Features(VkPhysicalDevice physicalDevice, VEDeviceFeatures *features)
+static void queryDeviceFeatures(VkPhysicalDevice physicalDevice, VEDeviceFeatures *features)
 {
-   // Host image copy features (optional but recommended)
+   if (!features)
+   {
+      return;
+   }
+
+   *features = {};
+
+   // Host image copy features (optional)
    VkPhysicalDeviceHostImageCopyFeaturesEXT hostImageCopyFeatures{};
    hostImageCopyFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_FEATURES;
 
-   // Vulkan 1.4 core features
-   VkPhysicalDeviceVulkan14Features vulkan14Features{};
-   vulkan14Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES;
-   vulkan14Features.pNext = &hostImageCopyFeatures;
-
-   // Vulkan 1.3 core features
+   // Core feature queries
    VkPhysicalDeviceVulkan13Features vulkan13Features{};
    vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-   vulkan13Features.pNext = &vulkan14Features;
+   vulkan13Features.pNext = &hostImageCopyFeatures;
 
-   // Vulkan 1.2 core features
    VkPhysicalDeviceVulkan12Features vulkan12Features{};
    vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
    vulkan12Features.pNext = &vulkan13Features;
 
-   // Extension features still required in 1.4
+   // Extension feature queries
    VkPhysicalDeviceExtendedDynamicState3FeaturesEXT extDynState3Features{};
    extDynState3Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT;
    extDynState3Features.pNext = &vulkan12Features;
@@ -359,36 +348,30 @@ static void queryDevice14Features(VkPhysicalDevice physicalDevice, VEDeviceFeatu
 
    vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
 
-   // Map features to internal structure
-   // Core Vulkan 1.2+ features (mandatory)
-   features->bufferDeviceAddress = vulkan12Features.bufferDeviceAddress;
-   features->descriptorIndexing = vulkan12Features.descriptorIndexing;
-   features->scalarBlockLayout = vulkan12Features.scalarBlockLayout; // Mandatory in 1.4
-   features->updateAfterBind = vulkan12Features.descriptorBindingSampledImageUpdateAfterBind &&
-                               vulkan12Features.descriptorBindingVariableDescriptorCount &&
-                               vulkan12Features.descriptorBindingPartiallyBound;
-
-   // Core Vulkan 1.3+ features (mandatory)
-   features->dynamicRendering = vulkan13Features.dynamicRendering;
-
-   // Core Vulkan 1.4+ features (mandatory)
-   features->pushDescriptor = vulkan14Features.pushDescriptor;                       // Mandatory in 1.4
-   features->dynamicRenderingLocalRead = vulkan14Features.dynamicRenderingLocalRead; // Optional but recommended
-
-   // Optional Vulkan 1.4+ features
-   features->hostImageCopy = hostImageCopyFeatures.hostImageCopy;
-
-   // Extension features (still required)
-   features->extendedDynamicState3 = extDynState3Features.extendedDynamicState3PolygonMode &&
-                                     extDynState3Features.extendedDynamicState3ColorBlendEnable;
-   features->vertexInputDynamicState = vertexInputDynFeatures.vertexInputDynamicState;
-   features->shaderObject = shaderObjectFeatures.shaderObject;
-
-   // Basic features
+   // Core Vulkan 1.0 features
    features->samplerAnisotropy = features2.features.samplerAnisotropy;
    features->fillModeNonSolid = features2.features.fillModeNonSolid;
    features->wideLines = features2.features.wideLines;
    features->depthClamp = features2.features.depthClamp;
+
+   // Core Vulkan 1.2 features
+   features->bufferDeviceAddress = vulkan12Features.bufferDeviceAddress;
+   features->descriptorIndexing = vulkan12Features.descriptorIndexing;
+   features->scalarBlockLayout = vulkan12Features.scalarBlockLayout;
+   features->updateAfterBind = vulkan12Features.descriptorBindingSampledImageUpdateAfterBind &&
+                               vulkan12Features.descriptorBindingVariableDescriptorCount &&
+                               vulkan12Features.descriptorBindingPartiallyBound &&
+                               vulkan12Features.runtimeDescriptorArray;
+
+   // Core Vulkan 1.3 features
+   features->dynamicRendering = vulkan13Features.dynamicRendering;
+
+   // Optional extensions
+   features->hostImageCopy = hostImageCopyFeatures.hostImageCopy;
+   features->extendedDynamicState3 = extDynState3Features.extendedDynamicState3PolygonMode &&
+                                     extDynState3Features.extendedDynamicState3ColorBlendEnable;
+   features->vertexInputDynamicState = vertexInputDynFeatures.vertexInputDynamicState;
+   features->shaderObject = shaderObjectFeatures.shaderObject;
 }
 
 // =============================================================================
@@ -400,8 +383,8 @@ static int scorePhysicalDevice(VkPhysicalDevice device)
    VkPhysicalDeviceProperties properties;
    vkGetPhysicalDeviceProperties(device, &properties);
 
-   // Require Vulkan 1.4+ - no fallbacks
-   if (properties.apiVersion < VK_API_VERSION_1_4)
+   // Require Vulkan 1.3+ - no fallbacks
+   if (properties.apiVersion < VK_API_VERSION_1_3)
    {
       return -1;
    }
@@ -455,17 +438,23 @@ static int scorePhysicalDevice(VkPhysicalDevice device)
       break;
    }
 
-   // Vulkan 1.4 bonus
-   if (properties.apiVersion >= VK_API_VERSION_1_4)
+   // Vulkan version bonus
+   if (properties.apiVersion >= VK_API_VERSION_1_3)
       score += 200;
 
    // Check for optional features that improve performance
    VEDeviceFeatures features;
-   queryDevice14Features(device, &features);
+   queryDeviceFeatures(device, &features);
+   if (!features.bufferDeviceAddress || !features.descriptorIndexing || !features.scalarBlockLayout ||
+       !features.dynamicRendering || !features.extendedDynamicState3 || !features.vertexInputDynamicState ||
+       !features.shaderObject || !features.updateAfterBind || !features.hostImageCopy)
+   {
+      return -1;
+   }
    if (features.hostImageCopy)
       score += 50;
-   if (features.dynamicRenderingLocalRead)
-      score += 50;
+   if (features.extendedDynamicState3 && features.vertexInputDynamicState)
+      score += 25;
 
    return score;
 }
@@ -576,7 +565,7 @@ VEContext *veCreateContext(const char *applicationName)
       return NULL;
    }
 
-   // Build extension list for Vulkan 1.4
+   // Build extension list for Vulkan 1.3
    const char *allExtensions[VE_MAX_EXTENSIONS];
    uint32_t allExtensionCount = 0;
 
@@ -597,7 +586,7 @@ VEContext *veCreateContext(const char *applicationName)
    if (!checkInstanceExtensionSupport(allExtensions, allExtensionCount))
    {
       veSetError("Missing required Vulkan instance extensions. Ensure your GPU drivers "
-                 "support Vulkan 1.4+ and platform surface extensions are available.");
+                 "support Vulkan 1.3+ and platform surface extensions are available.");
       free(context);
       return NULL;
    }
@@ -619,7 +608,7 @@ VEContext *veCreateContext(const char *applicationName)
    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
    appInfo.pEngineName = "VulkEase 2.0";
    appInfo.engineVersion = VULKEASE_API_VERSION_2_0;
-   appInfo.apiVersion = VK_API_VERSION_1_4; // Require Vulkan 1.4
+   appInfo.apiVersion = VK_API_VERSION_1_3; // Require Vulkan 1.3
 
    VkInstanceCreateInfo createInfo{};
    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -643,13 +632,13 @@ VEContext *veCreateContext(const char *applicationName)
       return NULL;
    }
 
-   // Validate that the instance actually supports Vulkan 1.4+ - no fallbacks
+   // Validate that the instance actually supports Vulkan 1.3+ - no fallbacks
    uint32_t apiVersion;
    if (vkEnumerateInstanceVersion(&apiVersion) == VK_SUCCESS)
    {
-      if (apiVersion < VK_API_VERSION_1_4)
+      if (apiVersion < VK_API_VERSION_1_3)
       {
-         veSetError("Vulkan 1.4 or later required, found version %d.%d.%d", VK_VERSION_MAJOR(apiVersion),
+         veSetError("Vulkan 1.3 or later required, found version %d.%d.%d", VK_VERSION_MAJOR(apiVersion),
                     VK_VERSION_MINOR(apiVersion), VK_VERSION_PATCH(apiVersion));
          vkDestroyInstance(context->instance, NULL);
          free(context);
@@ -657,12 +646,12 @@ VEContext *veCreateContext(const char *applicationName)
       }
    }
 
-   // Validate that we have at least one compatible GPU with Vulkan 1.4 features
+   // Validate that we have at least one compatible GPU with Vulkan 1.3 features
    if (!validateMinimumGPUCapabilities(context->instance))
    {
-      veSetError("No compatible GPU found with required Vulkan 1.4 features "
-                 "(buffer device address, descriptor indexing, dynamic rendering, push descriptors). "
-                 "Ensure your GPU drivers support Vulkan 1.4.");
+      veSetError("No compatible GPU found with required Vulkan 1.3 features "
+                 "(buffer device address, descriptor indexing, dynamic rendering). "
+                 "Ensure your GPU drivers support Vulkan 1.3.");
       vkDestroyInstance(context->instance, NULL);
       free(context);
       return NULL;
@@ -732,7 +721,7 @@ VEDevice *veCreateDevice(VEContext *context)
 
    device->context = contextInternal;
 
-   // Select best physical device for Vulkan 1.4
+   // Select best physical device for Vulkan 1.3
    uint32_t deviceCount = 0;
    vkEnumeratePhysicalDevices(contextInternal->instance, &deviceCount, NULL);
    if (deviceCount == 0)
@@ -749,7 +738,18 @@ VEDevice *veCreateDevice(VEContext *context)
 
    vkGetPhysicalDeviceProperties(device->physicalDevice, &device->deviceProperties);
    vkGetPhysicalDeviceMemoryProperties(device->physicalDevice, &device->memoryProperties);
-   queryDevice14Features(device->physicalDevice, &device->features);
+   queryDeviceFeatures(device->physicalDevice, &device->features);
+
+   if (!device->features.bufferDeviceAddress || !device->features.descriptorIndexing ||
+       !device->features.scalarBlockLayout || !device->features.dynamicRendering ||
+       !device->features.extendedDynamicState3 || !device->features.vertexInputDynamicState ||
+       !device->features.shaderObject || !device->features.updateAfterBind ||
+       !device->features.hostImageCopy)
+   {
+      veSetError("Selected GPU is missing required Vulkan 1.3 features");
+      free(device);
+      return NULL;
+   }
 
    if (!findQueueFamilies(device->physicalDevice, &device->queueFamilies))
    {
@@ -786,36 +786,38 @@ VEDevice *veCreateDevice(VEContext *context)
       queueCreateInfos[i].pQueuePriorities = &queuePriority;
    }
 
-   // Vulkan 1.4 core features (mandatory)
-   VkPhysicalDeviceVulkan14Features vulkan14Features{};
-   vulkan14Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES;
-   vulkan14Features.pushDescriptor = VK_TRUE; // Mandatory in 1.4
-   vulkan14Features.hostImageCopy = VK_TRUE;
-   vulkan14Features.dynamicRenderingLocalRead = device->features.dynamicRenderingLocalRead; // Optional
+   // Optional extension features
+   VkPhysicalDeviceHostImageCopyFeaturesEXT hostImageCopyFeatures{};
+   hostImageCopyFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_FEATURES;
+   hostImageCopyFeatures.hostImageCopy = VK_TRUE;
 
    // Vulkan 1.3 core features
    VkPhysicalDeviceVulkan13Features vulkan13Features{};
    vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-   vulkan13Features.pNext = &vulkan14Features;
+   vulkan13Features.pNext = &hostImageCopyFeatures;
    vulkan13Features.dynamicRendering = VK_TRUE; // Core since 1.3
    vulkan13Features.synchronization2 = VK_TRUE;
 
-   // Vulkan 1.2 core features (now mandatory in 1.4)
+   // Vulkan 1.2 core features
    VkPhysicalDeviceVulkan12Features vulkan12Features{};
    vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
    vulkan12Features.pNext = &vulkan13Features;
-   vulkan12Features.bufferDeviceAddress = VK_TRUE; // Core since 1.2
-   vulkan12Features.descriptorIndexing = VK_TRUE;  // Core since 1.2
-   vulkan12Features.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
-   vulkan12Features.descriptorBindingPartiallyBound = VK_TRUE;
-   vulkan12Features.descriptorBindingVariableDescriptorCount = VK_TRUE;
-   vulkan12Features.runtimeDescriptorArray = VK_TRUE;
-   vulkan12Features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
-   vulkan12Features.scalarBlockLayout = VK_TRUE; // Mandatory in 1.4
-   vulkan12Features.shaderInt8 = VK_TRUE;        // Mandatory in 1.4
-   vulkan12Features.shaderFloat16 = VK_TRUE;     // Mandatory in 1.4
+   vulkan12Features.bufferDeviceAddress = VK_TRUE;
+   vulkan12Features.descriptorIndexing = VK_TRUE;
+   if (device->features.updateAfterBind)
+   {
+      vulkan12Features.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+      vulkan12Features.descriptorBindingPartiallyBound = VK_TRUE;
+      vulkan12Features.descriptorBindingVariableDescriptorCount = VK_TRUE;
+      vulkan12Features.runtimeDescriptorArray = VK_TRUE;
+      vulkan12Features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+   }
+   if (device->features.scalarBlockLayout)
+   {
+      vulkan12Features.scalarBlockLayout = VK_TRUE;
+   }
 
-   // Extension features (still required in 1.4)
+   // Extension features (required by the engine)
    VkPhysicalDeviceExtendedDynamicState3FeaturesEXT extDynState3Features{};
    extDynState3Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT;
    extDynState3Features.pNext = &vulkan12Features;
@@ -850,7 +852,7 @@ VEDevice *veCreateDevice(VEContext *context)
    deviceCreateInfo.queueCreateInfoCount = uniqueCount;
    deviceCreateInfo.pQueueCreateInfos = queueCreateInfos;
 
-   // Use updated extension list - many are now core in 1.4
+   // Enable required device extensions
    deviceCreateInfo.enabledExtensionCount = sizeof(REQUIRED_DEVICE_EXTENSIONS) / sizeof(REQUIRED_DEVICE_EXTENSIONS[0]);
    deviceCreateInfo.ppEnabledExtensionNames = REQUIRED_DEVICE_EXTENSIONS;
 
@@ -863,7 +865,7 @@ VEDevice *veCreateDevice(VEContext *context)
    VkResult result = vkCreateDevice(device->physicalDevice, &deviceCreateInfo, NULL, &device->device);
    if (result != VK_SUCCESS)
    {
-      veSetError("Failed to create Vulkan 1.4 logical device (VkResult: %d)", result);
+      veSetError("Failed to create Vulkan 1.3 logical device (VkResult: %d)", result);
       free(device);
       return NULL;
    }
@@ -875,7 +877,7 @@ VEDevice *veCreateDevice(VEContext *context)
    vkGetDeviceQueue(device->device, device->queueFamilies.computeFamily, 0, &device->computeQueue);
    vkGetDeviceQueue(device->device, device->queueFamilies.transferFamily, 0, &device->transferQueue);
 
-   // Initialize VMA with Vulkan 1.4
+   // Initialize VMA with Vulkan 1.3 context
    VEResult vmaResult = device->initializeVma();
    if (vmaResult != VE_SUCCESS)
    {
@@ -987,7 +989,7 @@ VEDevice *veCreateDevice(VEContext *context)
    device->maxShaders = VE_MAX_SHADERS;
    device->shaderCount = 0;
 
-   // Create global pipeline layouts with Vulkan 1.4 enhanced push constants (256 bytes)
+   // Create global pipeline layouts with 256-byte push constant blocks
    VkDescriptorSetLayout setLayouts[2] = {
        device->textureDescriptorSetLayout, // set = 0 in shaders
        device->samplerDescriptorSetLayout  // set = 1 in shaders
@@ -997,7 +999,7 @@ VEDevice *veCreateDevice(VEContext *context)
    VkPushConstantRange gfxPushConstantRange{};
    gfxPushConstantRange.stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
    gfxPushConstantRange.offset = 0;
-   gfxPushConstantRange.size = VE_MAX_PUSH_CONSTANT_BYTES; // Now 256 bytes in Vulkan 1.4
+   gfxPushConstantRange.size = VE_MAX_PUSH_CONSTANT_BYTES;
 
    VkPipelineLayoutCreateInfo gfxLayoutInfo{};
    gfxLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -1018,7 +1020,7 @@ VEDevice *veCreateDevice(VEContext *context)
    VkPushConstantRange computePushConstantRange{};
    computePushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
    computePushConstantRange.offset = 0;
-   computePushConstantRange.size = VE_MAX_PUSH_CONSTANT_BYTES; // Now 256 bytes in Vulkan 1.4
+   computePushConstantRange.size = VE_MAX_PUSH_CONSTANT_BYTES;
 
    VkPipelineLayoutCreateInfo computeLayoutInfo{};
    computeLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -1207,10 +1209,6 @@ bool initializeDeviceFunctions(VkDevice device)
 
    // Vertex input dynamic state (still extension)
    GET_DEVICE_FUNC(vkCmdSetVertexInputEXT);
-
-   // Push Descriptors (now core in 1.4 - use core function names)
-   GET_DEVICE_FUNC(vkCmdPushDescriptorSetKHR);             // Core in 1.4
-   GET_DEVICE_FUNC(vkCmdPushDescriptorSetWithTemplateKHR); // Core in 1.4
 
    // Host Image Copy (optional extension)
    GET_DEVICE_FUNC(vkCopyMemoryToImageEXT);

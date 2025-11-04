@@ -648,7 +648,7 @@ int main() {
     
     printf("VulkEase Spinning Cube Demo\n");
     printf("===========================\n");
-    printf("Modern Vulkan 1.4 with shader objects and bindless resources\n\n");
+    printf("Modern Vulkan 1.3 with shader objects and bindless resources\n\n");
     
     // Initialize everything step by step
     if (!initWindow(&app)) {
