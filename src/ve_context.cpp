@@ -1216,15 +1216,6 @@ bool initializeDeviceFunctions(VkDevice device)
    GET_DEVICE_FUNC(vkCopyMemoryToImageEXT);
    GET_DEVICE_FUNC(vkCopyImageToMemoryEXT);
    GET_DEVICE_FUNC(vkCopyImageToImageEXT);
-
-   // Instance functions to initialize
-   GET_DEVICE_FUNC(vkCreateDebugUtilsMessengerEXT);
-   GET_DEVICE_FUNC(vkSubmitDebugUtilsMessageEXT);
-   GET_DEVICE_FUNC(vkDestroyDebugUtilsMessengerEXT);
-   GET_DEVICE_FUNC(vkSetDebugUtilsObjectNameEXT);
-   GET_DEVICE_FUNC(vkCmdBeginDebugUtilsLabelEXT);
-   GET_DEVICE_FUNC(vkCmdInsertDebugUtilsLabelEXT);
-   GET_DEVICE_FUNC(vkCmdEndDebugUtilsLabelEXT);
-
+   
    return true;
 }
