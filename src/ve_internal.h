@@ -478,9 +478,9 @@ struct VEFuncs
    // VK_EXT_vertex_input_dynamic_state (still required)
    PFN_vkCmdSetVertexInputEXT vkCmdSetVertexInputEXT;
 
-   // Push Descriptors (now core in 1.4 - use core function names)
-   PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR;
-   PFN_vkCmdPushDescriptorSetWithTemplateKHR vkCmdPushDescriptorSetWithTemplateKHR;
+   // Push Descriptors (Vulkan 1.4 core)
+   PFN_vkCmdPushDescriptorSet vkCmdPushDescriptorSet;
+   PFN_vkCmdPushDescriptorSetWithTemplate vkCmdPushDescriptorSetWithTemplate;
 
    // Host Image Copy (optional extension)
    PFN_vkCopyMemoryToImageEXT vkCopyMemoryToImageEXT;

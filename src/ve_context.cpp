@@ -1208,9 +1208,9 @@ bool initializeDeviceFunctions(VkDevice device)
    // Vertex input dynamic state (still extension)
    GET_DEVICE_FUNC(vkCmdSetVertexInputEXT);
 
-   // Push Descriptors (now core in 1.4 - use core function names)
-   GET_DEVICE_FUNC(vkCmdPushDescriptorSetKHR);             // Core in 1.4
-   GET_DEVICE_FUNC(vkCmdPushDescriptorSetWithTemplateKHR); // Core in 1.4
+   // Push Descriptors (Vulkan 1.4 core entry points)
+   GET_DEVICE_FUNC(vkCmdPushDescriptorSet);
+   GET_DEVICE_FUNC(vkCmdPushDescriptorSetWithTemplate);
 
    // Host Image Copy (optional extension)
    GET_DEVICE_FUNC(vkCopyMemoryToImageEXT);
