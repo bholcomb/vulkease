@@ -839,8 +839,8 @@ extern "C"
                                          VEBufferAddress countBuffer, uint64_t countOffset, uint32_t maxDrawCount,
                                          uint32_t stride);
    VULKEASE_API void veDrawIndexedIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer,
-                                                uint64_t indirectOffset, VEBufferAddress countBuffer, uint64_t countOffset,
-                                                uint32_t maxDrawCount, uint32_t stride);
+                                                uint64_t indirectOffset, VEBufferAddress countBuffer,
+                                                uint64_t countOffset, uint32_t maxDrawCount, uint32_t stride);
 
    // =============================================================================
    // Compute Shaders

@@ -648,15 +648,11 @@ void vePrintDebugInfo(VEDevice *device)
 
    // Feature support
    printf("\nFeature Support:\n");
-   printf("  Buffer Device Address: %s\n",
-          deviceInternal->supportsBufferDeviceAddress() ? "Yes" : "No");
-   printf("  Descriptor Indexing: %s\n",
-          deviceInternal->supportsDescriptorIndexing() ? "Yes" : "No");
+   printf("  Buffer Device Address: %s\n", deviceInternal->supportsBufferDeviceAddress() ? "Yes" : "No");
+   printf("  Descriptor Indexing: %s\n", deviceInternal->supportsDescriptorIndexing() ? "Yes" : "No");
    printf("  Shader Objects: %s\n", deviceInternal->supportsShaderObjects() ? "Yes" : "No");
-   printf("  Extended Dynamic State 3: %s\n",
-          deviceInternal->supportsExtendedDynamicState3() ? "Yes" : "No");
-   printf("  Vertex Input Dynamic State: %s\n",
-          deviceInternal->supportsVertexInputDynamicState() ? "Yes" : "No");
+   printf("  Extended Dynamic State 3: %s\n", deviceInternal->supportsExtendedDynamicState3() ? "Yes" : "No");
+   printf("  Vertex Input Dynamic State: %s\n", deviceInternal->supportsVertexInputDynamicState() ? "Yes" : "No");
 
    printf("================================\n");
 }
@@ -685,9 +681,9 @@ void vePrintProfileInfo(VEDevice *device)
    {
       printf("\nMemory Usage:\n");
       printf("  Total Allocated: %llu bytes (%.2f MB)\n", (unsigned long long)memStats.totalAllocated,
-            (double)memStats.totalAllocated / (1024.0 * 1024.0));
+             (double)memStats.totalAllocated / (1024.0 * 1024.0));
       printf("  Total Used: %llu bytes (%.2f MB)\n", (unsigned long long)memStats.totalUsed,
-            (double)memStats.totalUsed / (1024.0 * 1024.0));
+             (double)memStats.totalUsed / (1024.0 * 1024.0));
    }
 
    // Performance stats
@@ -696,14 +692,14 @@ void vePrintProfileInfo(VEDevice *device)
    {
       printf("\nPerformance Stats:\n");
       printf("  Frame Time: %llu ns (%.2f ms)\n", (unsigned long long)perfStats.frameTime,
-            (double)perfStats.frameTime / 1000000.0);
+             (double)perfStats.frameTime / 1000000.0);
       printf("  Draw Calls: %u\n", perfStats.drawCalls);
       printf("  Compute Dispatches: %u\n", perfStats.computeDispatches);
       printf("  Vertices Rendered: %llu\n", (unsigned long long)perfStats.verticesRendered);
       printf("  Triangles Rendered: %llu\n", (unsigned long long)perfStats.trianglesRendered);
-   }   
+   }
 
-   printf("================================\n");   
+   printf("================================\n");
 }
 
 void vePrintRenderConfig(VERenderConfig *config)

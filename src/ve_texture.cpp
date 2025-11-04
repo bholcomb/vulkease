@@ -7,10 +7,439 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cctype>
+#include <cstring>
+#include <limits>
+#include <string>
+#include <vector>
+
+#include "../external/stb_image_write.h"
 
 // =============================================================================
 // Bindless Descriptor Management
 // =============================================================================
+
+static bool isDepthFormat(VkFormat format)
+{
+   switch (format)
+   {
+   case VK_FORMAT_D16_UNORM:
+   case VK_FORMAT_X8_D24_UNORM_PACK32:
+   case VK_FORMAT_D32_SFLOAT:
+   case VK_FORMAT_D24_UNORM_S8_UINT:
+   case VK_FORMAT_D32_SFLOAT_S8_UINT:
+      return true;
+   default:
+      return false;
+   }
+}
+
+static uint32_t bytesPerTexel(VkFormat format)
+{
+   switch (format)
+   {
+   case VK_FORMAT_R8_UNORM:
+      return 1;
+   case VK_FORMAT_R8G8_UNORM:
+   case VK_FORMAT_D16_UNORM:
+      return 2;
+   case VK_FORMAT_R8G8B8_UNORM:
+   case VK_FORMAT_B8G8R8_UNORM:
+      return 3;
+   case VK_FORMAT_R8G8B8A8_UNORM:
+   case VK_FORMAT_R8G8B8A8_SRGB:
+   case VK_FORMAT_R8G8B8A8_SNORM:
+   case VK_FORMAT_R8G8B8A8_UINT:
+   case VK_FORMAT_R8G8B8A8_SINT:
+   case VK_FORMAT_R8G8B8A8_USCALED:
+   case VK_FORMAT_R8G8B8A8_SSCALED:
+   case VK_FORMAT_B8G8R8A8_UNORM:
+   case VK_FORMAT_B8G8R8A8_SRGB:
+   case VK_FORMAT_D32_SFLOAT:
+   case VK_FORMAT_X8_D24_UNORM_PACK32:
+   case VK_FORMAT_D24_UNORM_S8_UINT:
+      return 4;
+   case VK_FORMAT_R16G16B16A16_SFLOAT:
+      return 8;
+   case VK_FORMAT_D32_SFLOAT_S8_UINT:
+      return 8;
+   case VK_FORMAT_R32G32B32_SFLOAT:
+      return 12;
+   case VK_FORMAT_R32G32B32A32_SFLOAT:
+      return 16;
+   default:
+      return 0;
+   }
+}
+
+static uint8_t floatToByte(float value)
+{
+   float clamped = std::clamp(value, 0.0f, 1.0f);
+   return static_cast<uint8_t>(std::round(clamped * 255.0f));
+}
+
+static bool convertColorToRGBA8(VkFormat format, const void *srcData, uint32_t width, uint32_t height,
+                                std::vector<uint8_t> &out)
+{
+   const uint8_t *src = static_cast<const uint8_t *>(srcData);
+   const size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
+   out.resize(pixelCount * 4); // RGBA8 target
+
+   if (format == VK_FORMAT_R8G8B8A8_UNORM || format == VK_FORMAT_R8G8B8A8_SRGB ||
+       format == VK_FORMAT_R8G8B8A8_SNORM || format == VK_FORMAT_R8G8B8A8_UINT ||
+       format == VK_FORMAT_R8G8B8A8_SINT || format == VK_FORMAT_R8G8B8A8_USCALED ||
+       format == VK_FORMAT_R8G8B8A8_SSCALED)
+   {
+      std::memcpy(out.data(), src, pixelCount * 4);
+      return true;
+   }
+
+   if (format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B8G8R8A8_SRGB)
+   {
+      for (size_t i = 0; i < pixelCount; ++i)
+      {
+         out[i * 4 + 0] = src[i * 4 + 2];
+         out[i * 4 + 1] = src[i * 4 + 1];
+         out[i * 4 + 2] = src[i * 4 + 0];
+         out[i * 4 + 3] = src[i * 4 + 3];
+      }
+      return true;
+   }
+
+   if (format == VK_FORMAT_R8G8B8_UNORM || format == VK_FORMAT_B8G8R8_UNORM)
+   {
+      const bool bgra = (format == VK_FORMAT_B8G8R8_UNORM);
+      for (size_t i = 0; i < pixelCount; ++i)
+      {
+         uint8_t r = src[i * 3 + (bgra ? 2 : 0)];
+         uint8_t g = src[i * 3 + 1];
+         uint8_t b = src[i * 3 + (bgra ? 0 : 2)];
+         out[i * 4 + 0] = r;
+         out[i * 4 + 1] = g;
+         out[i * 4 + 2] = b;
+         out[i * 4 + 3] = 255;
+      }
+      return true;
+   }
+
+   if (format == VK_FORMAT_R8_UNORM)
+   {
+      for (size_t i = 0; i < pixelCount; ++i)
+      {
+         uint8_t value = src[i];
+         out[i * 4 + 0] = value;
+         out[i * 4 + 1] = value;
+         out[i * 4 + 2] = value;
+         out[i * 4 + 3] = 255;
+      }
+      return true;
+   }
+
+   if (format == VK_FORMAT_R32G32B32A32_SFLOAT)
+   {
+      const float *f = static_cast<const float *>(srcData);
+      for (size_t i = 0; i < pixelCount; ++i)
+      {
+         out[i * 4 + 0] = floatToByte(f[i * 4 + 0]);
+         out[i * 4 + 1] = floatToByte(f[i * 4 + 1]);
+         out[i * 4 + 2] = floatToByte(f[i * 4 + 2]);
+         out[i * 4 + 3] = floatToByte(f[i * 4 + 3]);
+      }
+      return true;
+   }
+
+   if (format == VK_FORMAT_R32G32B32_SFLOAT)
+   {
+      const float *f = static_cast<const float *>(srcData);
+      for (size_t i = 0; i < pixelCount; ++i)
+      {
+         out[i * 4 + 0] = floatToByte(f[i * 3 + 0]);
+         out[i * 4 + 1] = floatToByte(f[i * 3 + 1]);
+         out[i * 4 + 2] = floatToByte(f[i * 3 + 2]);
+         out[i * 4 + 3] = 255;
+      }
+      return true;
+   }
+
+   if (format == VK_FORMAT_R16G16B16A16_SFLOAT)
+   {
+      const uint16_t *half = static_cast<const uint16_t *>(srcData);
+      auto halfToFloat = [](uint16_t h) {
+         uint16_t hExp = (h & 0x7C00u) >> 10;
+         uint16_t hMant = h & 0x03FFu;
+         uint16_t hSign = (h & 0x8000u) >> 15;
+         float value;
+         if (hExp == 0)
+         {
+            value = hMant ? std::ldexp(static_cast<float>(hMant), -24) : 0.0f;
+         }
+         else if (hExp == 0x1F)
+         {
+            value = hMant ? std::numeric_limits<float>::quiet_NaN() : std::numeric_limits<float>::infinity();
+         }
+         else
+         {
+            value = std::ldexp(static_cast<float>(hMant) / 1024.0f + 1.0f, static_cast<int>(hExp) - 15);
+         }
+         return hSign ? -value : value;
+      };
+
+      for (size_t i = 0; i < pixelCount; ++i)
+      {
+         out[i * 4 + 0] = floatToByte(halfToFloat(half[i * 4 + 0]));
+         out[i * 4 + 1] = floatToByte(halfToFloat(half[i * 4 + 1]));
+         out[i * 4 + 2] = floatToByte(halfToFloat(half[i * 4 + 2]));
+         out[i * 4 + 3] = floatToByte(halfToFloat(half[i * 4 + 3]));
+      }
+      return true;
+   }
+
+   return false;
+}
+
+static bool convertDepthToRGBA8(VkFormat format, const void *srcData, uint32_t width, uint32_t height,
+                                std::vector<uint8_t> &out)
+{
+   const size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
+   out.resize(pixelCount * 4);
+   const uint8_t *srcBytes = static_cast<const uint8_t *>(srcData);
+
+   auto writePixel = [&out](size_t index, float depth) {
+      uint8_t value = floatToByte(depth);
+      out[index * 4 + 0] = value;
+      out[index * 4 + 1] = value;
+      out[index * 4 + 2] = value;
+      out[index * 4 + 3] = 255;
+   };
+
+   switch (format)
+   {
+   case VK_FORMAT_D16_UNORM:
+   {
+      const uint16_t *src = reinterpret_cast<const uint16_t *>(srcData);
+      for (size_t i = 0; i < pixelCount; ++i)
+      {
+         float depth = static_cast<float>(src[i]) / 65535.0f;
+         writePixel(i, depth);
+      }
+      return true;
+   }
+   case VK_FORMAT_D32_SFLOAT:
+   {
+      const float *src = reinterpret_cast<const float *>(srcData);
+      for (size_t i = 0; i < pixelCount; ++i)
+      {
+         writePixel(i, src[i]);
+      }
+      return true;
+   }
+   case VK_FORMAT_X8_D24_UNORM_PACK32:
+   case VK_FORMAT_D24_UNORM_S8_UINT:
+   {
+      for (size_t i = 0; i < pixelCount; ++i)
+      {
+         uint32_t packed;
+         std::memcpy(&packed, srcBytes + i * 4, sizeof(uint32_t));
+         float depth = static_cast<float>(packed & 0x00FFFFFFu) / 16777215.0f;
+         writePixel(i, depth);
+      }
+      return true;
+   }
+   case VK_FORMAT_D32_SFLOAT_S8_UINT:
+   {
+      for (size_t i = 0; i < pixelCount; ++i)
+      {
+         float depth;
+         std::memcpy(&depth, srcBytes + i * 8, sizeof(float));
+         writePixel(i, depth);
+      }
+      return true;
+   }
+   default:
+      return false;
+   }
+}
+
+static bool convertImageToRGBA8(VkFormat format, const void *srcData, uint32_t width, uint32_t height,
+                                std::vector<uint8_t> &out)
+{
+   if (isDepthFormat(format))
+   {
+      return convertDepthToRGBA8(format, srcData, width, height, out);
+   }
+   return convertColorToRGBA8(format, srcData, width, height, out);
+}
+
+static VkImageAspectFlags getCopyAspectMask(VkFormat format)
+{
+   if (isDepthFormat(format))
+   {
+      return VK_IMAGE_ASPECT_DEPTH_BIT;
+   }
+   return VK_IMAGE_ASPECT_COLOR_BIT;
+}
+
+static VEResult readTextureLevel0(VEDeviceInternal *deviceInternal, VETextureInternal *texture,
+                                  std::vector<uint8_t> &outData)
+{
+   if (!deviceInternal || !texture)
+   {
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   if (!(texture->usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT))
+   {
+      veSetError("Texture must be created with transfer src usage to be saved");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   uint32_t bytesPerPixel = bytesPerTexel(texture->format);
+   if (bytesPerPixel == 0)
+   {
+      veSetError("Unsupported texture format (%d) for read-back", texture->format);
+      return VE_ERROR_FEATURE_NOT_SUPPORTED;
+   }
+
+   VkDeviceSize imageSize = static_cast<VkDeviceSize>(texture->width) * static_cast<VkDeviceSize>(texture->height) *
+                            static_cast<VkDeviceSize>(bytesPerPixel);
+
+   VkBufferCreateInfo bufferInfo{};
+   bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+   bufferInfo.size = imageSize;
+   bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+   bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+   VmaAllocationCreateInfo allocInfo{};
+   allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+   allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+   VkBuffer stagingBuffer = VK_NULL_HANDLE;
+   VmaAllocation stagingAllocation = VK_NULL_HANDLE;
+   VmaAllocationInfo stagingAllocInfo{};
+   VkResult vkResult = vmaCreateBuffer(deviceInternal->allocator, &bufferInfo, &allocInfo, &stagingBuffer,
+                                       &stagingAllocation, &stagingAllocInfo);
+   if (vkResult != VK_SUCCESS)
+   {
+      veSetError("Failed to create staging buffer for texture read-back (VkResult: %d)", vkResult);
+      return VE_ERROR_OUT_OF_MEMORY;
+   }
+
+   VECommandBuffer *cmdHandle = veBeginCommandBuffer((VEDevice *)deviceInternal);
+   if (!cmdHandle)
+   {
+      vmaDestroyBuffer(deviceInternal->allocator, stagingBuffer, stagingAllocation);
+      return VE_ERROR_OUT_OF_MEMORY;
+   }
+
+   VECommandBufferInternal *cmdInternal = (VECommandBufferInternal *)cmdHandle;
+   VkCommandBuffer vkCmd = cmdInternal->commandBuffer;
+
+   VkImageAspectFlags aspectMask = getCopyAspectMask(texture->format);
+   VkImageLayout originalLayout = texture->currentLayout;
+   bool needsTransition = originalLayout != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+
+   if (needsTransition)
+   {
+      VkImageMemoryBarrier barrier{};
+      barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+      barrier.srcAccessMask = 0;
+      barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+      barrier.oldLayout = originalLayout;
+      barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+      barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      barrier.image = texture->image;
+      barrier.subresourceRange.aspectMask = aspectMask;
+      barrier.subresourceRange.baseMipLevel = 0;
+      barrier.subresourceRange.levelCount = 1;
+      barrier.subresourceRange.baseArrayLayer = 0;
+      barrier.subresourceRange.layerCount = 1;
+
+      vkCmdPipelineBarrier(vkCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0,
+                           NULL, 1, &barrier);
+   }
+
+   VkBufferImageCopy copyRegion{};
+   copyRegion.bufferOffset = 0;
+   copyRegion.bufferRowLength = 0;
+   copyRegion.bufferImageHeight = 0;
+   copyRegion.imageSubresource.aspectMask = aspectMask;
+   copyRegion.imageSubresource.mipLevel = 0;
+   copyRegion.imageSubresource.baseArrayLayer = 0;
+   copyRegion.imageSubresource.layerCount = 1;
+   copyRegion.imageOffset = {0, 0, 0};
+   copyRegion.imageExtent = {texture->width, texture->height, 1};
+
+   vkCmdCopyImageToBuffer(vkCmd, texture->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer, 1, &copyRegion);
+
+   if (needsTransition)
+   {
+      VkImageMemoryBarrier barrier{};
+      barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+      barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+      barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+      barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+      barrier.newLayout = originalLayout;
+      barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      barrier.image = texture->image;
+      barrier.subresourceRange.aspectMask = aspectMask;
+      barrier.subresourceRange.baseMipLevel = 0;
+      barrier.subresourceRange.levelCount = 1;
+      barrier.subresourceRange.baseArrayLayer = 0;
+      barrier.subresourceRange.layerCount = 1;
+
+      vkCmdPipelineBarrier(vkCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, NULL, 0,
+                           NULL, 1, &barrier);
+   }
+
+   VEResult submitResult = veSubmitCommandBuffer(cmdHandle, true);
+   if (submitResult != VE_SUCCESS)
+   {
+      vmaDestroyBuffer(deviceInternal->allocator, stagingBuffer, stagingAllocation);
+      texture->currentLayout = originalLayout;
+      return submitResult;
+   }
+
+   void *mappedData = stagingAllocInfo.pMappedData;
+   bool needsUnmap = false;
+   if (!mappedData)
+   {
+      if (vmaMapMemory(deviceInternal->allocator, stagingAllocation, &mappedData) != VK_SUCCESS)
+      {
+         vmaDestroyBuffer(deviceInternal->allocator, stagingBuffer, stagingAllocation);
+         veSetError("Failed to map staging buffer for texture save");
+         texture->currentLayout = originalLayout;
+         return VE_ERROR_OUT_OF_MEMORY;
+      }
+      needsUnmap = true;
+   }
+
+   outData.resize(static_cast<size_t>(imageSize));
+   std::memcpy(outData.data(), mappedData, static_cast<size_t>(imageSize));
+
+   if (needsUnmap)
+   {
+      vmaUnmapMemory(deviceInternal->allocator, stagingAllocation);
+   }
+
+   vmaDestroyBuffer(deviceInternal->allocator, stagingBuffer, stagingAllocation);
+   texture->currentLayout = originalLayout;
+
+   return VE_SUCCESS;
+}
+
+static std::string makePngFilename(const char *filename)
+{
+   std::string path = filename ? filename : "texture";
+   auto dot = path.find_last_of('.');
+   if (dot != std::string::npos)
+   {
+      path.resize(dot);
+   }
+   path += ".png";
+   return path;
+}
 
 VEResult VEDeviceInternal::initializeBindlessDescriptors()
 {
@@ -935,13 +1364,104 @@ VETextureIndex veLoadHDRTexture(VEDevice *device, const char *filename, VkImageU
 
 VETextureIndex veLoadCubeTexture(VEDevice *device, const char *filenames[6], VkImageUsageFlags usage, bool generateMips)
 {
-   (void)device;
-   (void)filenames;
-   (void)usage;
-   (void)generateMips;
+   if (!device || !filenames)
+   {
+      veSetError("Invalid parameters for cube texture loading");
+      return VE_INVALID_TEXTURE_INDEX;
+   }
 
-   veSetError("Cube texture loading not implemented");
-   return VE_INVALID_TEXTURE_INDEX;
+   int width = 0;
+   int height = 0;
+   std::vector<uint8_t> combinedData;
+   const int desiredChannels = STBI_rgb_alpha;
+
+   size_t faceSize = 0;
+   for (int face = 0; face < 6; ++face)
+   {
+      const char *path = filenames[face];
+      if (!path)
+      {
+         veSetError("Cube texture face %d filename is NULL", face);
+         return VE_INVALID_TEXTURE_INDEX;
+      }
+
+      int faceWidth = 0;
+      int faceHeight = 0;
+      int faceChannels = 0;
+
+      stbi_uc *pixels = stbi_load(path, &faceWidth, &faceHeight, &faceChannels, desiredChannels);
+      if (!pixels)
+      {
+         veSetError("Failed to load cube texture face %d: %s", face, stbi_failure_reason());
+         return VE_INVALID_TEXTURE_INDEX;
+      }
+
+      if (face == 0)
+      {
+         width = faceWidth;
+         height = faceHeight;
+         faceSize = static_cast<size_t>(width) * static_cast<size_t>(height) * desiredChannels;
+         combinedData.resize(faceSize * 6);
+      }
+      else
+      {
+         if (faceWidth != width || faceHeight != height)
+         {
+            veSetError("Cube texture faces must share identical dimensions");
+            stbi_image_free(pixels);
+            return VE_INVALID_TEXTURE_INDEX;
+         }
+      }
+
+      std::memcpy(combinedData.data() + faceSize * face, pixels, faceSize);
+      stbi_image_free(pixels);
+   }
+
+   if (width == 0 || height == 0)
+   {
+      veSetError("Cube texture faces have zero size");
+      return VE_INVALID_TEXTURE_INDEX;
+   }
+
+   VkImageUsageFlags finalUsage = usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+   uint32_t mipLevels = 1;
+   if (generateMips)
+   {
+      uint32_t longestSide = static_cast<uint32_t>(std::max(width, height));
+      mipLevels = static_cast<uint32_t>(std::floor(std::log2(static_cast<double>(longestSide)))) + 1;
+      finalUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+   }
+
+   VETextureDesc desc{};
+   desc.width = static_cast<uint32_t>(width);
+   desc.height = static_cast<uint32_t>(height);
+   desc.depth = 1;
+   desc.mipLevels = mipLevels;
+   desc.arrayLayers = 6;
+   desc.format = VK_FORMAT_R8G8B8A8_SRGB;
+   desc.usage = finalUsage;
+   desc.sampleCount = VK_SAMPLE_COUNT_1_BIT;
+   desc.initialData = combinedData.data();
+   desc.initialDataSize = combinedData.size();
+   desc.debugName = filenames[0];
+
+   VETextureIndex result = veCreateTexture(device, &desc);
+   if (result == VE_INVALID_TEXTURE_INDEX)
+   {
+      return VE_INVALID_TEXTURE_INDEX;
+   }
+
+   if (generateMips && mipLevels > 1)
+   {
+      VEResult mipResult = veGenerateMipmapsImmediate(device, result);
+      if (mipResult != VE_SUCCESS)
+      {
+         veDestroyTexture(device, result);
+         return VE_INVALID_TEXTURE_INDEX;
+      }
+   }
+
+   return result;
 }
 
 VEResult veGenerateMipmaps(VEDevice *device, VECommandBuffer *cmd, VETextureIndex texture)
@@ -1177,11 +1697,60 @@ VEResult veGenerateMipmapsImmediate(VEDevice *device, VETextureIndex texture)
 
 VEResult veSaveTexture(VEDevice *device, VETextureIndex texture, const char *filename)
 {
-   (void)device;
-   (void)texture;
-   (void)filename;
-   veSetError("Texture saving not implemented");
-   return VE_ERROR_FEATURE_NOT_SUPPORTED;
+   if (!device || texture == VE_INVALID_TEXTURE_INDEX)
+   {
+      veSetError("Invalid parameters for texture saving");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+   VETextureInternal *textureInternal = deviceInternal->getTexture(texture);
+
+   if (!textureInternal || !textureInternal->isValid)
+   {
+      veSetError("Invalid texture index");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   std::vector<uint8_t> rawData;
+   VEResult readResult = readTextureLevel0(deviceInternal, textureInternal, rawData);
+   if (readResult != VE_SUCCESS)
+   {
+      return readResult;
+   }
+
+   std::vector<uint8_t> rgba8;
+   if (!convertImageToRGBA8(textureInternal->format, rawData.data(), textureInternal->width, textureInternal->height,
+                            rgba8))
+   {
+      veSetError("Unsupported texture format for PNG export");
+      return VE_ERROR_FEATURE_NOT_SUPPORTED;
+   }
+
+   const uint32_t rowStride = textureInternal->width * 4u;
+   const uint32_t halfHeight = textureInternal->height / 2u;
+   for (uint32_t y = 0; y < halfHeight; ++y)
+   {
+      uint8_t *rowTop = rgba8.data() + static_cast<size_t>(y) * rowStride;
+      uint8_t *rowBottom = rgba8.data() + static_cast<size_t>(textureInternal->height - 1u - y) * rowStride;
+      for (uint32_t x = 0; x < rowStride; ++x)
+      {
+         std::swap(rowTop[x], rowBottom[x]);
+      }
+   }
+
+   std::string outputPath = makePngFilename(filename);
+   int writeResult = stbi_write_png(outputPath.c_str(), static_cast<int>(textureInternal->width),
+                                    static_cast<int>(textureInternal->height), 4, rgba8.data(),
+                                    static_cast<int>(textureInternal->width) * 4);
+
+   if (writeResult == 0)
+   {
+      veSetError("Failed to write PNG file: %s", outputPath.c_str());
+      return VE_ERROR_UNKNOWN;
+   }
+
+   return VE_SUCCESS;
 }
 
 // =============================================================================
@@ -1202,7 +1771,7 @@ VEResult VEDeviceInternal::updateTextureDescriptor(VETextureIndex index)
 
    VkWriteDescriptorSet descriptorWrite{};
    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = textureDescriptorSet;
+   descriptorWrite.dstSet = textureDescriptorSet;
    descriptorWrite.dstBinding = 0;
    descriptorWrite.dstArrayElement = index;
    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
