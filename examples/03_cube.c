@@ -568,8 +568,9 @@ static void mainLoop(CubeApp* app) {
         renderFrame(app);
 
         frameCount++;
+        if(frameCount == 1) vePrintDebugInfo(app->device);
         if(frameCount % 1000 == 0) printf("Average Framerate: %4.2fms\n", (frameTime / (double)frameCount) * 1000.0);
-        if(frameCount % 10000 == 0) vePrintDebugInfo(app->device);
+        if(frameCount % 10000 == 0) vePrintProfileInfo(app->device);
 
         if(glfwGetKey(app->window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         {
@@ -646,7 +647,7 @@ int main() {
     
     printf("VulkEase Spinning Cube Demo\n");
     printf("===========================\n");
-    printf("Modern Vulkan 1.3 with shader objects and bindless resources\n\n");
+    printf("Modern Vulkan 1.4 with shader objects and bindless resources\n\n");
     
     // Initialize everything step by step
     if (!initWindow(&app)) {

@@ -482,6 +482,9 @@ namespace VulkEase
         internal static extern void vePrintDebugInfo(IntPtr device);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void vePrintProfileInfo(IntPtr device);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void vePrintRenderConfig(IntPtr config);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]

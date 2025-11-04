@@ -1096,6 +1096,11 @@ namespace VulkEase
             VulkEaseDll.vePrintDebugInfo(device.native);
         }
 
+        public static void PrintProfileInfo(VEDevice device)
+        {
+            VulkEaseDll.vePrintProfileInfo(device.native);
+        }
+
         public static void PrintRenderConfig(VERenderConfig config)
         {
             VulkEaseDll.vePrintRenderConfig(config.native);

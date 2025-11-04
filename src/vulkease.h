@@ -950,6 +950,7 @@ extern "C"
     * Debug information
     */
    VULKEASE_API void vePrintDebugInfo(VEDevice *device);
+   VULKEASE_API void vePrintProfileInfo(VEDevice *device);
    VULKEASE_API void vePrintRenderConfig(VERenderConfig *config);
    VULKEASE_API VEResult veValidateRenderConfig(VERenderConfig *config);
 

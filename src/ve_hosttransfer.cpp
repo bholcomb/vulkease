@@ -179,7 +179,7 @@ VULKEASE_API VEResult veHostCopyToTexture(VEDevice *device, VETextureIndex textu
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
-   VETextureInternal *texture = veGetTexture(deviceInternal, textureIndex);
+   VETextureInternal *texture = deviceInternal->getTexture(textureIndex);
 
    // Validate support and parameters
    VEResult result = validateHostImageCopySupport(deviceInternal, texture);
@@ -267,7 +267,7 @@ VULKEASE_API VEResult veHostCopyFromTexture(VEDevice *device, VETextureIndex tex
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
-   VETextureInternal *texture = veGetTexture(deviceInternal, textureIndex);
+   VETextureInternal *texture = deviceInternal->getTexture(textureIndex);
 
    // Validate support and parameters
    VEResult result = validateHostImageCopySupport(deviceInternal, texture);
@@ -341,7 +341,7 @@ VEResult veHostCopyEntireTexture(VEDevice *device, VETextureIndex textureIndex, 
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
-   VETextureInternal *texture = veGetTexture(deviceInternal, textureIndex);
+   VETextureInternal *texture = deviceInternal->getTexture(textureIndex);
 
    if (!texture || !texture->isValid)
    {
@@ -365,7 +365,7 @@ VEResult veHostUpdateEntireTexture(VEDevice *device, VETextureIndex textureIndex
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
-   VETextureInternal *texture = veGetTexture(deviceInternal, textureIndex);
+   VETextureInternal *texture = deviceInternal->getTexture(textureIndex);
 
    if (!texture || !texture->isValid)
    {

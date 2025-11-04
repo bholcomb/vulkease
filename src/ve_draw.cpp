@@ -233,6 +233,37 @@ void vePushConstants(VECommandBuffer *cmd, const void *data, uint64_t size, uint
 // Drawing Commands
 // =============================================================================
 
+static uint64_t calculateTriangleContribution(VkPrimitiveTopology topology, uint32_t elementCount,
+                                              uint32_t instanceCount, uint32_t patchControlPoints)
+{
+   uint64_t baseTriangles = 0;
+
+   switch (topology)
+   {
+   case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST:
+      baseTriangles = (elementCount / 3u);
+      break;
+   case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP:
+   case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN:
+      baseTriangles = (elementCount > 2u) ? (elementCount - 2u) : 0u;
+      break;
+   case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST_WITH_ADJACENCY:
+   case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP_WITH_ADJACENCY:
+      // Adjacency primitives include extra vertices; treat contribution as unknown for now.
+      break;
+   case VK_PRIMITIVE_TOPOLOGY_PATCH_LIST:
+      if (patchControlPoints >= 3u)
+      {
+         baseTriangles = elementCount / patchControlPoints;
+      }
+      break;
+   default:
+      break;
+   }
+
+   return baseTriangles * instanceCount;
+}
+
 void veDraw(VECommandBuffer *cmd, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
             uint32_t firstInstance)
 {
@@ -240,6 +271,13 @@ void veDraw(VECommandBuffer *cmd, uint32_t vertexCount, uint32_t instanceCount, 
       return;
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   if (internal->device)
+   {
+      internal->device->frameStats.drawCalls += 1;
+      internal->device->frameStats.verticesRendered += static_cast<uint64_t>(vertexCount) * instanceCount;
+      internal->device->frameStats.trianglesRendered += calculateTriangleContribution(
+          internal->currentTopology, vertexCount, instanceCount, internal->currentPatchControlPoints);
+   }
    vkCmdDraw(internal->commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
 }
 
@@ -249,7 +287,7 @@ void veBindIndexBuffer(VECommandBuffer *cmd, VEBufferAddress indexBuffer, uint64
       return;
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
-   VkBuffer buffer = veGetVkBufferFromAddress(internal->device, indexBuffer);
+   VkBuffer buffer = internal->device->getVkBufferFromAddress(indexBuffer);
 
    if (buffer == VK_NULL_HANDLE)
    {
@@ -267,6 +305,13 @@ void veDrawIndexed(VECommandBuffer *cmd, uint32_t indexCount, uint32_t instanceC
       return;
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   if (internal->device)
+   {
+      internal->device->frameStats.drawCalls += 1;
+      internal->device->frameStats.verticesRendered += static_cast<uint64_t>(indexCount) * instanceCount;
+      internal->device->frameStats.trianglesRendered += calculateTriangleContribution(
+          internal->currentTopology, indexCount, instanceCount, internal->currentPatchControlPoints);
+   }
    vkCmdDrawIndexed(internal->commandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
@@ -277,7 +322,7 @@ void veDrawIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64
       return;
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
-   VkBuffer buffer = veGetVkBufferFromAddress(internal->device, indirectBuffer);
+   VkBuffer buffer = internal->device->getVkBufferFromAddress(indirectBuffer);
 
    if (buffer == VK_NULL_HANDLE)
    {
@@ -286,6 +331,10 @@ void veDrawIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64
    }
 
    vkCmdDrawIndirect(internal->commandBuffer, buffer, offset, drawCount, stride);
+   if (internal->device)
+   {
+      internal->device->frameStats.drawCalls += drawCount;
+   }
 }
 
 void veDrawIndexedIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t offset, uint32_t drawCount,
@@ -295,7 +344,7 @@ void veDrawIndexedIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer,
       return;
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
-   VkBuffer buffer = veGetVkBufferFromAddress(internal->device, indirectBuffer);
+   VkBuffer buffer = internal->device->getVkBufferFromAddress(indirectBuffer);
 
    if (buffer == VK_NULL_HANDLE)
    {
@@ -304,6 +353,10 @@ void veDrawIndexedIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer,
    }
 
    vkCmdDrawIndexedIndirect(internal->commandBuffer, buffer, offset, drawCount, stride);
+   if (internal->device)
+   {
+      internal->device->frameStats.drawCalls += drawCount;
+   }
 }
 
 void veDrawIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t indirectOffset,
@@ -313,8 +366,8 @@ void veDrawIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, u
       return;
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
-   VkBuffer indirectBuf = veGetVkBufferFromAddress(internal->device, indirectBuffer);
-   VkBuffer countBuf = veGetVkBufferFromAddress(internal->device, countBuffer);
+   VkBuffer indirectBuf = internal->device->getVkBufferFromAddress(indirectBuffer);
+   VkBuffer countBuf = internal->device->getVkBufferFromAddress(countBuffer);
 
    if (indirectBuf == VK_NULL_HANDLE || countBuf == VK_NULL_HANDLE)
    {
@@ -324,6 +377,10 @@ void veDrawIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, u
 
    vkCmdDrawIndirectCount(internal->commandBuffer, indirectBuf, indirectOffset, countBuf, countOffset, maxDrawCount,
                           stride);
+   if (internal->device)
+   {
+      internal->device->frameStats.drawCalls += maxDrawCount;
+   }
 }
 
 void veDrawIndexedIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t indirectOffset,
@@ -334,8 +391,8 @@ void veDrawIndexedIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBu
       return;
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
-   VkBuffer indirectBuf = veGetVkBufferFromAddress(internal->device, indirectBuffer);
-   VkBuffer countBuf = veGetVkBufferFromAddress(internal->device, countBuffer);
+   VkBuffer indirectBuf = internal->device->getVkBufferFromAddress(indirectBuffer);
+   VkBuffer countBuf = internal->device->getVkBufferFromAddress(countBuffer);
 
    if (indirectBuf == VK_NULL_HANDLE || countBuf == VK_NULL_HANDLE)
    {
@@ -345,6 +402,10 @@ void veDrawIndexedIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBu
 
    vkCmdDrawIndexedIndirectCount(internal->commandBuffer, indirectBuf, indirectOffset, countBuf, countOffset,
                                  maxDrawCount, stride);
+   if (internal->device)
+   {
+      internal->device->frameStats.drawCalls += maxDrawCount;
+   }
 }
 
 // =============================================================================
@@ -455,7 +516,7 @@ void veTransitionTexture(VECommandBuffer *cmd, VETextureIndex texture, VkImageLa
       return;
    }
 
-   VETextureInternal *textureInternal = veGetTexture(device, texture);
+   VETextureInternal *textureInternal = device->getTexture(texture);
    if (!textureInternal || !textureInternal->isValid)
    {
       veSetError("Invalid texture index: %u", texture);
@@ -644,7 +705,7 @@ void veTransitionTextureToLayout(VECommandBuffer *cmd, VETextureIndex texture, V
       return;
    }
 
-   VETextureInternal *textureInternal = veGetTexture(device, texture);
+   VETextureInternal *textureInternal = device->getTexture(texture);
    if (!textureInternal || !textureInternal->isValid)
    {
       veSetError("Invalid texture index: %u", texture);

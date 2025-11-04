@@ -876,7 +876,7 @@ VEDevice *veCreateDevice(VEContext *context)
    vkGetDeviceQueue(device->device, device->queueFamilies.transferFamily, 0, &device->transferQueue);
 
    // Initialize VMA with Vulkan 1.4
-   VEResult vmaResult = veInitializeVMA(device);
+   VEResult vmaResult = device->initializeVma();
    if (vmaResult != VE_SUCCESS)
    {
       vkDestroyDevice(device->device, NULL);
@@ -957,10 +957,10 @@ VEDevice *veCreateDevice(VEContext *context)
    }
 
    // Initialize bindless descriptors
-   VEResult bindlessResult = veInitializeBindlessDescriptors(device);
+   VEResult bindlessResult = device->initializeBindlessDescriptors();
    if (bindlessResult != VE_SUCCESS)
    {
-      veCleanupVMA(device);
+      device->cleanupVma();
       vkDestroyDevice(device->device, NULL);
       free(device);
       return NULL;
@@ -983,6 +983,9 @@ VEDevice *veCreateDevice(VEContext *context)
    device->shaderConfigs =
        static_cast<VEShaderConfigInternal *>(calloc(VE_MAX_SHADER_CONFIGS, sizeof(VEShaderConfigInternal)));
    device->shaderConfigCount = 0;
+
+   device->maxShaders = VE_MAX_SHADERS;
+   device->shaderCount = 0;
 
    // Create global pipeline layouts with Vulkan 1.4 enhanced push constants (256 bytes)
    VkDescriptorSetLayout setLayouts[2] = {
@@ -1076,8 +1079,8 @@ void veDestroyDevice(VEDevice *device)
 
    veDestroyQueueLocks(internal);
 
-   veCleanupBindlessDescriptors(internal);
-   veCleanupVMA(internal);
+   internal->cleanupBindlessDescriptors();
+   internal->cleanupVma();
 
    if (internal->device)
    {

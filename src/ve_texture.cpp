@@ -12,7 +12,7 @@
 // Bindless Descriptor Management
 // =============================================================================
 
-VEResult veInitializeBindlessDescriptors(VEDeviceInternal *device)
+VEResult VEDeviceInternal::initializeBindlessDescriptors()
 {
    VkPhysicalDeviceDescriptorIndexingProperties indexingProps{};
    indexingProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES;
@@ -20,12 +20,12 @@ VEResult veInitializeBindlessDescriptors(VEDeviceInternal *device)
    VkPhysicalDeviceProperties2 props2{};
    props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
    props2.pNext = &indexingProps;
-   vkGetPhysicalDeviceProperties2(device->physicalDevice, &props2);
+   vkGetPhysicalDeviceProperties2(this->physicalDevice, &props2);
 
    uint32_t textureCapacity = VE_MAX_TEXTURES;
    uint32_t samplerCapacity = VE_MAX_SAMPLERS;
 
-   uint32_t textureSetLimit = device->deviceProperties.limits.maxDescriptorSetSampledImages;
+   uint32_t textureSetLimit = this->deviceProperties.limits.maxDescriptorSetSampledImages;
    if (indexingProps.maxDescriptorSetUpdateAfterBindSampledImages > 0)
    {
       textureSetLimit = textureSetLimit < indexingProps.maxDescriptorSetUpdateAfterBindSampledImages
@@ -43,7 +43,7 @@ VEResult veInitializeBindlessDescriptors(VEDeviceInternal *device)
       textureCapacity = textureCapacity < textureSetLimit ? textureCapacity : textureSetLimit;
    }
 
-   uint32_t samplerSetLimit = device->deviceProperties.limits.maxDescriptorSetSamplers;
+   uint32_t samplerSetLimit = this->deviceProperties.limits.maxDescriptorSetSamplers;
    if (indexingProps.maxDescriptorSetUpdateAfterBindSamplers > 0)
    {
       samplerSetLimit = samplerSetLimit < indexingProps.maxDescriptorSetUpdateAfterBindSamplers
@@ -105,7 +105,7 @@ VEResult veInitializeBindlessDescriptors(VEDeviceInternal *device)
    poolInfo.poolSizeCount = 2;
    poolInfo.pPoolSizes = poolSizes;
 
-   VkResult result = vkCreateDescriptorPool(device->device, &poolInfo, NULL, &device->descriptorPool);
+   VkResult result = vkCreateDescriptorPool(this->device, &poolInfo, NULL, &this->descriptorPool);
    if (result != VK_SUCCESS)
    {
       veSetError("Failed to create descriptor pool (VkResult: %d)", result);
@@ -135,11 +135,11 @@ VEResult veInitializeBindlessDescriptors(VEDeviceInternal *device)
    textureLayoutInfo.bindingCount = 1;
    textureLayoutInfo.pBindings = &textureBinding;
 
-   result = vkCreateDescriptorSetLayout(device->device, &textureLayoutInfo, NULL, &device->textureDescriptorSetLayout);
+   result = vkCreateDescriptorSetLayout(this->device, &textureLayoutInfo, NULL, &this->textureDescriptorSetLayout);
    if (result != VK_SUCCESS)
    {
       veSetError("Failed to create texture descriptor set layout (VkResult: %d)", result);
-      vkDestroyDescriptorPool(device->device, device->descriptorPool, NULL);
+      vkDestroyDescriptorPool(this->device, this->descriptorPool, NULL);
       return VE_ERROR_OUT_OF_MEMORY;
    }
 
@@ -166,18 +166,18 @@ VEResult veInitializeBindlessDescriptors(VEDeviceInternal *device)
    samplerLayoutInfo.bindingCount = 1;
    samplerLayoutInfo.pBindings = &samplerBinding;
 
-   result = vkCreateDescriptorSetLayout(device->device, &samplerLayoutInfo, NULL, &device->samplerDescriptorSetLayout);
+   result = vkCreateDescriptorSetLayout(this->device, &samplerLayoutInfo, NULL, &this->samplerDescriptorSetLayout);
    if (result != VK_SUCCESS)
    {
       veSetError("Failed to create sampler descriptor set layout (VkResult: %d)", result);
-      vkDestroyDescriptorSetLayout(device->device, device->textureDescriptorSetLayout, NULL);
-      vkDestroyDescriptorPool(device->device, device->descriptorPool, NULL);
+      vkDestroyDescriptorSetLayout(this->device, this->textureDescriptorSetLayout, NULL);
+      vkDestroyDescriptorPool(this->device, this->descriptorPool, NULL);
       return VE_ERROR_OUT_OF_MEMORY;
    }
 
    // Allocate descriptor sets
    uint32_t maxDescriptorCounts[] = {textureCapacity, samplerCapacity};
-   VkDescriptorSetLayout layouts[] = {device->textureDescriptorSetLayout, device->samplerDescriptorSetLayout};
+   VkDescriptorSetLayout layouts[] = {this->textureDescriptorSetLayout, this->samplerDescriptorSetLayout};
 
    VkDescriptorSetVariableDescriptorCountAllocateInfo variableCountInfo{};
    variableCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO;
@@ -187,131 +187,133 @@ VEResult veInitializeBindlessDescriptors(VEDeviceInternal *device)
    VkDescriptorSetAllocateInfo allocInfo{};
    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
    allocInfo.pNext = &variableCountInfo;
-   allocInfo.descriptorPool = device->descriptorPool;
+   allocInfo.descriptorPool = this->descriptorPool;
    allocInfo.descriptorSetCount = 2;
    allocInfo.pSetLayouts = layouts;
 
    VkDescriptorSet descriptorSets[2];
-   result = vkAllocateDescriptorSets(device->device, &allocInfo, descriptorSets);
+   result = vkAllocateDescriptorSets(this->device, &allocInfo, descriptorSets);
    if (result != VK_SUCCESS)
    {
       veSetError("Failed to allocate descriptor sets (VkResult: %d)", result);
-      veCleanupBindlessDescriptors(device);
+      cleanupBindlessDescriptors();
       return VE_ERROR_OUT_OF_MEMORY;
    }
 
-   device->textureDescriptorSet = descriptorSets[0];
-   device->samplerDescriptorSet = descriptorSets[1];
+   textureDescriptorSet = descriptorSets[0];
+   samplerDescriptorSet = descriptorSets[1];
 
    // Initialize texture management
-   device->maxTextures = textureCapacity;
-   device->textures = static_cast<VETextureInternal *>(calloc(device->maxTextures, sizeof(VETextureInternal)));
-   device->freeTextureIndices = static_cast<uint32_t *>(calloc(device->maxTextures, sizeof(uint32_t)));
+   maxTextures = textureCapacity;
+   textures = static_cast<VETextureInternal *>(calloc(maxTextures, sizeof(VETextureInternal)));
+   freeTextureIndices = static_cast<uint32_t *>(calloc(maxTextures, sizeof(uint32_t)));
 
-   if (!device->textures || !device->freeTextureIndices)
+   if (!textures || !freeTextureIndices)
    {
       veSetError("Failed to allocate texture management memory");
-      veCleanupBindlessDescriptors(device);
+      cleanupBindlessDescriptors();
       return VE_ERROR_OUT_OF_MEMORY;
    }
 
    // Start from index 1 (0 is reserved for invalid)
-   for (uint32_t i = 0; i < device->maxTextures - 1; i++)
+   for (uint32_t i = 0; i < maxTextures - 1; i++)
    {
-      device->freeTextureIndices[i] = i + 1;
+      freeTextureIndices[i] = i + 1;
    }
-   device->freeTextureCount = device->maxTextures - 1;
-   device->textureCount = 0;
+   freeTextureCount = maxTextures - 1;
+   textureCount = 0;
 
    // Initialize sampler management
-   device->maxSamplers = samplerCapacity;
-   device->samplers = static_cast<VESamplerInternal *>(calloc(device->maxSamplers, sizeof(VESamplerInternal)));
-   device->freeSamplerIndices = static_cast<uint32_t *>(calloc(device->maxSamplers, sizeof(uint32_t)));
+   maxSamplers = samplerCapacity;
+   samplers = static_cast<VESamplerInternal *>(calloc(maxSamplers, sizeof(VESamplerInternal)));
+   freeSamplerIndices = static_cast<uint32_t *>(calloc(maxSamplers, sizeof(uint32_t)));
 
-   if (!device->samplers || !device->freeSamplerIndices)
+   if (!samplers || !freeSamplerIndices)
    {
       veSetError("Failed to allocate sampler management memory");
-      veCleanupBindlessDescriptors(device);
+      cleanupBindlessDescriptors();
       return VE_ERROR_OUT_OF_MEMORY;
    }
 
    // Start from index 1 (0 is reserved for invalid)
-   for (uint32_t i = 0; i < device->maxSamplers - 1; i++)
+   for (uint32_t i = 0; i < maxSamplers - 1; i++)
    {
-      device->freeSamplerIndices[i] = i + 1;
+      freeSamplerIndices[i] = i + 1;
    }
-   device->freeSamplerCount = device->maxSamplers - 1;
-   device->samplerCount = 0;
+   freeSamplerCount = maxSamplers - 1;
+   samplerCount = 0;
 
    return VE_SUCCESS;
 }
 
-void veCleanupBindlessDescriptors(VEDeviceInternal *device)
+void VEDeviceInternal::cleanupBindlessDescriptors()
 {
-   if (!device || !device->device)
+   if (!device)
+   {
       return;
+   }
 
-   if (device->textures)
+   if (textures)
    {
-      for (uint32_t i = 0; i < device->maxTextures; i++)
+      for (uint32_t i = 0; i < maxTextures; i++)
       {
-         if (device->textures[i].isValid)
+         if (textures[i].isValid)
          {
-            if (device->textures[i].imageView)
+            if (textures[i].imageView)
             {
-               vkDestroyImageView(device->device, device->textures[i].imageView, NULL);
+               vkDestroyImageView(device, textures[i].imageView, NULL);
             }
-            if (device->textures[i].image)
+            if (textures[i].image)
             {
-               vmaDestroyImage(device->allocator, device->textures[i].image, device->textures[i].allocation);
+               vmaDestroyImage(allocator, textures[i].image, textures[i].allocation);
             }
          }
       }
-      free(device->textures);
-      device->textures = NULL;
+      free(textures);
+      textures = NULL;
    }
 
-   if (device->freeTextureIndices)
+   if (freeTextureIndices)
    {
-      free(device->freeTextureIndices);
-      device->freeTextureIndices = NULL;
+      free(freeTextureIndices);
+      freeTextureIndices = NULL;
    }
 
-   if (device->samplers)
+   if (samplers)
    {
-      for (uint32_t i = 0; i < device->maxSamplers; i++)
+      for (uint32_t i = 0; i < maxSamplers; i++)
       {
-         if (device->samplers[i].isValid)
+         if (samplers[i].isValid)
          {
-            vkDestroySampler(device->device, device->samplers[i].sampler, NULL);
+            vkDestroySampler(device, samplers[i].sampler, NULL);
          }
       }
-      free(device->samplers);
-      device->samplers = NULL;
+      free(samplers);
+      samplers = NULL;
    }
 
-   if (device->freeSamplerIndices)
+   if (freeSamplerIndices)
    {
-      free(device->freeSamplerIndices);
-      device->freeSamplerIndices = NULL;
+      free(freeSamplerIndices);
+      freeSamplerIndices = NULL;
    }
 
-   if (device->samplerDescriptorSetLayout)
+   if (samplerDescriptorSetLayout)
    {
-      vkDestroyDescriptorSetLayout(device->device, device->samplerDescriptorSetLayout, NULL);
-      device->samplerDescriptorSetLayout = VK_NULL_HANDLE;
+      vkDestroyDescriptorSetLayout(device, samplerDescriptorSetLayout, NULL);
+      samplerDescriptorSetLayout = VK_NULL_HANDLE;
    }
 
-   if (device->textureDescriptorSetLayout)
+   if (textureDescriptorSetLayout)
    {
-      vkDestroyDescriptorSetLayout(device->device, device->textureDescriptorSetLayout, NULL);
-      device->textureDescriptorSetLayout = VK_NULL_HANDLE;
+      vkDestroyDescriptorSetLayout(device, textureDescriptorSetLayout, NULL);
+      textureDescriptorSetLayout = VK_NULL_HANDLE;
    }
 
-   if (device->descriptorPool)
+   if (descriptorPool)
    {
-      vkDestroyDescriptorPool(device->device, device->descriptorPool, NULL);
-      device->descriptorPool = VK_NULL_HANDLE;
+      vkDestroyDescriptorPool(device, descriptorPool, NULL);
+      descriptorPool = VK_NULL_HANDLE;
    }
 }
 
@@ -319,47 +321,52 @@ void veCleanupBindlessDescriptors(VEDeviceInternal *device)
 // Texture Index Management
 // =============================================================================
 
-uint32_t veAllocateTextureIndex(VEDeviceInternal *device)
+uint32_t VEDeviceInternal::allocateTextureIndex()
 {
-   if (device->freeTextureCount == 0)
+   if (freeTextureCount == 0)
    {
-      veSetError("No free texture indices available (max: %u)", device->maxTextures);
+      veSetError("No free texture indices available (max: %u)", maxTextures);
       return VE_INVALID_TEXTURE_INDEX;
    }
 
-   device->freeTextureCount--;
-   uint32_t index = device->freeTextureIndices[device->freeTextureCount];
-   device->textureCount++;
+   freeTextureCount--;
+   uint32_t index = freeTextureIndices[freeTextureCount];
+   textureCount++;
 
    return index;
 }
 
-void veFreeTextureIndex(VEDeviceInternal *device, uint32_t index)
+void VEDeviceInternal::freeTextureIndex(uint32_t index)
 {
-   if (index == 0 || index >= device->maxTextures)
+   if (index == 0 || index >= maxTextures)
    {
       return;
    }
 
-   device->freeTextureIndices[device->freeTextureCount] = index;
-   device->freeTextureCount++;
-   device->textureCount--;
+   freeTextureIndices[freeTextureCount] = index;
+   freeTextureCount++;
+   textureCount--;
 }
 
-VETextureInternal *veGetTexture(VEDeviceInternal *device, VETextureIndex index)
+VETextureInternal *VEDeviceInternal::getTexture(VETextureIndex index)
 {
-   if (index == VE_INVALID_TEXTURE_INDEX || index >= device->maxTextures)
+   if (index == VE_INVALID_TEXTURE_INDEX || index >= maxTextures)
    {
       return NULL;
    }
 
-   VETextureInternal *texture = &device->textures[index];
+   VETextureInternal *texture = &textures[index];
    return texture->isValid ? texture : NULL;
 }
 
-VkImageView veGetImageViewFromTexture(VEDeviceInternal *device, VETextureIndex index)
+const VETextureInternal *VEDeviceInternal::getTexture(VETextureIndex index) const
 {
-   VETextureInternal *texture = veGetTexture(device, index);
+   return const_cast<VEDeviceInternal *>(this)->getTexture(index);
+}
+
+VkImageView VEDeviceInternal::getImageViewFromTexture(VETextureIndex index) const
+{
+   const VETextureInternal *texture = getTexture(index);
    return (texture && texture->isValid) ? texture->imageView : VK_NULL_HANDLE;
 }
 
@@ -490,7 +497,7 @@ VETextureIndex veCreateTexture(VEDevice *device, const VETextureDesc *desc)
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
 
-   uint32_t index = veAllocateTextureIndex(deviceInternal);
+   uint32_t index = deviceInternal->allocateTextureIndex();
    if (index == VE_INVALID_TEXTURE_INDEX)
    {
       return VE_INVALID_TEXTURE_INDEX;
@@ -551,7 +558,7 @@ VETextureIndex veCreateTexture(VEDevice *device, const VETextureDesc *desc)
    if (result != VK_SUCCESS)
    {
       veSetError("Failed to create texture (VkResult: %d)", result);
-      veFreeTextureIndex(deviceInternal, index);
+      deviceInternal->freeTextureIndex(index);
       return VE_INVALID_TEXTURE_INDEX;
    }
 
@@ -587,7 +594,7 @@ VETextureIndex veCreateTexture(VEDevice *device, const VETextureDesc *desc)
    {
       veSetError("Failed to create image view (VkResult: %d)", result);
       vmaDestroyImage(deviceInternal->allocator, texture->image, texture->allocation);
-      veFreeTextureIndex(deviceInternal, index);
+      deviceInternal->freeTextureIndex(index);
       return VE_INVALID_TEXTURE_INDEX;
    }
 
@@ -599,7 +606,7 @@ VETextureIndex veCreateTexture(VEDevice *device, const VETextureDesc *desc)
       {
          vkDestroyImageView(deviceInternal->device, texture->imageView, NULL);
          vmaDestroyImage(deviceInternal->allocator, texture->image, texture->allocation);
-         veFreeTextureIndex(deviceInternal, index);
+         deviceInternal->freeTextureIndex(index);
          return VE_INVALID_TEXTURE_INDEX;
       }
    }
@@ -615,7 +622,7 @@ VETextureIndex veCreateTexture(VEDevice *device, const VETextureDesc *desc)
    texture->isValid = true;
 
    // Update bindless descriptor
-   veUpdateTextureDescriptor(deviceInternal, index);
+   deviceInternal->updateTextureDescriptor(index);
 
    return index;
 }
@@ -628,7 +635,7 @@ void veDestroyTexture(VEDevice *device, VETextureIndex index)
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
-   VETextureInternal *texture = veGetTexture(deviceInternal, index);
+   VETextureInternal *texture = deviceInternal->getTexture(index);
 
    if (!texture || !texture->isValid)
    {
@@ -645,7 +652,7 @@ void veDestroyTexture(VEDevice *device, VETextureIndex index)
       vmaDestroyImage(deviceInternal->allocator, texture->image, texture->allocation);
    }
 
-   veFreeTextureIndex(deviceInternal, index);
+   deviceInternal->freeTextureIndex(index);
    memset(texture, 0, sizeof(VETextureInternal));
 }
 
@@ -662,7 +669,7 @@ VEResult veGetTextureSize(VEDevice *device, VETextureIndex index, uint32_t *widt
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
-   VETextureInternal *texture = veGetTexture(deviceInternal, index);
+   VETextureInternal *texture = deviceInternal->getTexture(index);
 
    if (!texture)
    {
@@ -688,7 +695,7 @@ VkFormat veGetTextureFormat(VEDevice *device, VETextureIndex index)
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
-   VETextureInternal *texture = veGetTexture(deviceInternal, index);
+   VETextureInternal *texture = deviceInternal->getTexture(index);
 
    return texture ? texture->format : VK_FORMAT_R8G8B8A8_UNORM;
 }
@@ -949,7 +956,7 @@ VEResult veGenerateMipmaps(VEDevice *device, VECommandBuffer *cmd, VETextureInde
    VECommandBufferInternal *cmdInternal = (VECommandBufferInternal *)cmd;
 
    // Get texture and validate
-   VETextureInternal *textureInternal = veGetTexture(deviceInternal, texture);
+   VETextureInternal *textureInternal = deviceInternal->getTexture(texture);
    if (!textureInternal || !textureInternal->isValid)
    {
       veSetError("Invalid texture index: %u", texture);
@@ -1181,9 +1188,9 @@ VEResult veSaveTexture(VEDevice *device, VETextureIndex texture, const char *fil
 // Descriptor Updates
 // =============================================================================
 
-VEResult veUpdateTextureDescriptor(VEDeviceInternal *device, VETextureIndex index)
+VEResult VEDeviceInternal::updateTextureDescriptor(VETextureIndex index)
 {
-   VETextureInternal *texture = veGetTexture(device, index);
+   VETextureInternal *texture = getTexture(index);
    if (!texture)
    {
       return VE_ERROR_INVALID_PARAMETER;
@@ -1195,14 +1202,14 @@ VEResult veUpdateTextureDescriptor(VEDeviceInternal *device, VETextureIndex inde
 
    VkWriteDescriptorSet descriptorWrite{};
    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-   descriptorWrite.dstSet = device->textureDescriptorSet;
+    descriptorWrite.dstSet = textureDescriptorSet;
    descriptorWrite.dstBinding = 0;
    descriptorWrite.dstArrayElement = index;
    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
    descriptorWrite.descriptorCount = 1;
    descriptorWrite.pImageInfo = &imageInfo;
 
-   vkUpdateDescriptorSets(device->device, 1, &descriptorWrite, 0, NULL);
+   vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, NULL);
 
    return VE_SUCCESS;
 }
