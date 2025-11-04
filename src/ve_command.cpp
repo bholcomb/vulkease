@@ -288,10 +288,10 @@ void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo
                            2,              // set count
                            descriptorSets, // sets
                            0, NULL);       // dynamic offsset
-  if (internal->device)
-  {
-     internal->device->frameStats.descriptorBinds += 1;
-  }
+   if (internal->device)
+   {
+      internal->device->frameStats.descriptorBinds += 1;
+   }
 }
 
 void veEndRendering(VECommandBuffer *cmd)

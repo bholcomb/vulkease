@@ -171,24 +171,24 @@ VEResult VESwapchainInternal::present(VECommandBufferInternal &cmd)
    currentImageIndex = UINT32_MAX;
    currentFrame = (currentFrame + 1) % maxFramesInFlight;
 
-  if (device)
-  {
-     using namespace std::chrono;
-     const double nowSeconds = duration<double>(steady_clock::now().time_since_epoch()).count();
+   if (device)
+   {
+      using namespace std::chrono;
+      const double nowSeconds = duration<double>(steady_clock::now().time_since_epoch()).count();
 
-     if (device->lastFrameTimestampSeconds > 0.0)
-     {
-        double delta = nowSeconds - device->lastFrameTimestampSeconds;
-        if (delta >= 0.0)
-        {
-           device->frameStats.frameTime = static_cast<uint64_t>(delta * 1'000'000'000.0);
-        }
-     }
+      if (device->lastFrameTimestampSeconds > 0.0)
+      {
+         double delta = nowSeconds - device->lastFrameTimestampSeconds;
+         if (delta >= 0.0)
+         {
+            device->frameStats.frameTime = static_cast<uint64_t>(delta * 1'000'000'000.0);
+         }
+      }
 
-     device->lastFrameTimestampSeconds = nowSeconds;
-     device->performanceStats = device->frameStats;
-     device->frameStats = {};
-  }
+      device->lastFrameTimestampSeconds = nowSeconds;
+      device->performanceStats = device->frameStats;
+      device->frameStats = {};
+   }
 
    return VE_SUCCESS;
 }

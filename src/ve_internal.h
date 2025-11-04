@@ -174,7 +174,7 @@ struct VECommandPool
    void release(VECommandBufferInternal &cmd);
    void notifyFenceSignaled(VkFence fence);
 
-private:
+ private:
    void releaseCommandBufferResources();
 };
 
@@ -280,7 +280,6 @@ struct VEShaderConfigInternal
    VEDeviceInternal *device;
 };
 
-
 struct VESwapchainInternal
 {
    VkSwapchainKHR swapchain{VK_NULL_HANDLE};
@@ -319,7 +318,7 @@ struct VESwapchainInternal
    bool hasDevice() const noexcept;
    void destroy();
 
-private:
+ private:
    VEResult waitForCurrentFrameFence();
    void releaseTextureIndices();
    void destroySyncObjects();
@@ -422,36 +421,32 @@ struct VEDeviceInternal
    [[nodiscard]] bool supportsDescriptorIndexing() const noexcept { return features.descriptorIndexing; }
    [[nodiscard]] bool supportsShaderObjects() const noexcept { return features.shaderObject; }
    [[nodiscard]] bool supportsExtendedDynamicState3() const noexcept { return features.extendedDynamicState3; }
-   [[nodiscard]] bool supportsVertexInputDynamicState() const noexcept
-   {
-      return features.vertexInputDynamicState;
-   }
+   [[nodiscard]] bool supportsVertexInputDynamicState() const noexcept { return features.vertexInputDynamicState; }
 };
 
-   // =============================================================================
-   // Internal Function Declarations
-   // =============================================================================
+// =============================================================================
+// Internal Function Declarations
+// =============================================================================
 
-   // Error handling
-   void veSetError(const char *format, ...);
-   const char *veResultToString(VkResult result);
-   void vePrintVkResult(const char *operation, VkResult result);
+// Error handling
+void veSetError(const char *format, ...);
+const char *veResultToString(VkResult result);
+void vePrintVkResult(const char *operation, VkResult result);
 
-   // Command pool managment
-   VECommandBufferInternal *veGetCommandBufferInternal(VECommandBuffer *cmd);
-   VEResult veAllocateCommandBuffer(VEDeviceInternal *device, VECommandPool *pool, VECommandBufferInternal **outCmd);
-   void veFreeCommandBuffer(VECommandBufferInternal *cmd);
-   void veInitializeQueueLocks(VEDeviceInternal *device);
-   void veDestroyQueueLocks(VEDeviceInternal *device);
-   void veNotifyCommandBufferFenceSignaled(VEDeviceInternal *device, VkFence fence);
+// Command pool managment
+VECommandBufferInternal *veGetCommandBufferInternal(VECommandBuffer *cmd);
+VEResult veAllocateCommandBuffer(VEDeviceInternal *device, VECommandPool *pool, VECommandBufferInternal **outCmd);
+void veFreeCommandBuffer(VECommandBufferInternal *cmd);
+void veInitializeQueueLocks(VEDeviceInternal *device);
+void veDestroyQueueLocks(VEDeviceInternal *device);
+void veNotifyCommandBufferFenceSignaled(VEDeviceInternal *device, VkFence fence);
 
-   // Resource index management functions
-   // Utility functions
-   void veSetObjectDebugName(VEDeviceInternal *device, uint64_t objectHandle, VkObjectType objectType,
-                             const char *name);
+// Resource index management functions
+// Utility functions
+void veSetObjectDebugName(VEDeviceInternal *device, uint64_t objectHandle, VkObjectType objectType, const char *name);
 
-   // Surface creation (platform-specific)
-   VkResult veCreateSurface(VEContextInternal *context, void *windowHandle, VkSurfaceKHR *surface);
+// Surface creation (platform-specific)
+VkResult veCreateSurface(VEContextInternal *context, void *windowHandle, VkSurfaceKHR *surface);
 
 struct VEFuncs
 {

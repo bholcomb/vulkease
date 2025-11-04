@@ -168,7 +168,7 @@ static bool hasExtension(const char *path, const char *ext)
       ext++;
    }
 
-    return *dot == '\0' && *ext == '\0';
+   return *dot == '\0' && *ext == '\0';
 }
 
 static VkShaderEXT createShaderObject(VEDeviceInternal *deviceInternal, VkShaderStageFlags stage, const uint32_t *code,
@@ -180,17 +180,13 @@ static VkShaderEXT createShaderObject(VEDeviceInternal *deviceInternal, VkShader
       return VK_NULL_HANDLE;
    }
 
-   VkDescriptorSetLayout setLayouts[2] = {
-       deviceInternal->textureDescriptorSetLayout,
-       deviceInternal->samplerDescriptorSetLayout};
+   VkDescriptorSetLayout setLayouts[2] = {deviceInternal->textureDescriptorSetLayout,
+                                          deviceInternal->samplerDescriptorSetLayout};
 
    VkShaderStageFlagBits stageFlags =
        (stage == VK_SHADER_STAGE_COMPUTE_BIT) ? VK_SHADER_STAGE_COMPUTE_BIT : VK_SHADER_STAGE_ALL_GRAPHICS;
 
-   VkPushConstantRange shaderPushRange = {
-       .stageFlags = stageFlags,
-       .offset = 0,
-       .size = VE_MAX_PUSH_CONSTANT_BYTES};
+   VkPushConstantRange shaderPushRange = {.stageFlags = stageFlags, .offset = 0, .size = VE_MAX_PUSH_CONSTANT_BYTES};
 
    VkShaderCreateInfoEXT shaderCreateInfo{};
    shaderCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT;
@@ -525,8 +521,8 @@ VEResult veReloadShader(VEShader *shader)
       codePtr = compiledCode;
    }
 
-   VkShaderEXT newShaderObject =
-       createShaderObject(deviceInternal, internal->stage, codePtr, codeSize, internal->entryPoint, internal->debugName);
+   VkShaderEXT newShaderObject = createShaderObject(deviceInternal, internal->stage, codePtr, codeSize,
+                                                    internal->entryPoint, internal->debugName);
 
    if (compiledCode)
    {

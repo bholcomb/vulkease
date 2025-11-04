@@ -569,6 +569,7 @@ static void mainLoop(CubeApp* app) {
 
         frameCount++;
         if(frameCount == 1) vePrintDebugInfo(app->device);
+        if(frameCount == 10) veSaveTexture(app->device, app->texture, "output-00000.png");
         if(frameCount % 1000 == 0) printf("Average Framerate: %4.2fms\n", (frameTime / (double)frameCount) * 1000.0);
         if(frameCount % 10000 == 0) vePrintProfileInfo(app->device);
 
