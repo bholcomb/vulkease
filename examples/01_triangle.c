@@ -159,16 +159,16 @@ static bool initVulkEase(GLFWwindow* window) {
 
 static bool createShaders() {
     // Load vertex shader from compiled SPIR-V file
-    g_vertexShader = veLoadShader(g_device, VERTEX_SHADER_PATH, VK_SHADER_STAGE_VERTEX_BIT,
-                                 "main", "SpinningTriangleVertex");
+    g_vertexShader = veLoadShaderFromFile(g_device, VERTEX_SHADER_PATH, VK_SHADER_STAGE_VERTEX_BIT,
+                                         "main", "SpinningTriangleVertex");
     if (!g_vertexShader) {
         fprintf(stderr, "Failed to load vertex shader: %s\n", veGetLastError());
         return false;
     }
     
     // Load fragment shader from compiled SPIR-V file
-    g_fragmentShader = veLoadShader(g_device, FRAGMENT_SHADER_PATH, VK_SHADER_STAGE_FRAGMENT_BIT,
-                                   "main", "SpinningTriangleFragment");
+    g_fragmentShader = veLoadShaderFromFile(g_device, FRAGMENT_SHADER_PATH, VK_SHADER_STAGE_FRAGMENT_BIT,
+                                           "main", "SpinningTriangleFragment");
     if (!g_fragmentShader) {
         fprintf(stderr, "Failed to load fragment shader: %s\n", veGetLastError());
         return false;

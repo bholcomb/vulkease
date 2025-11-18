@@ -276,16 +276,16 @@ static bool initVulkEase(CubeApp* app) {
 // Load shaders
 static bool loadShaders(CubeApp* app) {
     // Load vertex shader
-    app->vertexShader = veLoadShader(app->device, "examples/shaders/cube.vert.spv", 
-                                     VK_SHADER_STAGE_VERTEX_BIT, "main", "CubeVertexShader");
+    app->vertexShader = veLoadShaderFromFile(app->device, "examples/shaders/cube.vert.spv",
+                                            VK_SHADER_STAGE_VERTEX_BIT, "main", "CubeVertexShader");
     if (!app->vertexShader) {
         fprintf(stderr, "Failed to load vertex shader: %s\n", veGetLastError());
         return false;
     }
     
     // Load fragment shader
-    app->fragmentShader = veLoadShader(app->device, "examples/shaders/cube.frag.spv",
-                                       VK_SHADER_STAGE_FRAGMENT_BIT, "main", "CubeFragmentShader");
+    app->fragmentShader = veLoadShaderFromFile(app->device, "examples/shaders/cube.frag.spv",
+                                              VK_SHADER_STAGE_FRAGMENT_BIT, "main", "CubeFragmentShader");
     if (!app->fragmentShader) {
         fprintf(stderr, "Failed to load fragment shader: %s\n", veGetLastError());
         return false;

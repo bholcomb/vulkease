@@ -239,14 +239,14 @@ namespace VulkEaseExamples
             try
             {
                 // Load compute shader for particle simulation
-                _computeShader = VulkEase.VulkEase.LoadShader(_device, "examples/shaders/particles.comp.spv",
+                _computeShader = VulkEase.VulkEase.LoadShaderFromFile(_device, "examples/shaders/particles.comp.spv",
                     VkShaderStageFlags.VK_SHADER_STAGE_COMPUTE_BIT, "main", "ParticleComputeShader");
 
                 // Load graphics shaders for particle rendering
-                _vertexShader = VulkEase.VulkEase.LoadShader(_device, "examples/shaders/particles.vert.spv",
+                _vertexShader = VulkEase.VulkEase.LoadShaderFromFile(_device, "examples/shaders/particles.vert.spv",
                     VkShaderStageFlags.VK_SHADER_STAGE_VERTEX_BIT, "main", "ParticleVertexShader");
 
-                _fragmentShader = VulkEase.VulkEase.LoadShader(_device, "examples/shaders/particles.frag.spv",
+                _fragmentShader = VulkEase.VulkEase.LoadShaderFromFile(_device, "examples/shaders/particles.frag.spv",
                     VkShaderStageFlags.VK_SHADER_STAGE_FRAGMENT_BIT, "main", "ParticleFragmentShader");
 
                 Console.WriteLine("Shaders loaded successfully");

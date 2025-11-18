@@ -112,7 +112,7 @@ namespace VulkEaseExamples
 
             Console.WriteLine("VulkEase Spinning Cube Demo");
             Console.WriteLine("===========================");
-            Console.WriteLine("Modern Vulkan 1.3 with shader objects and bindless resources");
+            Console.WriteLine("Modern Vulkan 1.4 with shader objects and bindless resources");
             Console.WriteLine();
 
             if (!InitializeVulkEase())
@@ -266,11 +266,11 @@ namespace VulkEaseExamples
             try
             {
                 // Load vertex shader
-                _vertexShader = VE.LoadShader(_device, "examples/shaders/cube.vert.spv",
+                _vertexShader = VE.LoadShaderFromFile(_device, "examples/shaders/cube.vert.spv",
                     VkShaderStageFlags.VK_SHADER_STAGE_VERTEX_BIT, "main", "CubeVertexShader");
 
                 // Load fragment shader
-                _fragmentShader = VE.LoadShader(_device, "examples/shaders/cube.frag.spv",
+                _fragmentShader = VE.LoadShaderFromFile(_device, "examples/shaders/cube.frag.spv",
                     VkShaderStageFlags.VK_SHADER_STAGE_FRAGMENT_BIT, "main", "CubeFragmentShader");
 
                 Console.WriteLine("Shaders loaded successfully");
