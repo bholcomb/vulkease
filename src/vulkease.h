@@ -1,6 +1,6 @@
 /**
  * @file vulkease2.h
- * @brief VulkEase 2.0 - Complete Modern Vulkan 1.3+ Bindless Graphics API
+ * @brief VulkEase 2.0 - Complete Modern Vulkan 1.4+ Bindless Graphics API
  *
  * Graphics programming API featuring:
  * - Buffer device address for all buffer access (no descriptor sets for
@@ -14,10 +14,20 @@
  * - STB Image integration for texture loading
  *
  * Requirements:
- * - Vulkan 1.3+ (core dynamic rendering)
- * - VK_EXT_shader_object
- * - VK_EXT_extended_dynamic_state3
- * - VK_EXT_vertex_input_dynamic_state
+ * - Vulkan 1.4+ runtime and drivers
+ * - Required instance extensions:
+ *   - VK_KHR_surface
+ *   - VK_EXT_debug_utils
+ *   - VK_KHR_get_physical_device_properties2
+ *   - VK_KHR_get_surface_capabilities2
+ *   - Platform surface extension (e.g. VK_KHR_win32_surface, VK_KHR_xlib_surface,
+ *     VK_MVK_macos_surface)
+ * - Required device extensions:
+ *   - VK_KHR_swapchain
+ *   - VK_EXT_shader_object
+ *   - VK_EXT_extended_dynamic_state3
+ *   - VK_EXT_vertex_input_dynamic_state
+ *   - VK_EXT_host_image_copy
  */
 
 #ifndef VULKEASE2_H
@@ -470,6 +480,19 @@ extern "C"
    VULKEASE_API uint32_t veGetVulkanVersion(VEDevice *device);
 
    /**
+    * Access underlying Vulkan handles.
+    * Returned handles are owned by VulkEase; do not destroy them.
+    * Lifetime matches the owning VulkEase object.
+    */
+   VULKEASE_API VkInstance veGetVkInstance(VEContext *context);
+   VULKEASE_API VkPhysicalDevice veGetVkPhysicalDevice(VEDevice *device);
+   VULKEASE_API VkDevice veGetVkDevice(VEDevice *device);
+   VULKEASE_API VkQueue veGetVkGraphicsQueue(VEDevice *device);
+   VULKEASE_API VkQueue veGetVkComputeQueue(VEDevice *device);
+   VULKEASE_API VkQueue veGetVkTransferQueue(VEDevice *device);
+   VULKEASE_API VkFence veGetVkCommandBufferFence(VECommandBuffer *cmd);
+
+   /**
     * Get last error message
     */
    VULKEASE_API const char *veGetLastError(void);
@@ -759,9 +782,48 @@ extern "C"
    VULKEASE_API VECommandBuffer *veBeginCommandBuffer(VEDevice *device);
 
    /**
+    * Submission info for advanced synchronization
+    */
+   typedef struct VESubmitInfo
+   {
+      const VkSemaphore *waitSemaphores;             // Semaphores to wait on (optional)
+      const uint64_t *waitSemaphoreValues;           // Timeline semaphore wait values (optional)
+      const VkPipelineStageFlags2 *waitStageMasks;   // Pipeline stages for each wait semaphore
+      uint32_t waitSemaphoreCount;
+
+      const VkSemaphore *signalSemaphores;           // Semaphores to signal (optional)
+      const uint64_t *signalSemaphoreValues;         // Timeline semaphore signal values (optional)
+      uint32_t signalSemaphoreCount;
+
+      VkFence fence;                                 // Fence to signal on completion (optional)
+      bool waitForCompletion;                        // True to block until GPU work completes
+   } VESubmitInfo;
+
+   /**
     * Submit command buffer
     */
    VULKEASE_API VEResult veSubmitCommandBuffer(VECommandBuffer *cmd, bool waitForCompletion);
+   VULKEASE_API VEResult veSubmitCommandBufferEx(VECommandBuffer *cmd, const VESubmitInfo *submitInfo);
+
+   /**
+    * Command buffer lifecycle management
+    * Use these to explicitly finish, reuse, and compose command buffers.
+    * Convenience submit will still end one-time primary buffers automatically.
+    */
+   VULKEASE_API VEResult veEndCommandBuffer(VECommandBuffer *cmd);
+   VULKEASE_API VEResult veResetCommandBuffer(VECommandBuffer *cmd);
+
+   typedef struct VESecondaryCommandBufferDesc
+   {
+      VkCommandBufferUsageFlags usageFlags;              // Usage hints (e.g. simultaneous use)
+      VkCommandBufferInheritanceInfo inheritanceInfo;    // Inheritance information (render pass / framebuffer)
+      bool beginRecording;                               // Begin recording automatically when true
+   } VESecondaryCommandBufferDesc;
+
+   VULKEASE_API VECommandBuffer *veBeginSecondaryCommandBuffer(VEDevice *device,
+                                                               const VESecondaryCommandBufferDesc *desc);
+   VULKEASE_API VEResult veExecuteSecondaryCommandBuffers(VECommandBuffer *primaryCmd, uint32_t count,
+                                                          VECommandBuffer *const *secondaryCmds);
 
    /**
     * Begin/end dynamic rendering (replaces render passes)

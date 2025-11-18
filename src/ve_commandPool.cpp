@@ -192,6 +192,7 @@ VEResult VECommandPool::allocate(VECommandBufferInternal **outCmd)
       buffer.commandPool = this;
       buffer.index = nextBuffer;
       buffer.device = ownerDevice;
+      buffer.isSecondary = (allocInfo.level == VK_COMMAND_BUFFER_LEVEL_SECONDARY);
 
       if (!buffer.inFlightFence)
       {

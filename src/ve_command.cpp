@@ -6,6 +6,54 @@
 #include "ve_internal.h"
 
 #include <mutex>
+#include <vector>
+
+namespace
+{
+VEResult veEnsureCommandBufferLevel(VECommandBufferInternal *cmd, VkCommandBufferLevel desiredLevel)
+{
+   if (!cmd || !cmd->commandPool || !cmd->device)
+   {
+      veSetError("Invalid command buffer state");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   const bool wantsSecondary = (desiredLevel == VK_COMMAND_BUFFER_LEVEL_SECONDARY);
+   if (cmd->commandBuffer != VK_NULL_HANDLE && cmd->isSecondary == wantsSecondary)
+   {
+      return VE_SUCCESS;
+   }
+
+   VEDeviceInternal *deviceInternal = cmd->device;
+   if (!deviceInternal->device || cmd->commandPool->commandPool == VK_NULL_HANDLE)
+   {
+      veSetError("Invalid device or command pool for command buffer allocation");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   if (cmd->commandBuffer != VK_NULL_HANDLE)
+   {
+      vkFreeCommandBuffers(deviceInternal->device, cmd->commandPool->commandPool, 1, &cmd->commandBuffer);
+      cmd->commandBuffer = VK_NULL_HANDLE;
+   }
+
+   VkCommandBufferAllocateInfo allocInfo{};
+   allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+   allocInfo.commandPool = cmd->commandPool->commandPool;
+   allocInfo.level = desiredLevel;
+   allocInfo.commandBufferCount = 1;
+
+   VkResult vkResult = vkAllocateCommandBuffers(deviceInternal->device, &allocInfo, &cmd->commandBuffer);
+   if (vkResult != VK_SUCCESS)
+   {
+      veSetError("Failed to allocate command buffer (VkResult: %d)", vkResult);
+      return VE_ERROR_OUT_OF_MEMORY;
+   }
+
+   cmd->isSecondary = wantsSecondary;
+   return VE_SUCCESS;
+}
+} // namespace
 
 // =============================================================================
 // Command Buffer Operations
@@ -28,6 +76,13 @@ VECommandBuffer *veBeginCommandBuffer(VEDevice *device)
       return NULL;
    }
 
+   VEResult levelResult = veEnsureCommandBufferLevel(cmd, VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+   if (levelResult != VE_SUCCESS)
+   {
+      veFreeCommandBuffer(cmd);
+      return NULL;
+   }
+
    VkCommandBufferBeginInfo beginInfo{};
    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -46,7 +101,7 @@ VECommandBuffer *veBeginCommandBuffer(VEDevice *device)
    return (VECommandBuffer *)cmd;
 }
 
-VEResult veSubmitCommandBuffer(VECommandBuffer *cmd, bool waitForCompletion)
+VEResult veEndCommandBuffer(VECommandBuffer *cmd)
 {
    if (!cmd)
    {
@@ -62,42 +117,155 @@ VEResult veSubmitCommandBuffer(VECommandBuffer *cmd, bool waitForCompletion)
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   VkResult result = vkEndCommandBuffer(internal->commandBuffer);
-   if (result != VK_SUCCESS)
+   VkResult vkResult = vkEndCommandBuffer(internal->commandBuffer);
+   if (vkResult != VK_SUCCESS)
    {
-      veSetError("Failed to end command buffer (VkResult: %d)", result);
+      veSetError("Failed to end command buffer (VkResult: %d)", vkResult);
       return VE_ERROR_UNKNOWN;
    }
 
    internal->isRecording = false;
+   return VE_SUCCESS;
+}
 
-   // Submit command buffer using stored device reference
-   VkSubmitInfo submitInfo{};
-   submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-   submitInfo.commandBufferCount = 1;
-   submitInfo.pCommandBuffers = &internal->commandBuffer;
+VEResult veSubmitCommandBuffer(VECommandBuffer *cmd, bool waitForCompletion)
+{
+   VESubmitInfo submitInfo{};
+   submitInfo.waitForCompletion = waitForCompletion;
+   return veSubmitCommandBufferEx(cmd, &submitInfo);
+}
 
-   VkFence fence = internal->inFlightFence;
-   if (fence == VK_NULL_HANDLE)
+VEResult veSubmitCommandBufferEx(VECommandBuffer *cmd, const VESubmitInfo *submitInfo)
+{
+   if (!cmd)
    {
-      VkFenceCreateInfo fenceInfo{};
-      fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-      fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-      VkResult fenceResult = vkCreateFence(internal->device->device, &fenceInfo, NULL, &fence);
-      if (fenceResult != VK_SUCCESS)
+      veSetError("Command buffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   if (!internal->device)
+   {
+      veSetError("Command buffer device is not initialized");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VESubmitInfo info{};
+   if (submitInfo)
+   {
+      info = *submitInfo;
+   }
+
+   if (internal->isRecording)
+   {
+      VEResult endResult = veEndCommandBuffer(cmd);
+      if (endResult != VE_SUCCESS)
       {
-         veSetError("Failed to create command buffer fence (VkResult: %d)", fenceResult);
+         return endResult;
+      }
+   }
+
+   if (info.waitSemaphoreCount > 0 && !info.waitSemaphores)
+   {
+      veSetError("Wait semaphore array cannot be NULL when waitSemaphoreCount > 0");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   if (info.signalSemaphoreCount > 0 && !info.signalSemaphores)
+   {
+      veSetError("Signal semaphore array cannot be NULL when signalSemaphoreCount > 0");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VkFence fence = info.fence;
+   bool usingInternalFence = (fence == VK_NULL_HANDLE);
+
+   if (usingInternalFence)
+   {
+      fence = internal->inFlightFence;
+      if (fence == VK_NULL_HANDLE)
+      {
+         VkFenceCreateInfo fenceInfo{};
+         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+         fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+         VkResult fenceResult = vkCreateFence(internal->device->device, &fenceInfo, NULL, &fence);
+         if (fenceResult != VK_SUCCESS)
+         {
+            veSetError("Failed to create command buffer fence (VkResult: %d)", fenceResult);
+            return VE_ERROR_OUT_OF_MEMORY;
+         }
+         internal->inFlightFence = fence;
+      }
+   }
+
+   if (fence != VK_NULL_HANDLE)
+   {
+      VkResult fenceReset = vkResetFences(internal->device->device, 1, &fence);
+      if (fenceReset != VK_SUCCESS)
+      {
+         veSetError("Failed to reset command buffer fence (VkResult: %d)", fenceReset);
          return VE_ERROR_OUT_OF_MEMORY;
       }
-      internal->inFlightFence = fence;
    }
 
-   result = vkResetFences(internal->device->device, 1, &fence);
-   if (result != VK_SUCCESS)
+   std::vector<VkSemaphoreSubmitInfo> waitInfos;
+   if (info.waitSemaphoreCount > 0)
    {
-      veSetError("Failed to reset command buffer fence (VkResult: %d)", result);
-      return VE_ERROR_OUT_OF_MEMORY;
+      waitInfos.resize(info.waitSemaphoreCount);
+      for (uint32_t i = 0; i < info.waitSemaphoreCount; ++i)
+      {
+         if (info.waitSemaphores[i] == VK_NULL_HANDLE)
+         {
+            veSetError("Wait semaphore %u is NULL", i);
+            return VE_ERROR_INVALID_PARAMETER;
+         }
+
+         VkSemaphoreSubmitInfo &waitInfo = waitInfos[i];
+         waitInfo = {};
+         waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+         waitInfo.semaphore = info.waitSemaphores[i];
+         waitInfo.value = info.waitSemaphoreValues ? info.waitSemaphoreValues[i] : 0;
+         waitInfo.stageMask =
+             info.waitStageMasks ? info.waitStageMasks[i] : (VkPipelineStageFlags2)VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+         waitInfo.deviceIndex = 0;
+      }
    }
+
+   std::vector<VkSemaphoreSubmitInfo> signalInfos;
+   if (info.signalSemaphoreCount > 0)
+   {
+      signalInfos.resize(info.signalSemaphoreCount);
+      for (uint32_t i = 0; i < info.signalSemaphoreCount; ++i)
+      {
+         if (info.signalSemaphores[i] == VK_NULL_HANDLE)
+         {
+            veSetError("Signal semaphore %u is NULL", i);
+            return VE_ERROR_INVALID_PARAMETER;
+         }
+
+         VkSemaphoreSubmitInfo &signalInfo = signalInfos[i];
+         signalInfo = {};
+         signalInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+         signalInfo.semaphore = info.signalSemaphores[i];
+         signalInfo.value = info.signalSemaphoreValues ? info.signalSemaphoreValues[i] : 0;
+         signalInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+         signalInfo.deviceIndex = 0;
+      }
+   }
+
+   VkCommandBufferSubmitInfo commandBufferInfo{};
+   commandBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+   commandBufferInfo.commandBuffer = internal->commandBuffer;
+   commandBufferInfo.deviceMask = 0;
+
+   VkSubmitInfo2 submitInfo2{};
+   submitInfo2.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+   submitInfo2.commandBufferInfoCount = 1;
+   submitInfo2.pCommandBufferInfos = &commandBufferInfo;
+   submitInfo2.waitSemaphoreInfoCount = static_cast<uint32_t>(waitInfos.size());
+   submitInfo2.pWaitSemaphoreInfos = waitInfos.empty() ? NULL : waitInfos.data();
+   submitInfo2.signalSemaphoreInfoCount = static_cast<uint32_t>(signalInfos.size());
+   submitInfo2.pSignalSemaphoreInfos = signalInfos.empty() ? NULL : signalInfos.data();
 
    VEDeviceQueueLocks *locks = internal->device->queueLocks.get();
    if (!locks)
@@ -106,33 +274,200 @@ VEResult veSubmitCommandBuffer(VECommandBuffer *cmd, bool waitForCompletion)
       return VE_ERROR_INVALID_PARAMETER;
    }
 
+   VkResult submitResult = VK_SUCCESS;
    {
       std::lock_guard<std::mutex> lock(locks->graphicsMutex());
-      result = vkQueueSubmit(internal->device->graphicsQueue, 1, &submitInfo, fence);
+      submitResult = vkQueueSubmit2(internal->device->graphicsQueue, 1, &submitInfo2, fence);
    }
-   if (result != VK_SUCCESS)
+
+   if (submitResult != VK_SUCCESS)
    {
-      veSetError("Failed to submit command buffer (VkResult: %d)", result);
+      veSetError("Failed to submit command buffer (VkResult: %d)", submitResult);
       return VE_ERROR_OUT_OF_MEMORY;
    }
 
-   if (waitForCompletion)
+   if (info.waitForCompletion && fence != VK_NULL_HANDLE)
    {
-      result = vkWaitForFences(internal->device->device, 1, &fence, VK_TRUE, UINT64_MAX);
-      if (result != VK_SUCCESS)
+      VkResult waitResult = vkWaitForFences(internal->device->device, 1, &fence, VK_TRUE, UINT64_MAX);
+      if (waitResult != VK_SUCCESS)
       {
-         veSetError("Failed to wait for command buffer completion (VkResult: %d)", result);
+         veSetError("Failed to wait for command buffer completion (VkResult: %d)", waitResult);
          return VE_ERROR_OUT_OF_MEMORY;
       }
 
       internal->clearFenceTracking();
       veFreeCommandBuffer(internal);
+      return VE_SUCCESS;
    }
-   else
+
+   if (fence != VK_NULL_HANDLE)
    {
       internal->markFenceActive(fence);
    }
 
+   return VE_SUCCESS;
+}
+
+VEResult veResetCommandBuffer(VECommandBuffer *cmd)
+{
+   if (!cmd)
+   {
+      veSetError("Command buffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   if (!internal->device)
+   {
+      veSetError("Command buffer device is not initialized");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   if (internal->isRecording)
+   {
+      veSetError("Cannot reset command buffer while recording");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   if (internal->fenceActive)
+   {
+      VkFence fence = internal->currentFence();
+      if (fence != VK_NULL_HANDLE)
+      {
+         VkResult status = vkGetFenceStatus(internal->device->device, fence);
+         if (status == VK_NOT_READY)
+         {
+            veSetError("Command buffer GPU work is still in-flight");
+            return VE_ERROR_INVALID_PARAMETER;
+         }
+         else if (status != VK_SUCCESS)
+         {
+            veSetError("Failed to query command buffer fence status (VkResult: %d)", status);
+            return VE_ERROR_UNKNOWN;
+         }
+      }
+   }
+
+   VkResult resetResult = vkResetCommandBuffer(internal->commandBuffer, 0);
+   if (resetResult != VK_SUCCESS)
+   {
+      veSetError("Failed to reset command buffer (VkResult: %d)", resetResult);
+      return VE_ERROR_UNKNOWN;
+   }
+
+   internal->resetState();
+   return VE_SUCCESS;
+}
+
+VECommandBuffer *veBeginSecondaryCommandBuffer(VEDevice *device, const VESecondaryCommandBufferDesc *desc)
+{
+   if (!device)
+   {
+      veSetError("Device cannot be NULL");
+      return NULL;
+   }
+
+   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+
+   VECommandBufferInternal *cmd = nullptr;
+   VEResult allocResult = veAllocateCommandBuffer(deviceInternal, deviceInternal->graphicsCommandPool, &cmd);
+   if (allocResult != VE_SUCCESS)
+   {
+      return NULL;
+   }
+
+   VEResult levelResult = veEnsureCommandBufferLevel(cmd, VK_COMMAND_BUFFER_LEVEL_SECONDARY);
+   if (levelResult != VE_SUCCESS)
+   {
+      veFreeCommandBuffer(cmd);
+      return NULL;
+   }
+
+   VkCommandBufferUsageFlags usageFlags =
+       desc && desc->usageFlags ? desc->usageFlags : (VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT |
+                                                      VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT);
+
+   VkCommandBufferBeginInfo beginInfo{};
+   beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+   beginInfo.flags = usageFlags;
+
+   VkCommandBufferInheritanceInfo inheritanceInfo{};
+   if (desc)
+   {
+      inheritanceInfo = desc->inheritanceInfo;
+      if (inheritanceInfo.sType == 0)
+      {
+         inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+      }
+      beginInfo.pInheritanceInfo = &inheritanceInfo;
+   }
+
+   const bool shouldBegin = !desc || desc->beginRecording;
+   if (shouldBegin)
+   {
+      VkResult beginResult = vkBeginCommandBuffer(cmd->commandBuffer, &beginInfo);
+      if (beginResult != VK_SUCCESS)
+      {
+         veSetError("Failed to begin secondary command buffer (VkResult: %d)", beginResult);
+         veFreeCommandBuffer(cmd);
+         return NULL;
+      }
+
+      cmd->isRecording = true;
+      cmd->isOneTime = (usageFlags & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) != 0;
+   }
+   else
+   {
+      cmd->isRecording = false;
+      cmd->isOneTime = (usageFlags & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) != 0;
+   }
+
+   cmd->isSecondary = true;
+   return (VECommandBuffer *)cmd;
+}
+
+VEResult veExecuteSecondaryCommandBuffers(VECommandBuffer *primaryCmd, uint32_t count,
+                                          VECommandBuffer *const *secondaryCmds)
+{
+   if (!primaryCmd || !secondaryCmds || count == 0)
+   {
+      veSetError("Invalid parameters for executing secondary command buffers");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *primaryInternal = (VECommandBufferInternal *)primaryCmd;
+   if (!primaryInternal->isRecording)
+   {
+      veSetError("Primary command buffer must be recording to execute secondary buffers");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   std::vector<VkCommandBuffer> vkSecondaryBuffers(count);
+   for (uint32_t i = 0; i < count; ++i)
+   {
+      if (!secondaryCmds[i])
+      {
+         veSetError("Secondary command buffer %u is NULL", i);
+         return VE_ERROR_INVALID_PARAMETER;
+      }
+
+      VECommandBufferInternal *secondaryInternal = (VECommandBufferInternal *)secondaryCmds[i];
+      if (secondaryInternal->isRecording)
+      {
+         veSetError("Secondary command buffer %u is still recording", i);
+         return VE_ERROR_INVALID_PARAMETER;
+      }
+
+      if (!secondaryInternal->isSecondary)
+      {
+         veSetError("Command buffer %u is not a secondary buffer", i);
+         return VE_ERROR_INVALID_PARAMETER;
+      }
+
+      vkSecondaryBuffers[i] = secondaryInternal->commandBuffer;
+   }
+
+   vkCmdExecuteCommands(primaryInternal->commandBuffer, count, vkSecondaryBuffers.data());
    return VE_SUCCESS;
 }
 
