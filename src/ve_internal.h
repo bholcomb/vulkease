@@ -136,6 +136,7 @@ struct VECommandBufferInternal
    VkCommandBuffer commandBuffer{VK_NULL_HANDLE};
    VECommandPool *commandPool{nullptr};
    VEDeviceInternal *device{nullptr};
+   bool isSecondary{false};
    bool isRecording{false};
    bool isOneTime{false};
    uint32_t index{0};

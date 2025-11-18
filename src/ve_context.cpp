@@ -1149,6 +1149,62 @@ uint32_t veGetVulkanVersion(VEDevice *device)
    return internal->deviceProperties.apiVersion;
 }
 
+VkInstance veGetVkInstance(VEContext *context)
+{
+   if (!context)
+      return VK_NULL_HANDLE;
+   VEContextInternal *internal = (VEContextInternal *)context;
+   return internal->instance;
+}
+
+VkPhysicalDevice veGetVkPhysicalDevice(VEDevice *device)
+{
+   if (!device)
+      return VK_NULL_HANDLE;
+   VEDeviceInternal *internal = (VEDeviceInternal *)device;
+   return internal->physicalDevice;
+}
+
+VkDevice veGetVkDevice(VEDevice *device)
+{
+   if (!device)
+      return VK_NULL_HANDLE;
+   VEDeviceInternal *internal = (VEDeviceInternal *)device;
+   return internal->device;
+}
+
+VkQueue veGetVkGraphicsQueue(VEDevice *device)
+{
+   if (!device)
+      return VK_NULL_HANDLE;
+   VEDeviceInternal *internal = (VEDeviceInternal *)device;
+   return internal->graphicsQueue;
+}
+
+VkQueue veGetVkComputeQueue(VEDevice *device)
+{
+   if (!device)
+      return VK_NULL_HANDLE;
+   VEDeviceInternal *internal = (VEDeviceInternal *)device;
+   return internal->computeQueue;
+}
+
+VkQueue veGetVkTransferQueue(VEDevice *device)
+{
+   if (!device)
+      return VK_NULL_HANDLE;
+   VEDeviceInternal *internal = (VEDeviceInternal *)device;
+   return internal->transferQueue;
+}
+
+VkFence veGetVkCommandBufferFence(VECommandBuffer *cmd)
+{
+   if (!cmd)
+      return VK_NULL_HANDLE;
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   return internal->currentFence();
+}
+
 #define GET_INSTANCE_FUNC(extName)                                                                                     \
    veFuncs.extName = (PFN_##extName)vkGetInstanceProcAddr(instance, #extName);                                         \
    if (veFuncs.extName == NULL)                                                                                        \
