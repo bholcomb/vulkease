@@ -209,10 +209,10 @@ namespace VulkEaseExamples
             try
             {
                 // Load shaders from SPIR-V files
-                _vertexShader = VulkEase.VulkEase.LoadShader(_device, "examples/shaders/triangle.vert.spv",
+                _vertexShader = VulkEase.VulkEase.LoadShaderFromFile(_device, "examples/shaders/triangle.vert.spv",
                     VkShaderStageFlags.VK_SHADER_STAGE_VERTEX_BIT, "main", "SpinningTriangleVertex");
 
-                _fragmentShader = VulkEase.VulkEase.LoadShader(_device, "examples/shaders/triangle.frag.spv",
+                _fragmentShader = VulkEase.VulkEase.LoadShaderFromFile(_device, "examples/shaders/triangle.frag.spv",
                     VkShaderStageFlags.VK_SHADER_STAGE_FRAGMENT_BIT, "main", "SpinningTriangleFragment");
 
                 // Create default render config

@@ -27,12 +27,14 @@
 
 #include <cstdint>
 #include <memory>
+#include <atomic>
 #include <mutex>
 
 struct VEDeviceInternal;
 struct VECommandPool;
 struct VECommandBufferInternal;
 struct VEDeviceQueueLocks;
+struct VEShaderHotReloadState;
 
 // =============================================================================
 // Internal Constants
@@ -228,8 +230,10 @@ struct VEShaderInternal
    VkShaderStageFlags stage;
    char entryPoint[64];
    char debugName[VE_MAX_DEBUG_NAME_LENGTH];
-   char sourceFile[512]; // For hot-reload
-   bool hotReloadEnabled;
+   char sourceFile[512]; // Absolute or relative path for hot reload tracking
+   uint64_t lastWriteTimestamp;
+   std::atomic<bool> pendingReload;
+   bool fromFile;
    bool isValid;
    VEDeviceInternal *device;
 };
@@ -397,6 +401,8 @@ struct VEDeviceInternal
 
    std::unique_ptr<VEDeviceQueueLocks> queueLocks;
 
+   VEShaderHotReloadState *shaderHotReloadState{nullptr};
+
    VEResult initializeVma();
    void cleanupVma();
    VEBufferInternal *getBufferFromAddress(VEBufferAddress address);
@@ -441,6 +447,9 @@ void veFreeCommandBuffer(VECommandBufferInternal *cmd);
 void veInitializeQueueLocks(VEDeviceInternal *device);
 void veDestroyQueueLocks(VEDeviceInternal *device);
 void veNotifyCommandBufferFenceSignaled(VEDeviceInternal *device, VkFence fence);
+
+// Shader hot reload internals
+void veShutdownShaderHotReload(VEDeviceInternal *device);
 
 // Resource index management functions
 // Utility functions

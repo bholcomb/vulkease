@@ -5,11 +5,209 @@
 
 #include "ve_internal.h"
 
+#include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cctype>
+#include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
+#include <new>
+#include <sys/stat.h>
+#include <thread>
 #include <vector>
+#include <limits>
+
+struct VEShaderHotReloadState
+{
+   std::mutex mutex;
+   std::condition_variable cv;
+   bool enabled{false};
+   bool stopRequested{false};
+   bool threadRunning{false};
+   std::thread watcherThread;
+   std::vector<VEShaderInternal *> trackedShaders;
+};
+
+static uint64_t queryFileTimestamp(const char *path);
+
+static VEShaderHotReloadState *ensureHotReloadState(VEDeviceInternal *deviceInternal)
+{
+   if (!deviceInternal)
+   {
+      return nullptr;
+   }
+
+   if (!deviceInternal->shaderHotReloadState)
+   {
+      deviceInternal->shaderHotReloadState = new VEShaderHotReloadState();
+   }
+
+   return deviceInternal->shaderHotReloadState;
+}
+
+static void shaderHotReloadThread(VEShaderHotReloadState *state)
+{
+   constexpr std::chrono::milliseconds pollInterval(250);
+
+   std::unique_lock<std::mutex> lock(state->mutex);
+   while (!state->stopRequested)
+   {
+      if (!state->enabled || state->trackedShaders.empty())
+      {
+         state->cv.wait(lock, [&] {
+            return state->stopRequested || (state->enabled && !state->trackedShaders.empty());
+         });
+         continue;
+      }
+
+      for (VEShaderInternal *shader : state->trackedShaders)
+      {
+         if (state->stopRequested)
+         {
+            break;
+         }
+
+         if (!shader || !shader->sourceFile[0])
+         {
+            continue;
+         }
+
+         uint64_t timestamp = queryFileTimestamp(shader->sourceFile);
+         if (timestamp == 0)
+         {
+            continue;
+         }
+
+         if (timestamp > shader->lastWriteTimestamp)
+         {
+            shader->lastWriteTimestamp = timestamp;
+            shader->pendingReload.store(true, std::memory_order_relaxed);
+         }
+      }
+
+      lock.unlock();
+      std::this_thread::sleep_for(pollInterval);
+      lock.lock();
+   }
+
+   state->threadRunning = false;
+}
+
+static uint64_t queryFileTimestamp(const char *path)
+{
+   if (!path)
+   {
+      return 0;
+   }
+
+   struct stat fileStat;
+   if (stat(path, &fileStat) != 0)
+   {
+      return 0;
+   }
+
+#if defined(_WIN32)
+   return static_cast<uint64_t>(fileStat.st_mtime);
+#else
+   return static_cast<uint64_t>(fileStat.st_mtime);
+#endif
+}
+
+static void registerFileShader(VEDeviceInternal *deviceInternal, VEShaderInternal *shader, const char *path,
+                               uint64_t timestamp)
+{
+   if (!deviceInternal || !shader || !path)
+   {
+      return;
+   }
+
+   VEShaderHotReloadState *state = ensureHotReloadState(deviceInternal);
+   if (!state)
+   {
+      return;
+   }
+
+   {
+      std::lock_guard<std::mutex> lock(state->mutex);
+
+      shader->fromFile = true;
+      shader->pendingReload.store(false);
+      shader->lastWriteTimestamp = timestamp;
+      strncpy(shader->sourceFile, path, sizeof(shader->sourceFile) - 1);
+      shader->sourceFile[sizeof(shader->sourceFile) - 1] = '\0';
+
+      auto it = std::find(state->trackedShaders.begin(), state->trackedShaders.end(), shader);
+      if (it == state->trackedShaders.end())
+      {
+         state->trackedShaders.push_back(shader);
+      }
+   }
+
+   state->cv.notify_all();
+}
+
+static void unregisterFileShader(VEDeviceInternal *deviceInternal, VEShaderInternal *shader)
+{
+   if (!deviceInternal || !shader)
+   {
+      return;
+   }
+
+   VEShaderHotReloadState *state = deviceInternal->shaderHotReloadState;
+   if (!state)
+   {
+      return;
+   }
+
+   std::lock_guard<std::mutex> lock(state->mutex);
+   auto it = std::remove(state->trackedShaders.begin(), state->trackedShaders.end(), shader);
+   if (it != state->trackedShaders.end())
+   {
+      state->trackedShaders.erase(it, state->trackedShaders.end());
+   }
+
+   shader->sourceFile[0] = '\0';
+   shader->fromFile = false;
+   shader->pendingReload.store(false);
+   shader->lastWriteTimestamp = 0;
+
+   state->cv.notify_all();
+}
+
+void veShutdownShaderHotReload(VEDeviceInternal *deviceInternal)
+{
+   if (!deviceInternal || !deviceInternal->shaderHotReloadState)
+   {
+      return;
+   }
+
+   VEShaderHotReloadState *state = deviceInternal->shaderHotReloadState;
+
+   {
+      std::unique_lock<std::mutex> lock(state->mutex);
+      if (state->threadRunning)
+      {
+         state->stopRequested = true;
+         state->cv.notify_all();
+         lock.unlock();
+         if (state->watcherThread.joinable())
+         {
+            state->watcherThread.join();
+         }
+         lock.lock();
+      }
+      state->threadRunning = false;
+      state->enabled = false;
+      state->stopRequested = false;
+      state->trackedShaders.clear();
+   }
+
+   delete state;
+   deviceInternal->shaderHotReloadState = nullptr;
+}
 
 // =============================================================================
 // Shader Compilation (Stub - would need glslang integration)
@@ -304,12 +502,18 @@ static VkShaderStageFlags getPossibleNextStages(VkShaderStageFlags stage)
    }
 }
 
-VEShader *veCreateShaderFromSPIRV(VEDevice *device, VkShaderStageFlags stage, const uint32_t *code, uint64_t codeSize,
-                                  const char *entryPoint, const char *debugName)
+VEShader *veLoadShaderFromBuffer(VEDevice *device, VkShaderStageFlags stage, const void *code, size_t codeSize,
+                                 const char *entryPoint, const char *debugName)
 {
    if (!device || !code || codeSize == 0 || !entryPoint)
    {
       veSetError("Invalid parameters for shader creation");
+      return NULL;
+   }
+
+   if ((codeSize % sizeof(uint32_t)) != 0)
+   {
+      veSetError("SPIR-V code size must be a multiple of 4 bytes");
       return NULL;
    }
 
@@ -322,7 +526,7 @@ VEShader *veCreateShaderFromSPIRV(VEDevice *device, VkShaderStageFlags stage, co
    }
 
    // Allocate shader object
-   VEShaderInternal *shader = static_cast<VEShaderInternal *>(calloc(1, sizeof(VEShaderInternal)));
+   VEShaderInternal *shader = new (std::nothrow) VEShaderInternal();
    if (!shader)
    {
       veSetError("Failed to allocate shader memory");
@@ -341,45 +545,30 @@ VEShader *veCreateShaderFromSPIRV(VEDevice *device, VkShaderStageFlags stage, co
       snprintf(shader->debugName, sizeof(shader->debugName), "Shader_%p", shader);
    }
 
-   shader->shaderObject = createShaderObject(deviceInternal, stage, code, codeSize, entryPoint, shader->debugName);
+   const uint32_t *codeWords = static_cast<const uint32_t *>(code);
+   shader->shaderObject =
+       createShaderObject(deviceInternal, stage, codeWords, static_cast<uint64_t>(codeSize), entryPoint,
+                          shader->debugName);
    if (shader->shaderObject == VK_NULL_HANDLE)
    {
-      free(shader);
+      delete shader;
       return NULL;
    }
 
    shader->device = deviceInternal;
    shader->isValid = true;
+   shader->fromFile = false;
+   shader->pendingReload.store(false);
+   shader->lastWriteTimestamp = 0;
+   shader->sourceFile[0] = '\0';
+
    deviceInternal->shaderCount += 1;
 
    return (VEShader *)shader;
 }
 
-VEShader *veCreateShaderFromGLSL(VEDevice *device, VkShaderStageFlags stage, const char *source, const char *entryPoint,
-                                 const char *debugName)
-{
-   if (!device || !source || !entryPoint)
-   {
-      veSetError("Invalid parameters for GLSL shader creation");
-      return NULL;
-   }
-
-   uint32_t *spirvCode;
-   uint64_t spirvSize;
-
-   if (!compileGLSLToSPIRV(source, stage, &spirvCode, &spirvSize))
-   {
-      return NULL;
-   }
-
-   VEShader *shader = veCreateShaderFromSPIRV(device, stage, spirvCode, spirvSize, entryPoint, debugName);
-
-   free(spirvCode);
-   return shader;
-}
-
-VEShader *veLoadShader(VEDevice *device, const char *filename, VkShaderStageFlags stage, const char *entryPoint,
-                       const char *debugName)
+VEShader *veLoadShaderFromFile(VEDevice *device, const char *filename, VkShaderStageFlags stage, const char *entryPoint,
+                              const char *debugName)
 {
    if (!device || !filename || !entryPoint)
    {
@@ -387,43 +576,51 @@ VEShader *veLoadShader(VEDevice *device, const char *filename, VkShaderStageFlag
       return NULL;
    }
 
-   FILE *file = fopen(filename, "rb");
-   if (!file)
+   bool isSpirv = hasExtension(filename, "spv") || hasExtension(filename, "spirv");
+   VEShader *shader = NULL;
+
+   if (isSpirv)
    {
-      veSetError("Failed to open shader file: %s", filename);
+      std::vector<uint32_t> code;
+      uint64_t codeSize = 0;
+
+      if (!loadSpirvFromFile(filename, code, codeSize))
+      {
+         return NULL;
+      }
+
+      shader = veLoadShaderFromBuffer(device, stage, code.data(), static_cast<size_t>(codeSize), entryPoint, debugName);
+   }
+   else
+   {
+      std::vector<char> textSource;
+      if (!loadTextFile(filename, textSource))
+      {
+         return NULL;
+      }
+
+      uint32_t *compiledCode = NULL;
+      uint64_t compiledSize = 0;
+      if (!compileGLSLToSPIRV(textSource.data(), stage, &compiledCode, &compiledSize))
+      {
+         return NULL;
+      }
+
+      shader =
+          veLoadShaderFromBuffer(device, stage, compiledCode, static_cast<size_t>(compiledSize), entryPoint, debugName);
+      free(compiledCode);
+   }
+
+   if (!shader)
+   {
       return NULL;
    }
 
-   fseek(file, 0, SEEK_END);
-   size_t fileSize = (size_t)ftell(file);
-   fseek(file, 0, SEEK_SET);
+   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+   VEShaderInternal *internal = (VEShaderInternal *)shader;
 
-   if (fileSize <= 0 || fileSize % 4 != 0)
-   {
-      veSetError("Invalid SPIR-V file size: %ld", fileSize);
-      fclose(file);
-      return NULL;
-   }
-
-   std::vector<uint32_t> code(fileSize / sizeof(uint32_t));
-   size_t bytesRead = fread(code.data(), sizeof(uint32_t), code.size(), file);
-   fclose(file);
-
-   if (bytesRead != code.size())
-   {
-      veSetError("Failed to read entire shader file");
-      return NULL;
-   }
-
-   VEShader *shader = veCreateShaderFromSPIRV(device, stage, reinterpret_cast<const uint32_t *>(code.data()), fileSize,
-                                              entryPoint, debugName);
-
-   if (shader)
-   {
-      VEShaderInternal *internal = (VEShaderInternal *)shader;
-      strncpy(internal->sourceFile, filename, sizeof(internal->sourceFile) - 1);
-      internal->device = (VEDeviceInternal *)device;
-   }
+   uint64_t timestamp = queryFileTimestamp(filename);
+   registerFileShader(deviceInternal, internal, filename, timestamp);
 
    return shader;
 }
@@ -440,32 +637,92 @@ void veDestroyShader(VEShader *shader)
       veFuncs.vkDestroyShaderEXT(internal->device->device, internal->shaderObject, NULL);
    }
 
+   if (internal->device)
+   {
+      unregisterFileShader(internal->device, internal);
+   }
+
    if (internal->device && internal->device->shaderCount > 0)
    {
       internal->device->shaderCount -= 1;
    }
 
-   free(internal);
+   delete internal;
 }
 
 // =============================================================================
 // Shader Hot-Reload Support
 // =============================================================================
 
-VEResult veEnableShaderHotReload(VEShader *shader, const char *sourceFile)
+void veSetShaderHotReloadEnabled(VEDevice *device, bool enable)
 {
-   if (!shader || !sourceFile)
+   if (!device)
    {
-      veSetError("Invalid parameters for shader hot-reload");
-      return VE_ERROR_INVALID_PARAMETER;
+      return;
+   }
+
+   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+   VEShaderHotReloadState *state = ensureHotReloadState(deviceInternal);
+   if (!state)
+   {
+      return;
+   }
+
+   if (enable)
+   {
+      std::unique_lock<std::mutex> lock(state->mutex);
+      if (state->enabled)
+      {
+         return;
+      }
+
+      state->enabled = true;
+      state->stopRequested = false;
+
+      if (!state->threadRunning)
+      {
+         state->threadRunning = true;
+         state->watcherThread = std::thread(shaderHotReloadThread, state);
+      }
+
+      state->cv.notify_all();
+   }
+   else
+   {
+      std::unique_lock<std::mutex> lock(state->mutex);
+      if (!state->enabled && !state->threadRunning)
+      {
+         return;
+      }
+
+      state->enabled = false;
+
+      if (state->threadRunning)
+      {
+         state->stopRequested = true;
+         state->cv.notify_all();
+         lock.unlock();
+         if (state->watcherThread.joinable())
+         {
+            state->watcherThread.join();
+         }
+         lock.lock();
+         state->stopRequested = false;
+         state->threadRunning = false;
+         state->watcherThread = std::thread();
+      }
+   }
+}
+
+bool veShaderNeedsReload(VEShader *shader)
+{
+   if (!shader)
+   {
+      return false;
    }
 
    VEShaderInternal *internal = (VEShaderInternal *)shader;
-
-   strncpy(internal->sourceFile, sourceFile, sizeof(internal->sourceFile) - 1);
-   internal->hotReloadEnabled = true;
-
-   return VE_SUCCESS;
+   return internal->pendingReload.load(std::memory_order_relaxed);
 }
 
 VEResult veReloadShader(VEShader *shader)
@@ -478,9 +735,11 @@ VEResult veReloadShader(VEShader *shader)
 
    VEShaderInternal *internal = (VEShaderInternal *)shader;
 
-   if (!internal->hotReloadEnabled || !internal->sourceFile[0])
+   internal->pendingReload.store(false);
+
+   if (!internal->fromFile || !internal->sourceFile[0])
    {
-      veSetError("Shader hot-reload not enabled or no source file specified");
+      veSetError("Shader hot-reload requires shader to be loaded from file");
       return VE_ERROR_FEATURE_NOT_SUPPORTED;
    }
 
@@ -541,6 +800,13 @@ VEResult veReloadShader(VEShader *shader)
 
    internal->shaderObject = newShaderObject;
    internal->isValid = true;
+
+   uint64_t timestamp = queryFileTimestamp(sourcePath);
+   if (timestamp == 0)
+   {
+      timestamp = internal->lastWriteTimestamp;
+   }
+   registerFileShader(deviceInternal, internal, sourcePath, timestamp);
 
    return VE_SUCCESS;
 }

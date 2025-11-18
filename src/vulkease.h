@@ -687,23 +687,17 @@ extern "C"
    // =============================================================================
 
    /**
-    * Create shader object from SPIR-V code
+    * Create shader object from SPIR-V binary buffer
     */
-   VULKEASE_API VEShader *veCreateShaderFromSPIRV(VEDevice *device, VkShaderStageFlags stage, const uint32_t *code,
-                                                  uint64_t codeSize, const char *entryPoint, const char *debugName);
+   VULKEASE_API VEShader *veLoadShaderFromBuffer(VEDevice *device, VkShaderStageFlags stage, const void *code,
+                                                 size_t codeSize, const char *entryPoint, const char *debugName);
 
-   /**
-    * Create shader object from GLSL source (compile to SPIR-V automatically)
-    */
-   VULKEASE_API VEShader *veCreateShaderFromGLSL(VEDevice *device, VkShaderStageFlags stage, const char *source,
-                                                 const char *entryPoint, const char *debugName);
-
-   /**
+                                                 /**
     * Load shader from file (.spv for SPIR-V, .glsl/.vert/.frag/.comp etc. for
     * GLSL)
     */
-   VULKEASE_API VEShader *veLoadShader(VEDevice *device, const char *filename, VkShaderStageFlags stage,
-                                       const char *entryPoint, const char *debugName);
+   VULKEASE_API VEShader *veLoadShaderFromFile(VEDevice *device, const char *filename, VkShaderStageFlags stage,
+                                                const char *entryPoint, const char *debugName);
 
    /**
     * Destroy shader object
@@ -713,7 +707,8 @@ extern "C"
    /**
     * Shader hot-reload support (for development)
     */
-   VULKEASE_API VEResult veEnableShaderHotReload(VEShader *shader, const char *sourceFile);
+   VULKEASE_API void veSetShaderHotReloadEnabled(VEDevice *device, bool enable);
+   VULKEASE_API bool veShaderNeedsReload(VEShader *shader);
    VULKEASE_API VEResult veReloadShader(VEShader *shader);
 
    /**

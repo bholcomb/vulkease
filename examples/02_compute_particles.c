@@ -183,23 +183,23 @@ static bool initVulkEase(GLFWwindow* window) {
 
 static bool createShaders() {
     // Load compute shader for particle simulation
-    g_computeShader = veLoadShader(g_device, COMPUTE_SHADER_PATH, 
-                                  VK_SHADER_STAGE_COMPUTE_BIT, "main", "ParticleComputeShader");
+    g_computeShader = veLoadShaderFromFile(g_device, COMPUTE_SHADER_PATH,
+                                          VK_SHADER_STAGE_COMPUTE_BIT, "main", "ParticleComputeShader");
     if (!g_computeShader) {
         fprintf(stderr, "Failed to load compute shader: %s\n", veGetLastError());
         return false;
     }
     
     // Load graphics shaders for particle rendering
-    g_vertexShader = veLoadShader(g_device, VERTEX_SHADER_PATH, 
-                                 VK_SHADER_STAGE_VERTEX_BIT, "main", "ParticleVertexShader");
+    g_vertexShader = veLoadShaderFromFile(g_device, VERTEX_SHADER_PATH,
+                                         VK_SHADER_STAGE_VERTEX_BIT, "main", "ParticleVertexShader");
     if (!g_vertexShader) {
         fprintf(stderr, "Failed to load vertex shader: %s\n", veGetLastError());
         return false;
     }
     
-    g_fragmentShader = veLoadShader(g_device, FRAGMENT_SHADER_PATH, 
-                                   VK_SHADER_STAGE_FRAGMENT_BIT, "main", "ParticleFragmentShader");
+    g_fragmentShader = veLoadShaderFromFile(g_device, FRAGMENT_SHADER_PATH,
+                                           VK_SHADER_STAGE_FRAGMENT_BIT, "main", "ParticleFragmentShader");
     if (!g_fragmentShader) {
         fprintf(stderr, "Failed to load fragment shader: %s\n", veGetLastError());
         return false;

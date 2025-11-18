@@ -1087,6 +1087,8 @@ void veDestroyDevice(VEDevice *device)
       vkDestroyDevice(internal->device, NULL);
    }
 
+   veShutdownShaderHotReload(internal);
+
    free(internal);
 }
 

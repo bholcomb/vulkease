@@ -198,19 +198,19 @@ namespace VulkEase
 
         #region Shader Objects
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veCreateShaderFromSPIRV(IntPtr device, VkShaderStageFlags stage, IntPtr code, UInt64 codeSize, IntPtr entryPoint, IntPtr debugName);
-
+        internal static extern IntPtr veLoadShaderFromBuffer(IntPtr device, VkShaderStageFlags stage, IntPtr code, UIntPtr codeSize, IntPtr entryPoint, IntPtr debugName);
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veCreateShaderFromGLSL(IntPtr device, VkShaderStageFlags stage, IntPtr source, IntPtr entryPoint, IntPtr debugName);
-
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veLoadShader(IntPtr device, IntPtr filename, VkShaderStageFlags stage, IntPtr entryPoint, IntPtr debugName);
+        internal static extern IntPtr veLoadShaderFromFile(IntPtr device, IntPtr filename, VkShaderStageFlags stage, IntPtr entryPoint, IntPtr debugName);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void veDestroyShader(IntPtr shader);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veEnableShaderHotReload(IntPtr shader, IntPtr sourceFile);
+        internal static extern void veSetShaderHotReloadEnabled(IntPtr device, [MarshalAs(UnmanagedType.I1)] bool enable);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        internal static extern bool veShaderNeedsReload(IntPtr shader);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veReloadShader(IntPtr shader);

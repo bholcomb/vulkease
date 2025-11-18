@@ -432,60 +432,56 @@ namespace VulkEase
         }
 
         // Shader Objects
-        public static VEShader CreateShaderFromSPIRV(VEDevice device, VkShaderStageFlags stage, UInt32[] code, string entryPoint, string debugName = null)
+        public static VEShader LoadShaderFromBuffer(VEDevice device, byte[] buffer, VkShaderStageFlags stage, string entryPoint, string debugName = null)
         {
+            if (buffer == null || buffer.Length == 0)
+            {
+                throw new ArgumentException("Shader buffer must not be null or empty.", nameof(buffer));
+            }
+
             var entryPtr = StringToHGlobalAnsi(entryPoint);
             var namePtr = StringToHGlobalAnsi(debugName);
+            IntPtr bufferPtr = IntPtr.Zero;
+
             try
             {
-                IntPtr codePtr = Marshal.AllocHGlobal(code.Length * sizeof(UInt32));
-                try
+                bufferPtr = Marshal.AllocHGlobal(buffer.Length);
+                Marshal.Copy(buffer, 0, bufferPtr, buffer.Length);
+                return new VEShader
                 {
-                    Marshal.Copy(Array.ConvertAll(code, x => (int)x), 0, codePtr, code.Length);
-                    return new VEShader { native = VulkEaseDll.veCreateShaderFromSPIRV(device.native, stage, codePtr, (UIntPtr)(code.Length * sizeof(UInt32)), entryPtr, namePtr) };
-                }
-                finally
-                {
-                    Marshal.FreeHGlobal(codePtr);
-                }
+                    native = VulkEaseDll.veLoadShaderFromBuffer(
+                        device.native,
+                        stage,
+                        bufferPtr,
+                        new UIntPtr((ulong)buffer.Length),
+                        entryPtr,
+                        namePtr)
+                };
             }
             finally
             {
+                if (bufferPtr != IntPtr.Zero)
+                {
+                    Marshal.FreeHGlobal(bufferPtr);
+                }
                 if (entryPtr != IntPtr.Zero)
+                {
                     Marshal.FreeHGlobal(entryPtr);
+                }
                 if (namePtr != IntPtr.Zero)
+                {
                     Marshal.FreeHGlobal(namePtr);
+                }
             }
         }
-
-        public static VEShader CreateShaderFromGLSL(VEDevice device, VkShaderStageFlags stage, string source, string entryPoint, string debugName = null)
-        {
-            var sourcePtr = StringToHGlobalAnsi(source);
-            var entryPtr = StringToHGlobalAnsi(entryPoint);
-            var namePtr = StringToHGlobalAnsi(debugName);
-            try
-            {
-                return new VEShader { native = VulkEaseDll.veCreateShaderFromGLSL(device.native, stage, sourcePtr, entryPtr, namePtr) };
-            }
-            finally
-            {
-                if (sourcePtr != IntPtr.Zero)
-                    Marshal.FreeHGlobal(sourcePtr);
-                if (entryPtr != IntPtr.Zero)
-                    Marshal.FreeHGlobal(entryPtr);
-                if (namePtr != IntPtr.Zero)
-                    Marshal.FreeHGlobal(namePtr);
-            }
-        }
-
-        public static VEShader LoadShader(VEDevice device, string filename, VkShaderStageFlags stage, string entryPoint, string debugName = null)
+        public static VEShader LoadShaderFromFile(VEDevice device, string filename, VkShaderStageFlags stage, string entryPoint, string debugName = null)
         {
             var filenamePtr = StringToHGlobalAnsi(filename);
             var entryPtr = StringToHGlobalAnsi(entryPoint);
             var namePtr = StringToHGlobalAnsi(debugName);
             try
             {
-                return new VEShader { native = VulkEaseDll.veLoadShader(device.native, filenamePtr, stage, entryPtr, namePtr) };
+                return new VEShader { native = VulkEaseDll.veLoadShaderFromFile(device.native, filenamePtr, stage, entryPtr, namePtr) };
             }
             finally
             {
@@ -503,18 +499,14 @@ namespace VulkEase
             VulkEaseDll.veDestroyShader(shader.native);
         }
 
-        public static VEResult EnableShaderHotReload(VEShader shader, string sourceFile)
+        public static void SetShaderHotReloadEnabled(VEDevice device, bool enable)
         {
-            var sourcePtr = StringToHGlobalAnsi(sourceFile);
-            try
-            {
-                return VulkEaseDll.veEnableShaderHotReload(shader.native, sourcePtr);
-            }
-            finally
-            {
-                if (sourcePtr != IntPtr.Zero)
-                    Marshal.FreeHGlobal(sourcePtr);
-            }
+            VulkEaseDll.veSetShaderHotReloadEnabled(device.native, enable);
+        }
+
+        public static bool ShaderNeedsReload(VEShader shader)
+        {
+            return VulkEaseDll.veShaderNeedsReload(shader.native);
         }
 
         public static VEResult ReloadShader(VEShader shader)
