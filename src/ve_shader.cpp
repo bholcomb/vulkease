@@ -31,7 +31,25 @@ struct VEShaderHotReloadState
    std::vector<VEShaderInternal *> trackedShaders;
 };
 
-static uint64_t queryFileTimestamp(const char *path);
+static uint64_t queryFileTimestamp(const char *path)
+{
+   if (!path)
+   {
+      return 0;
+   }
+
+   struct stat fileStat;
+   if (stat(path, &fileStat) != 0)
+   {
+      return 0;
+   }
+
+#if defined(_WIN32)
+   return static_cast<uint64_t>(fileStat.st_mtime);
+#else
+   return static_cast<uint64_t>(fileStat.st_mtime);
+#endif
+}
 
 static VEShaderHotReloadState *ensureHotReloadState(VEDeviceInternal *deviceInternal)
 {
@@ -94,26 +112,6 @@ static void shaderHotReloadThread(VEShaderHotReloadState *state)
    }
 
    state->threadRunning = false;
-}
-
-static uint64_t queryFileTimestamp(const char *path)
-{
-   if (!path)
-   {
-      return 0;
-   }
-
-   struct stat fileStat;
-   if (stat(path, &fileStat) != 0)
-   {
-      return 0;
-   }
-
-#if defined(_WIN32)
-   return static_cast<uint64_t>(fileStat.st_mtime);
-#else
-   return static_cast<uint64_t>(fileStat.st_mtime);
-#endif
 }
 
 static void registerFileShader(VEDeviceInternal *deviceInternal, VEShaderInternal *shader, const char *path,
