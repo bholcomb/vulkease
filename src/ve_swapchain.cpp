@@ -52,6 +52,16 @@ VETextureIndex VESwapchainInternal::acquireNextImage()
       return VE_INVALID_TEXTURE_INDEX;
    }
 
+   // Handle recreation if needed
+   if (needsRecreation)
+   {
+      VEResult recreateResult = recreate();
+      if (recreateResult != VE_SUCCESS)
+      {
+         return VE_INVALID_TEXTURE_INDEX;
+      }
+   }
+
    if (waitForCurrentFrameFence() != VE_SUCCESS)
    {
       return VE_INVALID_TEXTURE_INDEX;
@@ -65,8 +75,18 @@ VETextureIndex VESwapchainInternal::acquireNextImage()
 
    if (result == VK_ERROR_OUT_OF_DATE_KHR)
    {
-      requestRecreation();
-      return VE_INVALID_TEXTURE_INDEX;
+      VEResult recreateResult = recreate();
+      if (recreateResult != VE_SUCCESS)
+      {
+         return VE_INVALID_TEXTURE_INDEX;
+      }
+      // Try to acquire again after recreation
+      result = vkAcquireNextImageKHR(device->device, swapchain, UINT64_MAX, acquireSemaphore, VK_NULL_HANDLE, &imageIndex);
+      if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+      {
+         veSetError("Failed to acquire swapchain image after recreation (VkResult: %d)", result);
+         return VE_INVALID_TEXTURE_INDEX;
+      }
    }
    else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
    {
@@ -150,6 +170,17 @@ VEResult VESwapchainInternal::present(VECommandBufferInternal &cmd)
    presentInfo.pImageIndices = &currentImageIndex;
 
    cmd.markFenceActive(frameFence);
+   if (device)
+   {
+      device->threadCommandPools.trackInFlight(frameFence, &cmd);
+      for (VECommandBufferInternal *secondary : cmd.executedSecondaries)
+      {
+         if (!secondary)
+            continue;
+         secondary->markFenceActive(frameFence);
+         device->threadCommandPools.trackInFlight(frameFence, secondary);
+      }
+   }
 
    VkResult presentResult = vkQueuePresentKHR(device->graphicsQueue, &presentInfo);
 
@@ -170,6 +201,12 @@ VEResult VESwapchainInternal::present(VECommandBufferInternal &cmd)
 
    currentImageIndex = UINT32_MAX;
    currentFrame = (currentFrame + 1) % maxFramesInFlight;
+
+   if (device)
+   {
+      cmd.executedSecondaries.clear();
+      device->threadCommandPools.reclaimInFlight(device);
+   }
 
    if (device)
    {
@@ -262,6 +299,12 @@ VEResult VESwapchainInternal::waitForCurrentFrameFence()
    {
       vkWaitForFences(device->device, 1, &currentFrameFence, VK_TRUE, UINT64_MAX);
    }
+
+   // Reclaim any command buffers associated with this fence before it is reset
+   // for the next frame. Otherwise we would continually enqueue the same
+   // buffers in the per-thread in-flight map after the fence is reset back to
+   // the unsignaled state.
+   device->threadCommandPools.reclaimInFlight(device);
 
    veNotifyCommandBufferFenceSignaled(device, currentFrameFence);
    return VE_SUCCESS;
@@ -546,11 +589,14 @@ VESwapchain *veCreateSwapchain(VEDevice *device, void *windowHandle, uint32_t wi
 
    swapchain->attachDevice(deviceInternal);
    swapchain->format = format;
+   swapchain->requestedFormat = format;
    swapchain->width = width;
    swapchain->height = height;
    swapchain->maxFramesInFlight = VE_MAX_FRAMES_IN_FLIGHT;
    swapchain->currentFrame = 0;
    swapchain->currentImageIndex = UINT32_MAX;
+   swapchain->vsyncEnabled = vsync;
+   swapchain->windowHandle = windowHandle;
    std::fill_n(&swapchain->textureIndices[0], VE_MAX_SWAPCHAIN_IMAGES, VE_INVALID_TEXTURE_INDEX);
 
    // Create surface
@@ -797,4 +843,171 @@ VkFormat veGetSwapchainFormat(VESwapchain *swapchain)
 
    VESwapchainInternal *internal = reinterpret_cast<VESwapchainInternal *>(swapchain);
    return internal->currentFormat();
+}
+
+// =============================================================================
+// Swapchain Recreation
+// =============================================================================
+
+VEResult VESwapchainInternal::createSwapchainResources()
+{
+   // Get surface capabilities
+   VkSurfaceCapabilitiesKHR capabilities;
+   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device->physicalDevice, surface, &capabilities);
+
+   // Handle minimized window (width/height = 0)
+   if (capabilities.currentExtent.width == 0 || capabilities.currentExtent.height == 0)
+   {
+      return VE_ERROR_INVALID_PARAMETER;  // Window is minimized, can't recreate
+   }
+
+   // Choose surface format
+   VkSurfaceFormatKHR surfaceFormat =
+       chooseSwapSurfaceFormat(device->physicalDevice, surface, requestedFormat);
+   format = surfaceFormat.format;
+
+   // Choose present mode
+   VkPresentModeKHR presentMode = chooseSwapPresentMode(device->physicalDevice, surface, vsyncEnabled);
+
+   // Choose extent
+   VkExtent2D extent = chooseSwapExtent(&capabilities, width, height);
+   width = extent.width;
+   height = extent.height;
+
+   // Choose image count
+   uint32_t newImageCount = capabilities.minImageCount + 1;
+   if (capabilities.maxImageCount > 0 && newImageCount > capabilities.maxImageCount)
+   {
+      newImageCount = capabilities.maxImageCount;
+   }
+   if (newImageCount > VE_MAX_SWAPCHAIN_IMAGES)
+   {
+      newImageCount = VE_MAX_SWAPCHAIN_IMAGES;
+   }
+
+   // Create swapchain (with old swapchain for resource reuse)
+   VkSwapchainKHR oldSwapchain = swapchain;
+   
+   VkSwapchainCreateInfoKHR createInfo{};
+   createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+   createInfo.surface = surface;
+   createInfo.minImageCount = newImageCount;
+   createInfo.imageFormat = surfaceFormat.format;
+   createInfo.imageColorSpace = surfaceFormat.colorSpace;
+   createInfo.imageExtent = extent;
+   createInfo.imageArrayLayers = 1;
+   createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+   createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+   createInfo.queueFamilyIndexCount = 1;
+   uint32_t queueFamilyIndex = device->queueFamilies.graphicsFamily;
+   createInfo.pQueueFamilyIndices = &queueFamilyIndex;
+   createInfo.preTransform = capabilities.currentTransform;
+   createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+   createInfo.presentMode = presentMode;
+   createInfo.clipped = VK_TRUE;
+   createInfo.oldSwapchain = oldSwapchain;
+
+   VkResult result = vkCreateSwapchainKHR(device->device, &createInfo, NULL, &swapchain);
+   
+   // Destroy old swapchain after new one is created
+   if (oldSwapchain != VK_NULL_HANDLE)
+   {
+      vkDestroySwapchainKHR(device->device, oldSwapchain, NULL);
+   }
+   
+   if (result != VK_SUCCESS)
+   {
+      veSetError("Failed to recreate swapchain (VkResult: %d)", result);
+      return VE_ERROR_UNKNOWN;
+   }
+
+   // Get swapchain images
+   vkGetSwapchainImagesKHR(device->device, swapchain, &imageCount, NULL);
+   vkGetSwapchainImagesKHR(device->device, swapchain, &imageCount, images);
+
+   // Create image views and texture indices
+   for (uint32_t i = 0; i < imageCount; i++)
+   {
+      VkImageViewCreateInfo viewInfo{};
+      viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+      viewInfo.image = images[i];
+      viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+      viewInfo.format = format;
+      viewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+      viewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+      viewInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+      viewInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+      viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      viewInfo.subresourceRange.baseMipLevel = 0;
+      viewInfo.subresourceRange.levelCount = 1;
+      viewInfo.subresourceRange.baseArrayLayer = 0;
+      viewInfo.subresourceRange.layerCount = 1;
+
+      result = vkCreateImageView(device->device, &viewInfo, NULL, &imageViews[i]);
+      if (result != VK_SUCCESS)
+      {
+         veSetError("Failed to create image view %u during recreation (VkResult: %d)", i, result);
+         return VE_ERROR_UNKNOWN;
+      }
+
+      // Create texture index for bindless access
+      uint32_t textureIndex = device->allocateTextureIndex();
+      if (textureIndex != VE_INVALID_TEXTURE_INDEX)
+      {
+         VETextureInternal *texture = &device->textures[textureIndex];
+         texture->image = images[i];
+         texture->imageView = imageViews[i];
+         texture->width = width;
+         texture->height = height;
+         texture->depth = 1;
+         texture->mipLevels = 1;
+         texture->arrayLayers = 1;
+         texture->format = format;
+         texture->usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+         texture->sampleCount = VK_SAMPLE_COUNT_1_BIT;
+         texture->index = textureIndex;
+         texture->isValid = true;
+         snprintf(texture->debugName, sizeof(texture->debugName), "SwapchainImage_%u", i);
+
+         textureIndices[i] = textureIndex;
+         device->updateTextureDescriptor(textureIndex);
+      }
+      else
+      {
+         textureIndices[i] = VE_INVALID_TEXTURE_INDEX;
+      }
+   }
+
+   return VE_SUCCESS;
+}
+
+VEResult VESwapchainInternal::recreate()
+{
+   if (!device)
+   {
+      veSetError("Cannot recreate swapchain - device reference not available");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   // Wait for device to be idle before recreation
+   vkDeviceWaitIdle(device->device);
+
+   // Clean up old resources
+   releaseTextureIndices();
+   destroyImageViews();
+   // Note: Don't destroy sync objects - they can be reused
+
+   // Create new swapchain resources
+   VEResult result = createSwapchainResources();
+   if (result != VE_SUCCESS)
+   {
+      return result;
+   }
+
+   // Reset state
+   currentFrame = 0;
+   currentImageIndex = UINT32_MAX;
+   needsRecreation = false;
+
+   return VE_SUCCESS;
 }

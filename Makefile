@@ -22,6 +22,7 @@ LIBRARY = libvulkease.so
 EXAMPLE_TRIANGLE = 01_triangle
 EXAMPLE_PARTICLES = 02_compute_particles
 EXAMPLE_CUBE = 03_cube
+EXAMPLE_ASTEROID = 04_asteroid
 
 # Build config: debug (default) or release
 CONFIG ?= debug
@@ -81,7 +82,8 @@ all: library examples
 library: $(BIN_DIR)/$(LIBRARY)
 
 # Build examples
-examples: shaders assets $(BIN_DIR)/$(EXAMPLE_TRIANGLE) $(BIN_DIR)/$(EXAMPLE_PARTICLES) $(BIN_DIR)/$(EXAMPLE_CUBE)
+examples: shaders assets $(BIN_DIR)/$(EXAMPLE_TRIANGLE) $(BIN_DIR)/$(EXAMPLE_PARTICLES) $(BIN_DIR)/$(EXAMPLE_CUBE) \
+	$(BIN_DIR)/$(EXAMPLE_ASTEROID)
 
 # Build shaders
 shaders: $(SHADER_SPIRV)
@@ -158,6 +160,12 @@ $(BIN_DIR)/$(EXAMPLE_PARTICLES): $(EXAMPLES_DIR)/$(EXAMPLE_PARTICLES).c $(BIN_DI
 $(BIN_DIR)/$(EXAMPLE_CUBE): $(EXAMPLES_DIR)/$(EXAMPLE_CUBE).c $(BIN_DIR)/$(LIBRARY) | $(BIN_DIR)
 	@echo "Building example: $(EXAMPLE_CUBE)"
 	$(CC) $(EXAMPLE_CFLAGS) $(INCLUDES) -Wl,-rpath,'$$ORIGIN' $< $(EXAMPLE_LIBS) -o $@
+
+ASTEROID_SOURCES := $(wildcard $(EXAMPLES_DIR)/$(EXAMPLE_ASTEROID)/*.cpp)
+
+$(BIN_DIR)/$(EXAMPLE_ASTEROID): $(ASTEROID_SOURCES) $(BIN_DIR)/$(LIBRARY) | $(BIN_DIR)
+	@echo "Building example: $(EXAMPLE_ASTEROID)"
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -Wl,-rpath,'$$ORIGIN' $(ASTEROID_SOURCES) $(EXAMPLE_LIBS) -o $@
 
 # Install system dependencies (requires sudo)
 install-deps:

@@ -7,9 +7,188 @@
 
 #include <mutex>
 #include <vector>
+#include <thread>
+#include <functional>
+
+VECommandPool *VEThreadCommandPools::acquire(VEDeviceInternal *device, VECommandPoolKind kind)
+{
+   if (!device)
+   {
+      veSetError("Device cannot be NULL when acquiring a command pool");
+      return nullptr;
+   }
+
+   const std::thread::id threadId = std::this_thread::get_id();
+
+   std::lock_guard<std::mutex> lock(mutex);
+   auto &setPtr = perThread[threadId];
+   if (!setPtr)
+   {
+      setPtr = std::make_unique<PoolSet>();
+   }
+
+   std::unique_ptr<VECommandPool> *slot = nullptr;
+   uint32_t familyIndex = 0;
+
+   switch (kind)
+   {
+   case VECommandPoolKind::Graphics:
+      slot = &setPtr->graphics;
+      familyIndex = device->queueFamilies.graphicsFamily;
+      break;
+   case VECommandPoolKind::Compute:
+      slot = &setPtr->compute;
+      familyIndex = device->queueFamilies.computeFamily;
+      break;
+   case VECommandPoolKind::Transfer:
+      slot = &setPtr->transfer;
+      familyIndex = device->queueFamilies.transferFamily;
+      break;
+   }
+
+   if (!slot)
+   {
+      veSetError("Invalid command pool kind requested");
+      return nullptr;
+   }
+
+   if (!slot->get())
+   {
+      std::unique_ptr<VECommandPool> newPool(new (std::nothrow) VECommandPool());
+      if (!newPool)
+      {
+         veSetError("Failed to allocate command pool");
+         return nullptr;
+      }
+
+      if (!newPool->initialize(device, familyIndex))
+      {
+         return nullptr;
+      }
+
+      *slot = std::move(newPool);
+   }
+
+   return slot->get();
+}
+
+void VEThreadCommandPools::destroyAll(VEDeviceInternal *device)
+{
+   (void)device;
+
+   std::lock_guard<std::mutex> lock(mutex);
+   perThread.clear();
+   inFlight.clear();
+}
+
+void VEThreadCommandPools::trackInFlight(VkFence fence, VECommandBufferInternal *cmd)
+{
+   if (!fence || !cmd)
+   {
+      return;
+   }
+
+   std::lock_guard<std::mutex> lock(mutex);
+   inFlight[fence].push_back(cmd);
+}
+
+void VEThreadCommandPools::reclaimInFlight(VEDeviceInternal *device)
+{
+   if (!device)
+   {
+      return;
+   }
+
+   // Move completed command buffers out of the shared map while holding the
+   // mutex briefly, then do the heavier reset/release work without the mutex to
+   // avoid blocking other threads (and to avoid lock-order inversions).
+   std::vector<std::vector<VECommandBufferInternal *>> toReclaim;
+
+   {
+      std::lock_guard<std::mutex> lock(mutex);
+      for (auto it = inFlight.begin(); it != inFlight.end();)
+      {
+         VkFence fence = it->first;
+         VkResult status = vkGetFenceStatus(device->device, fence);
+         if (status == VK_NOT_READY)
+         {
+            ++it;
+            continue;
+         }
+         if (status != VK_SUCCESS)
+         {
+            ++it;
+            continue;
+         }
+
+         toReclaim.push_back(std::move(it->second));
+         it = inFlight.erase(it);
+      }
+   }
+
+   for (auto &cmdList : toReclaim)
+   {
+      for (VECommandBufferInternal *cmd : cmdList)
+      {
+         if (!cmd || !cmd->commandPool)
+            continue;
+         // Take the pool's allocation lock before modifying command buffer state.
+         // This prevents a race where allocate() sees fenceActive=false but
+         // commandBufferInUse=true, then checks the wrong fence (inFlightFence
+         // instead of the actual submission fence) and reallocates a buffer
+         // that the GPU is still using.
+         VECommandPool *pool = cmd->commandPool;
+         if (pool->allocationLock)
+         {
+            std::lock_guard<std::mutex> poolLock(*pool->allocationLock);
+            cmd->clearFenceTracking();
+            pool->finishRelease(*cmd);
+         }
+         else
+         {
+            cmd->clearFenceTracking();
+            pool->finishRelease(*cmd);
+         }
+      }
+   }
+}
 
 namespace
 {
+VEResult veEnsureBufferIdle(VECommandBufferInternal *cmd)
+{
+   if (!cmd || !cmd->device)
+   {
+      veSetError("Invalid command buffer state");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VkFence fence = cmd->currentFence();
+   if (fence != VK_NULL_HANDLE)
+   {
+      VkResult status = vkGetFenceStatus(cmd->device->device, fence);
+      if (status == VK_NOT_READY)
+      {
+         const size_t threadHash = std::hash<std::thread::id>{}(std::this_thread::get_id());
+         veSetError("Command buffer still in-flight (cb=%p index=%u pool=%p fence=%p thread=%zu)",
+                    (void *)cmd->commandBuffer, cmd->index, (void *)cmd->commandPool, (void *)fence, threadHash);
+         return VE_ERROR_INVALID_PARAMETER;
+      }
+      else if (status != VK_SUCCESS)
+      {
+         veSetError("Failed to query command buffer fence status (VkResult: %d)", status);
+         return VE_ERROR_UNKNOWN;
+      }
+   }
+
+   if (cmd->fenceActive)
+   {
+      cmd->clearFenceTracking();
+   }
+
+   return VE_SUCCESS;
+}
+
 VEResult veEnsureCommandBufferLevel(VECommandBufferInternal *cmd, VkCommandBufferLevel desiredLevel)
 {
    if (!cmd || !cmd->commandPool || !cmd->device)
@@ -22,6 +201,15 @@ VEResult veEnsureCommandBufferLevel(VECommandBufferInternal *cmd, VkCommandBuffe
    if (cmd->commandBuffer != VK_NULL_HANDLE && cmd->isSecondary == wantsSecondary)
    {
       return VE_SUCCESS;
+   }
+
+   if (cmd->commandBuffer != VK_NULL_HANDLE && cmd->fenceActive)
+   {
+      const size_t threadHash = std::hash<std::thread::id>{}(std::this_thread::get_id());
+      veSetError("Attempt to reallocate in-flight command buffer (cb=%p index=%u pool=%p fence=%p thread=%zu)",
+                 (void *)cmd->commandBuffer, cmd->index, (void *)cmd->commandPool,
+                 (void *)cmd->currentFence(), threadHash);
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEDeviceInternal *deviceInternal = cmd->device;
@@ -70,15 +258,39 @@ VECommandBuffer *veBeginCommandBuffer(VEDevice *device)
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
 
    VECommandBufferInternal *cmd;
-   VEResult result = veAllocateCommandBuffer(deviceInternal, deviceInternal->graphicsCommandPool, &cmd);
+   VECommandPool *pool = deviceInternal->threadCommandPools.acquire(deviceInternal, VECommandPoolKind::Graphics);
+   if (!pool)
+   {
+      return NULL;
+   }
+
+   VEResult result = veAllocateCommandBuffer(deviceInternal, pool, &cmd);
    if (result != VE_SUCCESS)
    {
+      return NULL;
+   }
+
+   if (veEnsureBufferIdle(cmd) != VE_SUCCESS)
+   {
+      veFreeCommandBuffer(cmd);
       return NULL;
    }
 
    VEResult levelResult = veEnsureCommandBufferLevel(cmd, VK_COMMAND_BUFFER_LEVEL_PRIMARY);
    if (levelResult != VE_SUCCESS)
    {
+      veFreeCommandBuffer(cmd);
+      return NULL;
+   }
+
+   VkResult resetResult = vkResetCommandBuffer(cmd->commandBuffer, 0);
+   if (resetResult != VK_SUCCESS)
+   {
+      VkFence fence = cmd->currentFence();
+      VkResult fenceStatus = fence ? vkGetFenceStatus(cmd->device->device, fence) : VK_SUCCESS;
+      veSetError("Failed to reset primary command buffer (VkResult: %d) cb=%p index=%u fence=%p fenceStatus=%d fenceActive=%d",
+                 resetResult, (void *)cmd->commandBuffer, cmd->index, (void *)fence, fenceStatus,
+                 cmd->fenceActive ? 1 : 0);
       veFreeCommandBuffer(cmd);
       return NULL;
    }
@@ -303,7 +515,21 @@ VEResult veSubmitCommandBufferEx(VECommandBuffer *cmd, const VESubmitInfo *submi
    if (fence != VK_NULL_HANDLE)
    {
       internal->markFenceActive(fence);
+      internal->device->threadCommandPools.trackInFlight(fence, internal);
+
+      // Propagate the same fence to any secondary command buffers executed by
+      // this primary so they are not reset/reused until the primary fence signals.
+      for (VECommandBufferInternal *secondary : internal->executedSecondaries)
+      {
+         if (!secondary)
+            continue;
+         secondary->markFenceActive(fence);
+         secondary->device->threadCommandPools.trackInFlight(fence, secondary);
+      }
    }
+
+   internal->device->threadCommandPools.reclaimInFlight(internal->device);
+   internal->executedSecondaries.clear();
 
    return VE_SUCCESS;
 }
@@ -359,6 +585,17 @@ VEResult veResetCommandBuffer(VECommandBuffer *cmd)
    return VE_SUCCESS;
 }
 
+extern "C" void veReleaseCommandBuffer(VECommandBuffer *cmd)
+{
+   if (!cmd)
+   {
+      return;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   veFreeCommandBuffer(internal);
+}
+
 VECommandBuffer *veBeginSecondaryCommandBuffer(VEDevice *device, const VESecondaryCommandBufferDesc *desc)
 {
    if (!device)
@@ -370,9 +607,21 @@ VECommandBuffer *veBeginSecondaryCommandBuffer(VEDevice *device, const VESeconda
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
 
    VECommandBufferInternal *cmd = nullptr;
-   VEResult allocResult = veAllocateCommandBuffer(deviceInternal, deviceInternal->graphicsCommandPool, &cmd);
+   VECommandPool *pool = deviceInternal->threadCommandPools.acquire(deviceInternal, VECommandPoolKind::Graphics);
+   if (!pool)
+   {
+      return NULL;
+   }
+
+   VEResult allocResult = veAllocateCommandBuffer(deviceInternal, pool, &cmd);
    if (allocResult != VE_SUCCESS)
    {
+      return NULL;
+   }
+
+   if (veEnsureBufferIdle(cmd) != VE_SUCCESS)
+   {
+      veFreeCommandBuffer(cmd);
       return NULL;
    }
 
@@ -405,6 +654,18 @@ VECommandBuffer *veBeginSecondaryCommandBuffer(VEDevice *device, const VESeconda
    const bool shouldBegin = !desc || desc->beginRecording;
    if (shouldBegin)
    {
+      VkResult resetResult = vkResetCommandBuffer(cmd->commandBuffer, 0);
+      if (resetResult != VK_SUCCESS)
+      {
+         VkFence fence = cmd->currentFence();
+         VkResult fenceStatus = fence ? vkGetFenceStatus(cmd->device->device, fence) : VK_SUCCESS;
+         veSetError("Failed to reset secondary command buffer (VkResult: %d) cb=%p index=%u fence=%p fenceStatus=%d fenceActive=%d",
+                    resetResult, (void *)cmd->commandBuffer, cmd->index, (void *)fence, fenceStatus,
+                    cmd->fenceActive ? 1 : 0);
+         veFreeCommandBuffer(cmd);
+         return NULL;
+      }
+
       VkResult beginResult = vkBeginCommandBuffer(cmd->commandBuffer, &beginInfo);
       if (beginResult != VK_SUCCESS)
       {
@@ -465,6 +726,9 @@ VEResult veExecuteSecondaryCommandBuffers(VECommandBuffer *primaryCmd, uint32_t 
       }
 
       vkSecondaryBuffers[i] = secondaryInternal->commandBuffer;
+      // Track on the primary so we can defer reuse until the primary fence signals.
+      VECommandBufferInternal *primaryInternal = (VECommandBufferInternal *)primaryCmd;
+      primaryInternal->executedSecondaries.push_back(secondaryInternal);
    }
 
    vkCmdExecuteCommands(primaryInternal->commandBuffer, count, vkSecondaryBuffers.data());
@@ -485,6 +749,7 @@ void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo
    // Convert to Vulkan rendering info
    VkRenderingInfo vkRenderingInfo{};
    vkRenderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+   vkRenderingInfo.flags = VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT;
    vkRenderingInfo.renderArea.offset.x = renderingInfo->renderAreaX;
    vkRenderingInfo.renderArea.offset.y = renderingInfo->renderAreaY;
    vkRenderingInfo.renderArea.extent.width = renderingInfo->renderAreaWidth;
@@ -645,10 +910,34 @@ void veEndRendering(VECommandBuffer *cmd)
 void veApplyRenderConfig(VECommandBuffer *cmd, VERenderConfig *config)
 {
    if (!cmd || !config)
+   {
+      veSetError("veApplyRenderConfig: Invalid parameters (cmd=%p, config=%p)", cmd, config);
       return;
+   }
 
    VERenderConfigInternal *configInternal = (VERenderConfigInternal *)config;
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   
+   // Validate config
+   if (!configInternal->isValid)
+   {
+      veSetError("veApplyRenderConfig: Render config is not valid");
+      return;
+   }
+   
+   // Validate command buffer state
+   if (!internal->isRecording)
+   {
+      veSetError("veApplyRenderConfig: Command buffer is not recording");
+      return;
+   }
+   
+   if (!internal->commandBuffer)
+   {
+      veSetError("veApplyRenderConfig: Command buffer handle is null");
+      return;
+   }
+   
    VkCommandBuffer vkCmd = internal->commandBuffer;
 
    // ==========================================================================

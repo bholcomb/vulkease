@@ -463,9 +463,9 @@ uint32_t veGetBufferCount(VEDevice *device)
       return 0;
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
-   return deviceInternal->graphicsCommandPool->commandBufferCount +
-          deviceInternal->computeCommandPool->commandBufferCount +
-          deviceInternal->transferCommandPool->commandBufferCount;
+   uint32_t total = 0;
+   deviceInternal->threadCommandPools.forEach([&total](VECommandPool &pool) { total += pool.commandBufferCount; });
+   return total;
 }
 
 uint32_t veGetTextureCount(VEDevice *device)
@@ -556,13 +556,13 @@ bool veValidateDevice(VEDevice *device)
    }
 
    // Validate resource counts (simplified - would need proper tracking)
-   if (deviceInternal->textureCount > deviceInternal->maxTextures)
+   if (deviceInternal->textureCount.load() > deviceInternal->maxTextures)
    {
       veSetError("Texture count exceeds maximum");
       return false;
    }
 
-   if (deviceInternal->samplerCount > deviceInternal->maxSamplers)
+   if (deviceInternal->samplerCount.load() > deviceInternal->maxSamplers)
    {
       veSetError("Sampler count exceeds maximum");
       return false;
@@ -630,8 +630,8 @@ void vePrintDebugInfo(VEDevice *device)
    // Resource counts
    printf("\nResource Usage:\n");
    printf("  Buffers: %u\n", veGetBufferCount(device));
-   printf("  Textures: %u / %u\n", deviceInternal->textureCount, deviceInternal->maxTextures);
-   printf("  Samplers: %u / %u\n", deviceInternal->samplerCount, deviceInternal->maxSamplers);
+   printf("  Textures: %u / %u\n", deviceInternal->textureCount.load(), deviceInternal->maxTextures);
+   printf("  Samplers: %u / %u\n", deviceInternal->samplerCount.load(), deviceInternal->maxSamplers);
    printf("  Shaders: %u / %u\n", deviceInternal->shaderCount, deviceInternal->maxShaders);
    printf("  Render Configs: %u / %u\n", deviceInternal->renderConfigCount, deviceInternal->maxRenderConfigs);
 
@@ -670,8 +670,8 @@ void vePrintProfileInfo(VEDevice *device)
    // Resource counts
    printf("\nResource Usage:\n");
    printf("  Buffers: %u\n", veGetBufferCount(device));
-   printf("  Textures: %u / %u\n", deviceInternal->textureCount, deviceInternal->maxTextures);
-   printf("  Samplers: %u / %u\n", deviceInternal->samplerCount, deviceInternal->maxSamplers);
+   printf("  Textures: %u / %u\n", deviceInternal->textureCount.load(), deviceInternal->maxTextures);
+   printf("  Samplers: %u / %u\n", deviceInternal->samplerCount.load(), deviceInternal->maxSamplers);
    printf("  Shaders: %u / %u\n", deviceInternal->shaderCount, deviceInternal->maxShaders);
    printf("  Render Configs: %u / %u\n", deviceInternal->renderConfigCount, deviceInternal->maxRenderConfigs);
 

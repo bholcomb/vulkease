@@ -546,6 +546,45 @@ The textured cube demonstrates 3D rendering with bindless textures and complex p
 - Complex push constant structure matching `VEGraphicsPushConstants`
 - Scalar block layout for optimal uniform buffer access
 
+### Example 4: Multithreaded Asteroid Field
+
+Located in `examples/04_asteroid/` (C++) and `dotnet/examples/04_MultithreadedAsteroids/` (C#), this demo showcases the threading-friendly portions of the API by rendering thousands of instanced asteroids while streaming chunk updates on a background thread.
+
+**Key Features:**
+- Background producer thread simulates asteroid updates and queues chunk transfers into a staging ring
+- Main thread double-buffers instance data into a storage buffer via `veUpdateBuffer`
+- Worker threads record secondary command buffers in parallel (`veBeginSecondaryCommandBuffer` + `veExecuteSecondaryCommandBuffers`)
+- Primary command buffer stitches together the worker output during dynamic rendering
+- Built-in CPU metrics pipeline with console logging, window title summaries, and CSV export hook
+- Toggle (`M`) to compare single-threaded vs multithreaded command buffer builds at runtime
+
+**Secondary Command Buffer Pattern:**
+
+```cpp
+VESecondaryCommandBufferDesc desc{};
+desc.usageFlags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT |
+                  VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+desc.inheritanceInfo = cachedInheritanceInfo; // includes VkCommandBufferInheritanceRenderingInfo
+
+VECommandBuffer* workerCmd = veBeginSecondaryCommandBuffer(device, &desc);
+veBindShaderConfig(workerCmd, shaderConfig);
+veApplyRenderConfig(workerCmd, renderConfig);
+vePushConstants(workerCmd, &pushConstants, sizeof(pushConstants), 0);
+veBindIndexBuffer(workerCmd, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+veDrawIndexed(workerCmd, indexCount, chunk.instanceCount, 0, 0, chunk.firstInstance);
+veEndCommandBuffer(workerCmd);
+```
+
+Workers push their handles into a thread-safe queue; the primary command buffer later executes them:
+
+```cpp
+veBeginRendering(primaryCmd, &renderingInfo);
+veExecuteSecondaryCommandBuffers(primaryCmd, secondaryCount, secondaryArray.data());
+veEndRendering(primaryCmd);
+```
+
+The C# version mirrors the flow using `Task.Run` for worker jobs and the newly exposed `VulkEase.BeginSecondaryCommandBuffer` / `VulkEase.ExecuteSecondaryCommandBuffers` helpers.
+
 **Vertex Shader Structure:**
 ```glsl
 #version 450

@@ -56,6 +56,17 @@ VEResult VEDeviceInternal::initializeVma()
       return VE_ERROR_OUT_OF_MEMORY;
    }
 
+   bufferMapMutex = std::make_unique<std::mutex>();
+   if (!bufferMapMutex)
+   {
+      veSetError("Failed to allocate buffer map mutex");
+      delete static_cast<BufferMap*>(bufferMap);
+      bufferMap = nullptr;
+      vmaDestroyAllocator(allocator);
+      allocator = VK_NULL_HANDLE;
+      return VE_ERROR_OUT_OF_MEMORY;
+   }
+
    return VE_SUCCESS;
 }
 
@@ -68,18 +79,39 @@ void VEDeviceInternal::cleanupVma()
 
    if (bufferMap)
    {
-      BufferMap *map = getBufferMap(this);
-      for (auto &pair : *map)
+      // Lock while cleaning up buffer map
+      if (bufferMapMutex)
       {
-         auto &buffer = pair.second;
-         if (buffer && buffer->isValid)
+         std::lock_guard<std::mutex> lock(*bufferMapMutex);
+         BufferMap *map = getBufferMap(this);
+         for (auto &pair : *map)
          {
-            vmaDestroyBuffer(allocator, buffer->buffer, buffer->allocation);
+            auto &buffer = pair.second;
+            if (buffer && buffer->isValid)
+            {
+               vmaDestroyBuffer(allocator, buffer->buffer, buffer->allocation);
+            }
          }
+         delete map;
+         bufferMap = nullptr;
       }
-      delete map;
-      bufferMap = nullptr;
+      else
+      {
+         BufferMap *map = getBufferMap(this);
+         for (auto &pair : *map)
+         {
+            auto &buffer = pair.second;
+            if (buffer && buffer->isValid)
+            {
+               vmaDestroyBuffer(allocator, buffer->buffer, buffer->allocation);
+            }
+         }
+         delete map;
+         bufferMap = nullptr;
+      }
    }
+
+   bufferMapMutex.reset();
 
    if (allocator)
    {
@@ -93,13 +125,15 @@ void VEDeviceInternal::cleanupVma()
 // =============================================================================
 
 // Get buffer from address using O(1) hash map lookup
+// Note: Caller must hold bufferMapMutex or call the thread-safe variant
 VEBufferInternal *VEDeviceInternal::getBufferFromAddress(VEBufferAddress address)
 {
-   if (address == VE_INVALID_ADDRESS || !bufferMap)
+   if (address == VE_INVALID_ADDRESS || !bufferMap || !bufferMapMutex)
    {
       return nullptr;
    }
 
+   std::lock_guard<std::mutex> lock(*bufferMapMutex);
    BufferMap *map = getBufferMap(this);
    auto it = map->find(address);
    return (it != map->end()) ? it->second.get() : nullptr;
@@ -107,27 +141,82 @@ VEBufferInternal *VEDeviceInternal::getBufferFromAddress(VEBufferAddress address
 
 bool VEDeviceInternal::validateBufferAddress(VEBufferAddress address) const
 {
-   return const_cast<VEDeviceInternal *>(this)->getBufferFromAddress(address) != nullptr;
+   if (address == VE_INVALID_ADDRESS || !bufferMap || !bufferMapMutex)
+   {
+      return false;
+   }
+   
+   std::lock_guard<std::mutex> lock(*bufferMapMutex);
+   BufferMap *map = getBufferMap(const_cast<VEDeviceInternal*>(this));
+   auto it = map->find(address);
+   return it != map->end() && it->second && it->second->isValid;
 }
 
 VkBuffer VEDeviceInternal::getVkBufferFromAddress(VEBufferAddress address) const
 {
-   VEBufferInternal *buffer = const_cast<VEDeviceInternal *>(this)->getBufferFromAddress(address);
-   return (buffer && buffer->isValid) ? buffer->buffer : VK_NULL_HANDLE;
+   if (address == VE_INVALID_ADDRESS || !bufferMap || !bufferMapMutex)
+   {
+      return VK_NULL_HANDLE;
+   }
+   
+   std::lock_guard<std::mutex> lock(*bufferMapMutex);
+   BufferMap *map = getBufferMap(const_cast<VEDeviceInternal*>(this));
+   auto it = map->find(address);
+   if (it != map->end() && it->second && it->second->isValid)
+   {
+      return it->second->buffer;
+   }
+   return VK_NULL_HANDLE;
 }
 
 VECommandBufferInternal *VEDeviceInternal::beginTransferCommandBuffer()
 {
-   if (!transferCommandPool)
+   VECommandBufferInternal *cmd = nullptr;
+   VECommandPool *pool = threadCommandPools.acquire(this, VECommandPoolKind::Transfer);
+   if (!pool)
    {
-      veSetError("Transfer command pool not initialized");
       return nullptr;
    }
 
-   VECommandBufferInternal *cmd = nullptr;
-   if (transferCommandPool->allocate(&cmd) != VE_SUCCESS || cmd == nullptr)
+   if (pool->allocate(&cmd) != VE_SUCCESS || cmd == nullptr)
    {
       veSetError("Failed to allocate transfer command buffer");
+      return nullptr;
+   }
+
+   if (cmd->fenceActive)
+   {
+      VkFence fence = cmd->currentFence();
+      if (fence != VK_NULL_HANDLE)
+      {
+         VkResult status = vkGetFenceStatus(device, fence);
+         if (status == VK_NOT_READY)
+         {
+            veSetError("Transfer command buffer GPU work still in-flight (cb=%p index=%u pool=%p fence=%p)",
+                       (void *)cmd->commandBuffer, cmd->index, (void *)cmd->commandPool, (void *)fence);
+            pool->release(*cmd);
+            return nullptr;
+         }
+         else if (status != VK_SUCCESS)
+         {
+            veSetError("Failed to query transfer command buffer fence status (VkResult: %d)", status);
+            pool->release(*cmd);
+            return nullptr;
+         }
+      }
+
+      cmd->clearFenceTracking();
+   }
+
+   VkResult resetResult = vkResetCommandBuffer(cmd->commandBuffer, 0);
+   if (resetResult != VK_SUCCESS)
+   {
+      VkFence fence = cmd->currentFence();
+      VkResult fenceStatus = fence ? vkGetFenceStatus(device, fence) : VK_SUCCESS;
+      veSetError("Failed to reset transfer command buffer (VkResult: %d) cb=%p index=%u fence=%p fenceStatus=%d fenceActive=%d",
+                 resetResult, (void *)cmd->commandBuffer, cmd->index, (void *)fence, fenceStatus,
+                 cmd->fenceActive ? 1 : 0);
+      pool->release(*cmd);
       return nullptr;
    }
 
@@ -139,7 +228,7 @@ VECommandBufferInternal *VEDeviceInternal::beginTransferCommandBuffer()
    if (vkResult != VK_SUCCESS)
    {
       veSetError("Failed to begin transfer command buffer (VkResult: %d)", vkResult);
-      transferCommandPool->release(*cmd);
+      pool->release(*cmd);
       return nullptr;
    }
 
@@ -205,6 +294,9 @@ VEResult VEDeviceInternal::submitTransferCommandBuffer(VECommandBufferInternal *
    submitInfo.commandBufferCount = 1;
    submitInfo.pCommandBuffers = &cmd->commandBuffer;
 
+   // Track fence even on synchronous submissions so idle checks see pending work.
+   cmd->markFenceActive(fence);
+
    {
       std::lock_guard<std::mutex> lock(locks->transferMutex());
       result = vkQueueSubmit(transferQueue, 1, &submitInfo, fence);
@@ -227,11 +319,14 @@ VEResult VEDeviceInternal::submitTransferCommandBuffer(VECommandBufferInternal *
 
       cmd->clearFenceTracking();
       veFreeCommandBuffer(cmd);
+      // Nothing was tracked for async reclaim on this path.
+      return VE_SUCCESS;
    }
-   else
-   {
-      cmd->markFenceActive(fence);
-   }
+
+   // Note: markFenceActive was already called above before submission
+   // Track for async reclaim using 'this' (we are a VEDeviceInternal member function)
+   this->threadCommandPools.trackInFlight(fence, cmd);
+   this->threadCommandPools.reclaimInFlight(this);
 
    return VE_SUCCESS;
 }
@@ -258,7 +353,7 @@ extern "C" VEBufferAddress veCreateBuffer(VEDevice *device, const VEBufferDesc *
    }
 
    BufferMap *bufferMap = getBufferMap(deviceInternal);
-   if (!bufferMap)
+   if (!bufferMap || !deviceInternal->bufferMapMutex)
    {
       veSetError("Buffer map not initialized");
       return VE_INVALID_ADDRESS;
@@ -328,9 +423,11 @@ extern "C" VEBufferAddress veCreateBuffer(VEDevice *device, const VEBufferDesc *
    // hold on to the raw pointer for initializing
    VEBufferInternal *bufferPtr = buffer.get();
 
-   // Store in map and transfer ownership.  Buffer is empty after this, hence the
-   // bufferPtr
-   (*bufferMap)[deviceAddress] = std::move(buffer);
+   // Store in map and transfer ownership under lock
+   {
+      std::lock_guard<std::mutex> lock(*deviceInternal->bufferMapMutex);
+      (*bufferMap)[deviceAddress] = std::move(buffer);
+   }
 
    if (desc->persistentlyMapped && bufferPtr->allocationInfo.pMappedData)
    {
@@ -342,6 +439,11 @@ extern "C" VEBufferAddress veCreateBuffer(VEDevice *device, const VEBufferDesc *
       VEResult uploadResult = veUpdateBuffer(device, deviceAddress, desc->initialData, desc->initialDataSize, 0);
       if (uploadResult != VE_SUCCESS)
       {
+         // Fix: Remove from map before destroying to prevent dangling entry
+         {
+            std::lock_guard<std::mutex> lock(*deviceInternal->bufferMapMutex);
+            bufferMap->erase(deviceAddress);
+         }
          vmaDestroyBuffer(deviceInternal->allocator, bufferPtr->buffer, bufferPtr->allocation);
          return VE_INVALID_ADDRESS;
       }
@@ -360,32 +462,42 @@ extern "C" void veDestroyBuffer(VEDevice *device, VEBufferAddress address)
    VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
    BufferMap *bufferMap = getBufferMap(deviceInternal);
 
-   if (!bufferMap)
+   if (!bufferMap || !deviceInternal->bufferMapMutex)
    {
       return;
    }
 
-   auto it = bufferMap->find(address);
-   if (it == bufferMap->end())
+   std::unique_ptr<VEBufferInternal> bufferToDestroy;
+   
    {
-      return; // Buffer not found
-   }
+      std::lock_guard<std::mutex> lock(*deviceInternal->bufferMapMutex);
+      
+      auto it = bufferMap->find(address);
+      if (it == bufferMap->end())
+      {
+         return; // Buffer not found
+      }
 
-   VEBufferInternal *buffer = it->second.get();
-   if (!buffer || !buffer->isValid)
+      VEBufferInternal *buffer = it->second.get();
+      if (!buffer || !buffer->isValid)
+      {
+         return;
+      }
+
+      // Move ownership out of the map while holding the lock
+      bufferToDestroy = std::move(it->second);
+      bufferMap->erase(it);
+   }
+   
+   // Destroy outside the lock to minimize contention
+   if (bufferToDestroy)
    {
-      return;
+      if (bufferToDestroy->mappedData && !bufferToDestroy->persistentlyMapped)
+      {
+         vmaUnmapMemory(deviceInternal->allocator, bufferToDestroy->allocation);
+      }
+      vmaDestroyBuffer(deviceInternal->allocator, bufferToDestroy->buffer, bufferToDestroy->allocation);
    }
-
-   if (buffer->mappedData && !buffer->persistentlyMapped)
-   {
-      vmaUnmapMemory(deviceInternal->allocator, buffer->allocation);
-   }
-
-   vmaDestroyBuffer(deviceInternal->allocator, buffer->buffer, buffer->allocation);
-
-   // Remove from map (automatically deletes the buffer via unique_ptr)
-   bufferMap->erase(it);
 }
 
 // =============================================================================

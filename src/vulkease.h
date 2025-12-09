@@ -807,6 +807,7 @@ extern "C"
     */
    VULKEASE_API VEResult veEndCommandBuffer(VECommandBuffer *cmd);
    VULKEASE_API VEResult veResetCommandBuffer(VECommandBuffer *cmd);
+   VULKEASE_API void veReleaseCommandBuffer(VECommandBuffer *cmd);
 
    typedef struct VESecondaryCommandBufferDesc
    {
@@ -1046,6 +1047,43 @@ extern "C"
       uint32_t activeSamplerCount; // 4 bytes - number of active samplers (0-8)
       uint32_t reserved[4];        // 16 bytes - reserved for future use
    } VEComputePushConstants;       // Total: 256 bytes
+
+   // =============================================================================
+   // Deferred Resource Deletion
+   // =============================================================================
+
+   /**
+    * Enqueue a buffer for deferred deletion
+    * Resource will be destroyed after GPU is done using it
+    */
+   VULKEASE_API void veEnqueueBufferDeletion(VEDevice *device, VEBufferAddress address);
+
+   /**
+    * Enqueue a texture for deferred deletion
+    */
+   VULKEASE_API void veEnqueueTextureDeletion(VEDevice *device, VETextureIndex index);
+
+   /**
+    * Enqueue a sampler for deferred deletion
+    */
+   VULKEASE_API void veEnqueueSamplerDeletion(VEDevice *device, VESamplerIndex index);
+
+   /**
+    * Enqueue a shader for deferred deletion
+    */
+   VULKEASE_API void veEnqueueShaderDeletion(VEShader *shader);
+
+   /**
+    * Process pending deferred deletions - call once per frame
+    * Deletes resources that have been pending for enough frames
+    */
+   VULKEASE_API void veProcessDeferredDeletions(VEDevice *device);
+
+   /**
+    * Flush all pending deferred deletions immediately
+    * Waits for device idle first
+    */
+   VULKEASE_API void veFlushDeferredDeletions(VEDevice *device);
 
 // =============================================================================
 // Helper Macros - Updated for new push constant sizes

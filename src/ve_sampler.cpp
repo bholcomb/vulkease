@@ -13,29 +13,42 @@
 
 uint32_t VEDeviceInternal::allocateSamplerIndex()
 {
-   if (freeSamplerCount == 0)
+   if (!samplerIndexMutex)
+   {
+      veSetError("Sampler index mutex not initialized");
+      return VE_INVALID_SAMPLER_INDEX;
+   }
+
+   std::lock_guard<std::mutex> lock(*samplerIndexMutex);
+   
+   uint32_t currentFreeCount = freeSamplerCount.load(std::memory_order_relaxed);
+   if (currentFreeCount == 0)
    {
       veSetError("No free sampler indices available (max: %u)", maxSamplers);
       return VE_INVALID_SAMPLER_INDEX;
    }
 
-   freeSamplerCount--;
-   uint32_t index = freeSamplerIndices[freeSamplerCount];
-   samplerCount++;
+   uint32_t newFreeCount = currentFreeCount - 1;
+   uint32_t index = freeSamplerIndices[newFreeCount];
+   freeSamplerCount.store(newFreeCount, std::memory_order_relaxed);
+   samplerCount.fetch_add(1, std::memory_order_relaxed);
 
    return index;
 }
 
 void VEDeviceInternal::freeSamplerIndex(uint32_t index)
 {
-   if (index == 0 || index >= maxSamplers)
+   if (index == 0 || index >= maxSamplers || !samplerIndexMutex)
    {
       return;
    }
 
-   freeSamplerIndices[freeSamplerCount] = index;
-   freeSamplerCount++;
-   samplerCount--;
+   std::lock_guard<std::mutex> lock(*samplerIndexMutex);
+   
+   uint32_t currentFreeCount = freeSamplerCount.load(std::memory_order_relaxed);
+   freeSamplerIndices[currentFreeCount] = index;
+   freeSamplerCount.store(currentFreeCount + 1, std::memory_order_relaxed);
+   samplerCount.fetch_sub(1, std::memory_order_relaxed);
 }
 
 VESamplerInternal *VEDeviceInternal::getSampler(VESamplerIndex index)
