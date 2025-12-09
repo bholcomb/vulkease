@@ -452,14 +452,13 @@ extern "C" VEBufferAddress veCreateBuffer(VEDevice *device, const VEBufferDesc *
    return deviceAddress;
 }
 
-extern "C" void veDestroyBuffer(VEDevice *device, VEBufferAddress address)
+void veDestroyBufferImmediate(VEDeviceInternal *deviceInternal, VEBufferAddress address)
 {
-   if (!device || address == VE_INVALID_ADDRESS)
+   if (!deviceInternal || address == VE_INVALID_ADDRESS)
    {
       return;
    }
 
-   VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
    BufferMap *bufferMap = getBufferMap(deviceInternal);
 
    if (!bufferMap || !deviceInternal->bufferMapMutex)
@@ -498,6 +497,24 @@ extern "C" void veDestroyBuffer(VEDevice *device, VEBufferAddress address)
       }
       vmaDestroyBuffer(deviceInternal->allocator, bufferToDestroy->buffer, bufferToDestroy->allocation);
    }
+}
+
+extern "C" void veDestroyBuffer(VEDevice *device, VEBufferAddress address)
+{
+   if (!device || address == VE_INVALID_ADDRESS)
+   {
+      return;
+   }
+
+   VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
+   VEDeferredDeletionQueue *queue = deviceInternal->deferredDeletionQueue.get();
+   if (queue)
+   {
+      queue->enqueueBuffer(address);
+      return;
+   }
+
+   veDestroyBufferImmediate(deviceInternal, address);
 }
 
 // =============================================================================

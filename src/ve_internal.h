@@ -402,6 +402,12 @@ struct VEDeferredDeletionQueue
    void flush(VEDeviceInternal* device);
 };
 
+void veAdvanceDeferredDeletions(VEDeviceInternal* device);
+void veDestroyBufferImmediate(VEDeviceInternal* device, VEBufferAddress address);
+void veDestroyTextureImmediate(VEDeviceInternal* device, VETextureIndex index);
+void veDestroySamplerImmediate(VEDeviceInternal* device, VESamplerIndex index);
+void veDestroyShaderImmediate(VEShader* shader);
+
 struct VESwapchainInternal
 {
    VkSwapchainKHR swapchain{VK_NULL_HANDLE};
