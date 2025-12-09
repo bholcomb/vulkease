@@ -1131,14 +1131,7 @@ void veDestroyTexture(VEDevice *device, VETextureIndex index)
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
-   VEDeferredDeletionQueue *queue = deviceInternal->deferredDeletionQueue.get();
-   if (queue)
-   {
-      queue->enqueueTexture(index);
-      return;
-   }
-
-   veDestroyTextureImmediate(deviceInternal, index);
+   deviceInternal->deferredDeletionQueue->enqueueTexture(index);
 }
 
 // =============================================================================

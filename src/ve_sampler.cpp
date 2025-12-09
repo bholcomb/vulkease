@@ -172,14 +172,7 @@ void veDestroySampler(VEDevice *device, VESamplerIndex index)
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
-   VEDeferredDeletionQueue *queue = deviceInternal->deferredDeletionQueue.get();
-   if (queue)
-   {
-      queue->enqueueSampler(index);
-      return;
-   }
-
-   veDestroySamplerImmediate(deviceInternal, index);
+   deviceInternal->deferredDeletionQueue->enqueueSampler(index);
 }
 
 // =============================================================================

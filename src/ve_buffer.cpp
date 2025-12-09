@@ -507,14 +507,7 @@ extern "C" void veDestroyBuffer(VEDevice *device, VEBufferAddress address)
    }
 
    VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
-   VEDeferredDeletionQueue *queue = deviceInternal->deferredDeletionQueue.get();
-   if (queue)
-   {
-      queue->enqueueBuffer(address);
-      return;
-   }
-
-   veDestroyBufferImmediate(deviceInternal, address);
+   deviceInternal->deferredDeletionQueue->enqueueBuffer(address);
 }
 
 // =============================================================================
