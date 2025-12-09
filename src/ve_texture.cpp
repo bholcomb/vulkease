@@ -1095,14 +1095,13 @@ VETextureIndex veCreateTexture(VEDevice *device, const VETextureDesc *desc)
    return index;
 }
 
-void veDestroyTexture(VEDevice *device, VETextureIndex index)
+void veDestroyTextureImmediate(VEDeviceInternal *deviceInternal, VETextureIndex index)
 {
-   if (!device || index == VE_INVALID_TEXTURE_INDEX)
+   if (!deviceInternal || index == VE_INVALID_TEXTURE_INDEX)
    {
       return;
    }
 
-   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
    VETextureInternal *texture = deviceInternal->getTexture(index);
 
    if (!texture || !texture->isValid)
@@ -1122,6 +1121,24 @@ void veDestroyTexture(VEDevice *device, VETextureIndex index)
 
    deviceInternal->freeTextureIndex(index);
    memset(texture, 0, sizeof(VETextureInternal));
+}
+
+void veDestroyTexture(VEDevice *device, VETextureIndex index)
+{
+   if (!device || index == VE_INVALID_TEXTURE_INDEX)
+   {
+      return;
+   }
+
+   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+   VEDeferredDeletionQueue *queue = deviceInternal->deferredDeletionQueue.get();
+   if (queue)
+   {
+      queue->enqueueTexture(index);
+      return;
+   }
+
+   veDestroyTextureImmediate(deviceInternal, index);
 }
 
 // =============================================================================

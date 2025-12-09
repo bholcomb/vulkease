@@ -307,6 +307,7 @@ VEResult VESwapchainInternal::waitForCurrentFrameFence()
    device->threadCommandPools.reclaimInFlight(device);
 
    veNotifyCommandBufferFenceSignaled(device, currentFrameFence);
+   veAdvanceDeferredDeletions(device);
    return VE_SUCCESS;
 }
 

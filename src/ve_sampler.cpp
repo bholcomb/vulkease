@@ -141,14 +141,13 @@ VESamplerIndex veCreateSampler(VEDevice *device, const VESamplerDesc *desc)
    return index;
 }
 
-void veDestroySampler(VEDevice *device, VESamplerIndex index)
+void veDestroySamplerImmediate(VEDeviceInternal *deviceInternal, VESamplerIndex index)
 {
-   if (!device || index == VE_INVALID_SAMPLER_INDEX)
+   if (!deviceInternal || index == VE_INVALID_SAMPLER_INDEX)
    {
       return;
    }
 
-   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
    VESamplerInternal *sampler = deviceInternal->getSampler(index);
 
    if (!sampler || !sampler->isValid)
@@ -163,6 +162,24 @@ void veDestroySampler(VEDevice *device, VESamplerIndex index)
 
    deviceInternal->freeSamplerIndex(index);
    memset(sampler, 0, sizeof(VESamplerInternal));
+}
+
+void veDestroySampler(VEDevice *device, VESamplerIndex index)
+{
+   if (!device || index == VE_INVALID_SAMPLER_INDEX)
+   {
+      return;
+   }
+
+   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+   VEDeferredDeletionQueue *queue = deviceInternal->deferredDeletionQueue.get();
+   if (queue)
+   {
+      queue->enqueueSampler(index);
+      return;
+   }
+
+   veDestroySamplerImmediate(deviceInternal, index);
 }
 
 // =============================================================================

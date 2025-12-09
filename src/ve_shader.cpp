@@ -620,7 +620,7 @@ VEShader *veLoadShaderFromFile(VEDevice *device, const char *filename, VkShaderS
    return shader;
 }
 
-void veDestroyShader(VEShader *shader)
+void veDestroyShaderImmediate(VEShader *shader)
 {
    if (!shader)
       return;
@@ -643,6 +643,24 @@ void veDestroyShader(VEShader *shader)
    }
 
    delete internal;
+}
+
+void veDestroyShader(VEShader *shader)
+{
+   if (!shader)
+      return;
+
+   VEShaderInternal *internal = (VEShaderInternal *)shader;
+   VEDeviceInternal *deviceInternal = internal->device;
+   VEDeferredDeletionQueue *queue = deviceInternal ? deviceInternal->deferredDeletionQueue.get() : nullptr;
+
+   if (queue)
+   {
+      queue->enqueueShader(shader);
+      return;
+   }
+
+   veDestroyShaderImmediate(shader);
 }
 
 // =============================================================================
