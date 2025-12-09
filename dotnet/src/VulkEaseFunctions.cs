@@ -774,11 +774,103 @@ namespace VulkEase
 
         public static VECommandBuffer BeginSecondaryCommandBuffer(VEDevice device, VESecondaryCommandBufferDesc desc)
         {
+            // Ensure fixed-length array is initialized for marshalling
+            if (desc.colorAttachmentFormats == null || desc.colorAttachmentFormats.Length != 8)
+            {
+                desc.colorAttachmentFormats = new VkFormat[8];
+            }
+
             IntPtr descPtr = Marshal.AllocHGlobal(Marshal.SizeOf<VESecondaryCommandBufferDesc>());
             try
             {
                 Marshal.StructureToPtr(desc, descPtr, false);
                 return new VECommandBuffer { native = VulkEaseDll.veBeginSecondaryCommandBuffer(device.native, descPtr) };
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(descPtr);
+            }
+        }
+
+        public static VEResult PopulateSecondaryDescFromRenderingInfo(VEDevice device, VERenderingInfo renderingInfo, ref VESecondaryCommandBufferDesc desc)
+        {
+            if (desc.colorAttachmentFormats == null || desc.colorAttachmentFormats.Length != 8)
+            {
+                desc.colorAttachmentFormats = new VkFormat[8];
+            }
+
+            // Marshal VERenderingInfo into the internal struct with pinned attachments
+            GCHandle colorAttachmentsHandle = default;
+            GCHandle depthAttachmentHandle = default;
+            GCHandle stencilAttachmentHandle = default;
+
+            VkRenderingAttachmentInfoInternal[] colorAttachmentsArray = null;
+            IntPtr colorAttachmentsPtr = IntPtr.Zero;
+
+            if (renderingInfo.ColorAttachments != null && renderingInfo.ColorAttachments.Count > 0)
+            {
+                colorAttachmentsArray = renderingInfo.ColorAttachments
+                    .Select(ca => new VkRenderingAttachmentInfoInternal(ca))
+                    .ToArray();
+                colorAttachmentsHandle = GCHandle.Alloc(colorAttachmentsArray, GCHandleType.Pinned);
+                colorAttachmentsPtr = colorAttachmentsHandle.AddrOfPinnedObject();
+            }
+
+            IntPtr depthAttachmentPtr = IntPtr.Zero;
+            if (renderingInfo.DepthAttachment.HasValue)
+            {
+                var depthAttachment = new VkRenderingAttachmentInfoInternal(renderingInfo.DepthAttachment.Value);
+                depthAttachmentHandle = GCHandle.Alloc(depthAttachment, GCHandleType.Pinned);
+                depthAttachmentPtr = depthAttachmentHandle.AddrOfPinnedObject();
+            }
+
+            IntPtr stencilAttachmentPtr = IntPtr.Zero;
+            if (renderingInfo.StencilAttachment.HasValue)
+            {
+                var stencilAttachment = new VkRenderingAttachmentInfoInternal(renderingInfo.StencilAttachment.Value);
+                stencilAttachmentHandle = GCHandle.Alloc(stencilAttachment, GCHandleType.Pinned);
+                stencilAttachmentPtr = stencilAttachmentHandle.AddrOfPinnedObject();
+            }
+
+            try
+            {
+                var internalInfo = new VERenderingInfoInternal
+                {
+                    renderAreaX = renderingInfo.RenderAreaX,
+                    renderAreaY = renderingInfo.RenderAreaY,
+                    renderAreaWidth = renderingInfo.RenderAreaWidth,
+                    renderAreaHeight = renderingInfo.RenderAreaHeight,
+                    colorAttachmentCount = (uint)(renderingInfo.ColorAttachments?.Count ?? 0),
+                    colorAttachments = colorAttachmentsPtr,
+                    depthAttachment = depthAttachmentPtr,
+                    stencilAttachment = stencilAttachmentPtr
+                };
+
+                return VulkEaseDll.vePopulateSecondaryDescFromRenderingInfo(device.native, ref internalInfo, ref desc);
+            }
+            finally
+            {
+                if (colorAttachmentsHandle.IsAllocated)
+                    colorAttachmentsHandle.Free();
+                if (depthAttachmentHandle.IsAllocated)
+                    depthAttachmentHandle.Free();
+                if (stencilAttachmentHandle.IsAllocated)
+                    stencilAttachmentHandle.Free();
+            }
+        }
+
+        public static VEResult BeginSecondaryRecording(VECommandBuffer cmd, VESecondaryCommandBufferDesc desc)
+        {
+            if (desc.colorAttachmentFormats == null || desc.colorAttachmentFormats.Length != 8)
+            {
+                desc.colorAttachmentFormats = new VkFormat[8];
+            }
+
+            IntPtr descPtr = Marshal.AllocHGlobal(Marshal.SizeOf<VESecondaryCommandBufferDesc>());
+            try
+            {
+                Marshal.StructureToPtr(desc, descPtr, false);
+                return VulkEaseDll.veBeginSecondaryRecording(cmd.native, descPtr);
             }
             finally
             {

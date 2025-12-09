@@ -811,13 +811,29 @@ extern "C"
 
    typedef struct VESecondaryCommandBufferDesc
    {
-      VkCommandBufferUsageFlags usageFlags;              // Usage hints (e.g. simultaneous use)
-      VkCommandBufferInheritanceInfo inheritanceInfo;    // Inheritance information (render pass / framebuffer)
-      bool beginRecording;                               // Begin recording automatically when true
+      VkCommandBufferUsageFlags usageFlags;        // VK_COMMAND_BUFFER_USAGE_* (render pass continue not supported)
+      uint32_t colorAttachmentCount;               // Up to 8 color attachments
+      VkFormat colorAttachmentFormats[8];          // Color formats for inheritance
+      VkFormat depthAttachmentFormat;              // Depth format (VK_FORMAT_UNDEFINED if none)
+      VkFormat stencilAttachmentFormat;            // Stencil format (VK_FORMAT_UNDEFINED if none)
+      VkSampleCountFlags rasterizationSamples;     // Sample count (0 defaults to 1)
+      uint32_t viewMask;                           // Multiview mask (0 disables multiview)
+      bool occlusionQueryEnable;                   // Enable occlusion queries for this secondary
+      VkQueryControlFlags occlusionQueryFlags;     // VkQueryControlFlags (e.g., VK_QUERY_CONTROL_PRECISE_BIT)
+      bool beginRecording;                         // Begin recording automatically when true
    } VESecondaryCommandBufferDesc;
+
+   /**
+    * Helper: populate secondary descriptor formats/samples from a rendering info
+    */
+   VULKEASE_API VEResult vePopulateSecondaryDescFromRenderingInfo(VEDevice *device,
+                                                                  const VERenderingInfo *renderingInfo,
+                                                                  VESecondaryCommandBufferDesc *desc);
 
    VULKEASE_API VECommandBuffer *veBeginSecondaryCommandBuffer(VEDevice *device,
                                                                const VESecondaryCommandBufferDesc *desc);
+   VULKEASE_API VEResult veBeginSecondaryRecording(VECommandBuffer *cmd,
+                                                   const VESecondaryCommandBufferDesc *desc);
    VULKEASE_API VEResult veExecuteSecondaryCommandBuffers(VECommandBuffer *primaryCmd, uint32_t count,
                                                           VECommandBuffer *const *secondaryCmds);
 

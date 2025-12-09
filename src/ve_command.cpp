@@ -596,6 +596,250 @@ extern "C" void veReleaseCommandBuffer(VECommandBuffer *cmd)
    veFreeCommandBuffer(internal);
 }
 
+extern "C" VEResult vePopulateSecondaryDescFromRenderingInfo(VEDevice *device,
+                                                             const VERenderingInfo *renderingInfo,
+                                                             VESecondaryCommandBufferDesc *desc)
+{
+   if (!device || !renderingInfo || !desc)
+   {
+      veSetError("vePopulateSecondaryDescFromRenderingInfo: device, renderingInfo, and desc must be non-null");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   if (renderingInfo->colorAttachmentCount > 8)
+   {
+      veSetError("vePopulateSecondaryDescFromRenderingInfo: colorAttachmentCount exceeds maximum of 8");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+   VkSampleCountFlags sampleMask = 0;
+
+   auto setSamples = [&](VkSampleCountFlags samples) -> bool {
+      VkSampleCountFlagBits resolved =
+          samples ? static_cast<VkSampleCountFlagBits>(samples) : VK_SAMPLE_COUNT_1_BIT;
+      if (sampleMask == 0)
+      {
+         sampleMask = resolved;
+         return true;
+      }
+      if (sampleMask != resolved)
+      {
+         veSetError("vePopulateSecondaryDescFromRenderingInfo: attachments must use a consistent sample count");
+         return false;
+      }
+      return true;
+   };
+
+   auto formatHasStencil = [](VkFormat format) -> bool {
+      return format == VK_FORMAT_S8_UINT || format == VK_FORMAT_D16_UNORM_S8_UINT ||
+             format == VK_FORMAT_D24_UNORM_S8_UINT || format == VK_FORMAT_D32_SFLOAT_S8_UINT;
+   };
+
+   // Color attachments
+   desc->colorAttachmentCount = renderingInfo->colorAttachmentCount;
+   for (uint32_t i = 0; i < renderingInfo->colorAttachmentCount; ++i)
+   {
+      VETextureInternal *tex = deviceInternal->getTexture(renderingInfo->colorAttachments[i].texture);
+      if (!tex)
+      {
+         veSetError("vePopulateSecondaryDescFromRenderingInfo: invalid texture index %u for color attachment %u",
+                    renderingInfo->colorAttachments[i].texture, i);
+         return VE_ERROR_INVALID_PARAMETER;
+      }
+
+      desc->colorAttachmentFormats[i] = tex->format;
+      if (!setSamples(tex->sampleCount))
+      {
+         return VE_ERROR_INVALID_PARAMETER;
+      }
+   }
+
+   // Depth attachment
+   desc->depthAttachmentFormat = VK_FORMAT_UNDEFINED;
+   desc->stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
+   if (renderingInfo->depthAttachment)
+   {
+      VETextureInternal *tex = deviceInternal->getTexture(renderingInfo->depthAttachment->texture);
+      if (!tex)
+      {
+         veSetError("vePopulateSecondaryDescFromRenderingInfo: invalid depth attachment texture index %u",
+                    renderingInfo->depthAttachment->texture);
+         return VE_ERROR_INVALID_PARAMETER;
+      }
+
+      desc->depthAttachmentFormat = tex->format;
+      if (!setSamples(tex->sampleCount))
+      {
+         return VE_ERROR_INVALID_PARAMETER;
+      }
+
+      if (formatHasStencil(tex->format))
+      {
+         desc->stencilAttachmentFormat = tex->format;
+      }
+   }
+
+   // Stencil attachment (explicit)
+   if (renderingInfo->stencilAttachment)
+   {
+      VETextureInternal *tex = deviceInternal->getTexture(renderingInfo->stencilAttachment->texture);
+      if (!tex)
+      {
+         veSetError("vePopulateSecondaryDescFromRenderingInfo: invalid stencil attachment texture index %u",
+                    renderingInfo->stencilAttachment->texture);
+         return VE_ERROR_INVALID_PARAMETER;
+      }
+
+      desc->stencilAttachmentFormat = tex->format;
+      if (!setSamples(tex->sampleCount))
+      {
+         return VE_ERROR_INVALID_PARAMETER;
+      }
+   }
+
+   if (sampleMask == 0)
+   {
+      sampleMask = VK_SAMPLE_COUNT_1_BIT;
+   }
+
+   desc->rasterizationSamples = sampleMask;
+
+   if (desc->usageFlags == 0)
+   {
+      desc->usageFlags =
+          VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+   }
+
+   return VE_SUCCESS;
+}
+
+extern "C" VEResult veBeginSecondaryRecording(VECommandBuffer *cmd, const VESecondaryCommandBufferDesc *desc)
+{
+   if (!cmd)
+   {
+      veSetError("veBeginSecondaryRecording: cmd cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   if (!internal->device)
+   {
+      veSetError("veBeginSecondaryRecording: command buffer device is null");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   if (!internal->isSecondary)
+   {
+      veSetError("veBeginSecondaryRecording: command buffer is not secondary");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   if (internal->isRecording)
+   {
+      veSetError("veBeginSecondaryRecording: command buffer is already recording");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   // Ensure GPU is not still using this buffer.
+   if (veEnsureBufferIdle(internal) != VE_SUCCESS)
+   {
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   // Ensure level is secondary (defensive).
+   if (veEnsureCommandBufferLevel(internal, VK_COMMAND_BUFFER_LEVEL_SECONDARY) != VE_SUCCESS)
+   {
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VkCommandBufferUsageFlags usageFlags =
+       (desc && desc->usageFlags != 0)
+           ? desc->usageFlags
+           : static_cast<VkCommandBufferUsageFlags>(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT |
+                                                    VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT);
+
+   VkCommandBufferBeginInfo beginInfo{};
+   beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+   beginInfo.flags = usageFlags;
+
+   const bool occlusionEnable = desc ? desc->occlusionQueryEnable : false;
+   const VkQueryControlFlags occlusionFlags = desc ? desc->occlusionQueryFlags : 0;
+   const uint32_t viewMask = desc ? desc->viewMask : 0;
+
+   VkCommandBufferInheritanceInfo inheritanceInfo{};
+   inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+   inheritanceInfo.renderPass = VK_NULL_HANDLE;
+   inheritanceInfo.subpass = 0;
+   inheritanceInfo.framebuffer = VK_NULL_HANDLE;
+   inheritanceInfo.occlusionQueryEnable = occlusionEnable ? VK_TRUE : VK_FALSE;
+   inheritanceInfo.queryFlags = occlusionEnable ? occlusionFlags : 0;
+   inheritanceInfo.pipelineStatistics = 0;
+
+   VkCommandBufferInheritanceRenderingInfo renderingInheritance{};
+   std::vector<VkFormat> derivedColorFormats;
+   uint32_t colorAttachmentCount = desc ? desc->colorAttachmentCount : 0;
+   if (colorAttachmentCount > 8)
+   {
+      veSetError("veBeginSecondaryRecording: colorAttachmentCount exceeds maximum supported attachments (8)");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   const VkFormat *colorFormatsPtr = nullptr;
+   if (colorAttachmentCount > 0)
+   {
+      if (!desc)
+      {
+         veSetError("veBeginSecondaryRecording: colorAttachmentFormats must be provided when colorAttachmentCount > 0");
+         return VE_ERROR_INVALID_PARAMETER;
+      }
+      derivedColorFormats.assign(desc->colorAttachmentFormats,
+                                 desc->colorAttachmentFormats + colorAttachmentCount);
+      colorFormatsPtr = derivedColorFormats.data();
+   }
+
+   VkFormat depthFormat = desc ? desc->depthAttachmentFormat : VK_FORMAT_UNDEFINED;
+   VkFormat stencilFormat = desc ? desc->stencilAttachmentFormat : VK_FORMAT_UNDEFINED;
+   VkSampleCountFlags userSamples = desc ? desc->rasterizationSamples : 0;
+   VkSampleCountFlagBits rasterizationSamples =
+       userSamples ? static_cast<VkSampleCountFlagBits>(userSamples) : VK_SAMPLE_COUNT_1_BIT;
+
+   renderingInheritance.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDERING_INFO;
+   renderingInheritance.viewMask = viewMask;
+   renderingInheritance.colorAttachmentCount = colorAttachmentCount;
+   renderingInheritance.pColorAttachmentFormats = colorFormatsPtr;
+   renderingInheritance.depthAttachmentFormat = depthFormat;
+   renderingInheritance.stencilAttachmentFormat = stencilFormat;
+   renderingInheritance.rasterizationSamples = rasterizationSamples;
+   inheritanceInfo.pNext = &renderingInheritance;
+
+   beginInfo.pInheritanceInfo = &inheritanceInfo;
+
+   VkResult resetResult = vkResetCommandBuffer(internal->commandBuffer, 0);
+   if (resetResult != VK_SUCCESS)
+   {
+      VkFence fence = internal->currentFence();
+      VkResult fenceStatus = fence ? vkGetFenceStatus(internal->device->device, fence) : VK_SUCCESS;
+      veSetError("veBeginSecondaryRecording: failed to reset command buffer (VkResult: %d) cb=%p fence=%p fenceStatus=%d fenceActive=%d",
+                 resetResult, (void *)internal->commandBuffer, (void *)fence, fenceStatus,
+                 internal->fenceActive ? 1 : 0);
+      return VE_ERROR_UNKNOWN;
+   }
+
+   VkResult beginResult = vkBeginCommandBuffer(internal->commandBuffer, &beginInfo);
+   if (beginResult != VK_SUCCESS)
+   {
+      veSetError("veBeginSecondaryRecording: failed to begin command buffer (VkResult: %d)", beginResult);
+      return VE_ERROR_UNKNOWN;
+   }
+
+   internal->isRecording = true;
+   internal->isOneTime = (usageFlags & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) != 0;
+   internal->isSecondary = true;
+
+   return VE_SUCCESS;
+}
+
 VECommandBuffer *veBeginSecondaryCommandBuffer(VEDevice *device, const VESecondaryCommandBufferDesc *desc)
 {
    if (!device)
@@ -603,6 +847,17 @@ VECommandBuffer *veBeginSecondaryCommandBuffer(VEDevice *device, const VESeconda
       veSetError("Device cannot be NULL");
       return NULL;
    }
+
+   VkCommandBufferUsageFlags usageFlags =
+       (desc && desc->usageFlags != 0)
+           ? desc->usageFlags
+           : static_cast<VkCommandBufferUsageFlags>(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT |
+                                                    VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT);
+
+   const bool shouldBegin = !desc || desc->beginRecording;
+   const bool occlusionEnable = desc ? desc->occlusionQueryEnable : false;
+   const VkQueryControlFlags occlusionFlags = desc ? desc->occlusionQueryFlags : 0;
+   const uint32_t viewMask = desc ? desc->viewMask : 0;
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
 
@@ -632,26 +887,64 @@ VECommandBuffer *veBeginSecondaryCommandBuffer(VEDevice *device, const VESeconda
       return NULL;
    }
 
-   VkCommandBufferUsageFlags usageFlags =
-       desc && desc->usageFlags ? desc->usageFlags : (VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT |
-                                                      VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT);
-
    VkCommandBufferBeginInfo beginInfo{};
    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
    beginInfo.flags = usageFlags;
 
    VkCommandBufferInheritanceInfo inheritanceInfo{};
-   if (desc)
+   inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+   inheritanceInfo.renderPass = VK_NULL_HANDLE;
+   inheritanceInfo.subpass = 0;
+   inheritanceInfo.framebuffer = VK_NULL_HANDLE;
+   inheritanceInfo.occlusionQueryEnable = occlusionEnable ? VK_TRUE : VK_FALSE;
+   inheritanceInfo.queryFlags = occlusionEnable ? occlusionFlags : 0;
+   inheritanceInfo.pipelineStatistics = 0;
+
+   VkCommandBufferInheritanceRenderingInfo renderingInheritance{};
+   std::vector<VkFormat> derivedColorFormats;
+   uint32_t colorAttachmentCount = 0;
+   VkFormat depthFormat = VK_FORMAT_UNDEFINED;
+   VkFormat stencilFormat = VK_FORMAT_UNDEFINED;
+   VkSampleCountFlagBits rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+   colorAttachmentCount = desc ? desc->colorAttachmentCount : 0;
+   if (colorAttachmentCount > 8)
    {
-      inheritanceInfo = desc->inheritanceInfo;
-      if (inheritanceInfo.sType == 0)
-      {
-         inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-      }
-      beginInfo.pInheritanceInfo = &inheritanceInfo;
+      veSetError("colorAttachmentCount exceeds maximum supported attachments (8)");
+      veFreeCommandBuffer(cmd);
+      return NULL;
    }
 
-   const bool shouldBegin = !desc || desc->beginRecording;
+   const VkFormat *colorFormatsPtr = nullptr;
+   if (colorAttachmentCount > 0)
+   {
+      if (!desc)
+      {
+         veSetError("colorAttachmentFormats must be provided when colorAttachmentCount > 0");
+         veFreeCommandBuffer(cmd);
+         return NULL;
+      }
+      derivedColorFormats.assign(desc->colorAttachmentFormats,
+                                 desc->colorAttachmentFormats + colorAttachmentCount);
+      colorFormatsPtr = derivedColorFormats.data();
+   }
+
+   depthFormat = desc ? desc->depthAttachmentFormat : VK_FORMAT_UNDEFINED;
+   stencilFormat = desc ? desc->stencilAttachmentFormat : VK_FORMAT_UNDEFINED;
+   VkSampleCountFlags userSamples = desc ? desc->rasterizationSamples : 0;
+   rasterizationSamples = userSamples ? static_cast<VkSampleCountFlagBits>(userSamples) : VK_SAMPLE_COUNT_1_BIT;
+
+   renderingInheritance.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDERING_INFO;
+   renderingInheritance.viewMask = viewMask;
+   renderingInheritance.colorAttachmentCount = colorAttachmentCount;
+   renderingInheritance.pColorAttachmentFormats = colorFormatsPtr;
+   renderingInheritance.depthAttachmentFormat = depthFormat;
+   renderingInheritance.stencilAttachmentFormat = stencilFormat;
+   renderingInheritance.rasterizationSamples = rasterizationSamples;
+   inheritanceInfo.pNext = &renderingInheritance;
+
+   beginInfo.pInheritanceInfo = &inheritanceInfo;
+
    if (shouldBegin)
    {
       VkResult resetResult = vkResetCommandBuffer(cmd->commandBuffer, 0);

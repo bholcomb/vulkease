@@ -107,9 +107,6 @@ private:
    std::unique_ptr<FILE, int (*)(FILE *)> csvFile_;
 
 
-   // Cached rendering inheritance info for secondary command buffers.
-   VkCommandBufferInheritanceInfo inheritanceInfo_{};
-   VkCommandBufferInheritanceRenderingInfo inheritanceRendering_{};
 };
 
 
