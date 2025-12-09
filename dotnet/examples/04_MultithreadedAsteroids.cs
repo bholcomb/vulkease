@@ -24,8 +24,9 @@ namespace VulkEaseExamples
     public sealed class MultithreadedAsteroids : GameWindow
     {
         private const int InstanceCount = 4096;
-        private const int ChunkSize = 64;
+        private const int ChunkSize = 512; // Match C++ chunking to reduce overhead
         private const float CameraRadius = 55.0f;
+        private const int MaxWorkerThreads = 8;
         private static readonly string VertexShaderPath = "examples/shaders/asteroid.vert.spv";
         private static readonly string FragmentShaderPath = "examples/shaders/asteroid.frag.spv";
 
@@ -39,15 +40,8 @@ namespace VulkEaseExamples
         [StructLayout(LayoutKind.Sequential)]
         private struct InstanceData
         {
-            public Matrix4x4 Model;
+            public Matrix4x4 Model;   // Stored row-major; uploaded as-is
             public SysVector4 Color;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct CameraData
-        {
-            public Matrix4x4 ViewProj;
-            public SysVector4 CameraPos;
         }
 
         private readonly record struct Chunk(int FirstInstance, int Count);
@@ -186,10 +180,12 @@ namespace VulkEaseExamples
                         (float)_rng.NextDouble(),
                         (float)_rng.NextDouble(),
                         (float)_rng.NextDouble()));
-                    var rotation = Matrix4x4.CreateFromAxisAngle(axis, jitter);
-                    instance.Model = rotation * instance.Model;
+                var rotation = Matrix4x4.CreateFromAxisAngle(axis, jitter);
+                // Row-major: pre-multiply to match column-major R * M on GPU.
+                instance.Model = rotation * instance.Model;
 
                     float drift = (float)(_rng.NextDouble() - 0.5) * 0.15f;
+                    // Drift a bit along the local X/Z axes.
                     instance.Model.M41 += instance.Model.M11 * drift;
                     instance.Model.M42 += ((float)_rng.NextDouble() - 0.5f) * 0.05f;
                     instance.Model.M43 += instance.Model.M13 * drift;
@@ -236,6 +232,7 @@ namespace VulkEaseExamples
 
         private SimulationSystem _simulation;
         private ChannelReader<ChunkUpdate> _updateReader;
+        private readonly int _workerCount;
 
         private readonly Stopwatch _frameTimer = Stopwatch.StartNew();
         private ulong _frameIndex;
@@ -258,6 +255,9 @@ namespace VulkEaseExamples
                 Flags = ContextFlags.Default,
             })
         {
+            int hwThreads = Environment.ProcessorCount;
+            _workerCount = Math.Min(MaxWorkerThreads, Math.Max(1, hwThreads > 4 ? hwThreads - 2 : 2));
+
             foreach (string arg in args)
             {
                 if (string.Equals(arg, "--no-mt", StringComparison.OrdinalIgnoreCase))
@@ -265,6 +265,8 @@ namespace VulkEaseExamples
                     _multithreaded = false;
                 }
             }
+
+            Console.WriteLine($"Worker threads: {_workerCount}");
         }
 
         protected override void OnLoad()
@@ -551,7 +553,7 @@ namespace VulkEaseExamples
 
             VEBufferDesc cameraDesc = new()
             {
-                size = (ulong)Marshal.SizeOf<CameraData>(),
+                size = (ulong)(sizeof(float) * 20), // 16 for viewProj, 4 for cameraPos
                 usage = VkBufferUsageFlags.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                 persistentlyMapped = false,
                 debugName = "AsteroidCamera"
@@ -619,14 +621,12 @@ namespace VulkEaseExamples
 
             if (_multithreaded)
             {
-                var tasks = new Task<ChunkRecord>[_chunks.Count];
-                for (int i = 0; i < _chunks.Count; ++i)
+                var results = new ChunkRecord[_chunks.Count];
+                Parallel.For(0, _chunks.Count, new ParallelOptions { MaxDegreeOfParallelism = _workerCount }, i =>
                 {
-                    int chunkIndex = i;
-                    tasks[i] = Task.Run(() => RecordChunk(chunkIndex));
-                }
-                Task.WaitAll(tasks);
-                _recorded.AddRange(tasks.Select(t => t.Result));
+                    results[i] = RecordChunk(i);
+                });
+                _recorded.AddRange(results);
             }
             else
             {
@@ -744,24 +744,96 @@ namespace VulkEaseExamples
             SysVector3 target = SysVector3.Zero;
             SysVector3 up = SysVector3.UnitY;
 
-            Matrix4x4 view = Matrix4x4.CreateLookAt(eye, target, up);
-
             float aspect = width / (float)height;
-            Matrix4x4 proj = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 3.0f, aspect, 0.1f, 500.0f);
-            proj.M22 *= -1.0f; // Vulkan clip space Y flipped
+            var view = CreateLookAtRH(eye, target, up);
+            var proj = CreateVulkanPerspective(MathF.PI / 3.0f, aspect, 0.1f, 500.0f);
 
-            Matrix4x4 viewProj = view * proj;
+            // Row-major: view * proj (like cube example uses model * view * proj)
+            var viewProj = MultiplyMatrix(view, proj);
 
-            CameraData data = new()
+            // Pack viewProj (16 floats) + cameraPos (4 floats) into a contiguous buffer
+            var packed = new float[20];
+            Array.Copy(viewProj, 0, packed, 0, 16);
+            packed[16] = eye.X;
+            packed[17] = eye.Y;
+            packed[18] = eye.Z;
+            packed[19] = 1.0f;
+
+            int byteSize = sizeof(float) * packed.Length;
+            IntPtr ptr = Marshal.AllocHGlobal(byteSize);
+            try
             {
-                ViewProj = Matrix4x4.Transpose(viewProj),
-                CameraPos = new SysVector4(eye.X, eye.Y, eye.Z, 1.0f)
-            };
+                Marshal.Copy(packed, 0, ptr, packed.Length);
+                UpdateBuffer(_device, _cameraBuffer, ptr, (ulong)byteSize, 0);
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(ptr);
+            }
+        }
 
-            IntPtr ptr = Marshal.AllocHGlobal(Marshal.SizeOf<CameraData>());
-            Marshal.StructureToPtr(data, ptr, false);
-            UpdateBuffer(_device, _cameraBuffer, ptr, (ulong)Marshal.SizeOf<CameraData>(), 0);
-            Marshal.FreeHGlobal(ptr);
+        private static float[] CreateIdentityMatrix()
+        {
+            var m = new float[16];
+            m[0] = m[5] = m[10] = m[15] = 1.0f;
+            return m;
+        }
+
+        private static float[] CreateVulkanPerspective(float fov, float aspect, float near, float far)
+        {
+            var m = new float[16];
+            float t = MathF.Tan(fov * 0.5f);
+            m[0] = 1.0f / (aspect * t);
+            m[5] = -1.0f / t;                  // Flip Y
+            m[10] = far / (near - far);        // Z in [0,1]
+            m[11] = -1.0f;
+            m[14] = -(far * near) / (far - near);
+            m[15] = 0.0f;
+            return m;
+        }
+
+        private static float[] CreateLookAtRH(SysVector3 eye, SysVector3 target, SysVector3 up)
+        {
+            SysVector3 f = SysVector3.Normalize(target - eye);
+            SysVector3 s = SysVector3.Normalize(SysVector3.Cross(f, up));
+            SysVector3 u = SysVector3.Cross(s, f);
+
+            // Row-major matrix equivalent to C++ computeLookAt column-major
+            var m = new float[16];
+            m[0] = s.X;  m[1] = u.X;  m[2] = -f.X; m[3] = 0.0f;
+            m[4] = s.Y;  m[5] = u.Y;  m[6] = -f.Y; m[7] = 0.0f;
+            m[8] = s.Z;  m[9] = u.Z;  m[10] = -f.Z; m[11] = 0.0f;
+            m[12] = -SysVector3.Dot(s, eye);
+            m[13] = -SysVector3.Dot(u, eye);
+            m[14] = SysVector3.Dot(f, eye);
+            m[15] = 1.0f;
+            return m;
+        }
+
+        private static float[] MultiplyMatrix(float[] a, float[] b)
+        {
+            var result = new float[16];
+            for (int i = 0; i < 4; i++)
+            {
+                for (int j = 0; j < 4; j++)
+                {
+                    for (int k = 0; k < 4; k++)
+                    {
+                        result[i * 4 + j] += a[i * 4 + k] * b[k * 4 + j];
+                    }
+                }
+            }
+            return result;
+        }
+
+        private static Matrix4x4 MatrixFromArray(float[] m)
+        {
+            // Assumes row-major ordering matching float[16]
+            return new Matrix4x4(
+                m[0], m[1], m[2], m[3],
+                m[4], m[5], m[6], m[7],
+                m[8], m[9], m[10], m[11],
+                m[12], m[13], m[14], m[15]);
         }
 
         private ChunkRecord RecordChunk(int chunkIndex)
@@ -825,6 +897,7 @@ namespace VulkEaseExamples
 
             for (int i = 0; i < instances.Count; ++i)
             {
+                // Upload row-major data directly (matches cube example behavior)
                 Marshal.StructureToPtr(instances[i], ptr + i * stride, false);
             }
 
@@ -887,12 +960,15 @@ namespace VulkEaseExamples
                 float height = ((float)rng.NextDouble() - 0.5f) * 10.0f;
                 float scale = 0.5f + (float)rng.NextDouble();
 
+                var rotation = Matrix4x4.CreateFromAxisAngle(SysVector3.Normalize(new SysVector3(
+                    (float)rng.NextDouble(),
+                    (float)rng.NextDouble(),
+                    (float)rng.NextDouble())), (float)rng.NextDouble() * MathF.PI * 2.0f);
+
+                // Row-major: model = rotation * scale * translation (matches column-major T * R * S order)
                 Matrix4x4 model =
+                    rotation *
                     Matrix4x4.CreateScale(scale) *
-                    Matrix4x4.CreateFromAxisAngle(SysVector3.Normalize(new SysVector3(
-                        (float)rng.NextDouble(),
-                        (float)rng.NextDouble(),
-                        (float)rng.NextDouble())), (float)rng.NextDouble() * MathF.PI * 2.0f) *
                     Matrix4x4.CreateTranslation(
                         MathF.Cos(angle) * radius,
                         height,
@@ -900,7 +976,7 @@ namespace VulkEaseExamples
 
                 data[i] = new InstanceData
                 {
-                    Model = Matrix4x4.Transpose(model),
+                    Model = model,
                     Color = new SysVector4(
                         0.5f + 0.5f * (float)rng.NextDouble(),
                         0.4f + 0.4f * (float)rng.NextDouble(),
