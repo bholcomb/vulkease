@@ -581,9 +581,10 @@ namespace VulkEaseExamples
                 {
                     vertexBuffer = _vertexBuffer.native,
                     indexBuffer = _indexBuffer.native,
-                    uniformBuffers = new ulong[4] { _uniformBuffer.native, 0, 0, 0 },
-                    textures = new uint[8] { _texture.native, 0, 0, 0, 0, 0, 0, 0 },
-                    samplers = new uint[8] { _sampler.native, 0, 0, 0, 0, 0, 0, 0 },
+                    uniformBuffers = new ulong[8] { _uniformBuffer.native, 0, 0, 0, 0, 0, 0, 0 },
+                    textures = new uint[16] { _texture.native, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+                    samplers = new uint[16] { _sampler.native, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+                    reserved = new uint[7],
                     objectScale = 1.0f,
                     activeTextureCount = 1,
                     activeSamplerCount = 1,

@@ -550,25 +550,5 @@ namespace VulkEase
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veValidateRenderConfig(IntPtr config);
         #endregion
-
-        #region Deferred Deletion
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veEnqueueBufferDeletion(IntPtr device, UInt64 address);
-
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veEnqueueTextureDeletion(IntPtr device, UInt32 index);
-
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veEnqueueSamplerDeletion(IntPtr device, UInt32 index);
-
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veEnqueueShaderDeletion(IntPtr shader);
-
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veProcessDeferredDeletions(IntPtr device);
-
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veFlushDeferredDeletions(IntPtr device);
-        #endregion
     }
 }
