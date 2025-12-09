@@ -334,6 +334,13 @@ namespace VulkEase
         internal static extern IntPtr veBeginSecondaryCommandBuffer(IntPtr device, IntPtr desc);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult vePopulateSecondaryDescFromRenderingInfo(IntPtr device,
+            ref VERenderingInfoInternal renderingInfo, ref VESecondaryCommandBufferDesc desc);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veBeginSecondaryRecording(IntPtr cmd, IntPtr desc);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veEndCommandBuffer(IntPtr cmd);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]

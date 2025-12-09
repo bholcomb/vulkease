@@ -247,10 +247,6 @@ namespace VulkEaseExamples
         // Swapchain format for inheritance info
         private VkFormat _swapchainFormat = VkFormat.VK_FORMAT_B8G8R8A8_SRGB;
 
-        // Cached rendering inheritance info for secondary command buffers (allocated in unmanaged memory)
-        private IntPtr _inheritanceRenderingPtr;
-        private IntPtr _colorFormatsPtr;
-
         public MultithreadedAsteroids(string[] args)
             : base(GameWindowSettings.Default, new NativeWindowSettings
             {
@@ -303,8 +299,6 @@ namespace VulkEaseExamples
             {
                 DeviceWaitIdle(_device);
             }
-
-            CleanupInheritanceInfo();
 
             if (_depthTexture.native != VEConstants.VE_INVALID_TEXTURE_INDEX.native)
                 DestroyTexture(_device, _depthTexture);
@@ -481,48 +475,7 @@ namespace VulkEaseExamples
             if (linuxHandleBlock != IntPtr.Zero)
                 Marshal.FreeHGlobal(linuxHandleBlock);
 
-            // Initialize inheritance info for secondary command buffers (dynamic rendering)
-            InitializeInheritanceInfo();
-
             return true;
-        }
-
-        private void InitializeInheritanceInfo()
-        {
-            // Allocate unmanaged memory for the color formats array
-            _colorFormatsPtr = Marshal.AllocHGlobal(sizeof(int)); // VkFormat is an int (4 bytes)
-            Marshal.WriteInt32(_colorFormatsPtr, (int)_swapchainFormat);
-
-            // Allocate and populate the inheritance rendering info in unmanaged memory
-            var inheritanceRendering = new VkCommandBufferInheritanceRenderingInfo
-            {
-                sType = 1000044004, // VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDERING_INFO
-                pNext = IntPtr.Zero,
-                flags = 0,
-                viewMask = 0,
-                colorAttachmentCount = 1,
-                pColorAttachmentFormats = _colorFormatsPtr,
-                depthAttachmentFormat = VkFormat.VK_FORMAT_D32_SFLOAT,
-                stencilAttachmentFormat = VkFormat.VK_FORMAT_UNDEFINED,
-                rasterizationSamples = VkSampleCountFlags.VK_SAMPLE_COUNT_1_BIT
-            };
-
-            _inheritanceRenderingPtr = Marshal.AllocHGlobal(Marshal.SizeOf<VkCommandBufferInheritanceRenderingInfo>());
-            Marshal.StructureToPtr(inheritanceRendering, _inheritanceRenderingPtr, false);
-        }
-
-        private void CleanupInheritanceInfo()
-        {
-            if (_inheritanceRenderingPtr != IntPtr.Zero)
-            {
-                Marshal.FreeHGlobal(_inheritanceRenderingPtr);
-                _inheritanceRenderingPtr = IntPtr.Zero;
-            }
-            if (_colorFormatsPtr != IntPtr.Zero)
-            {
-                Marshal.FreeHGlobal(_colorFormatsPtr);
-                _colorFormatsPtr = IntPtr.Zero;
-            }
         }
 
         private bool LoadAssets()
@@ -815,25 +768,21 @@ namespace VulkEaseExamples
         {
             var chunk = _chunks[chunkIndex];
 
-            // Create secondary command buffer descriptor with inheritance info for dynamic rendering
-            var inheritanceInfo = new VkCommandBufferInheritanceInfo
-            {
-                sType = 41, // VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO
-                pNext = _inheritanceRenderingPtr, // Points to our pre-allocated unmanaged memory
-                renderPass = IntPtr.Zero,
-                subpass = 0,
-                framebuffer = IntPtr.Zero,
-                occlusionQueryEnable = 0, // VK_FALSE
-                queryFlags = 0,
-                pipelineStatistics = 0
-            };
-
             var desc = new VESecondaryCommandBufferDesc
             {
-                usageFlags = 0, // Let C code use default (ONE_TIME_SUBMIT | RENDER_PASS_CONTINUE)
-                inheritanceInfo = inheritanceInfo,
+                usageFlags = (uint)(VkCommandBufferUsageFlags.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT |
+                                    VkCommandBufferUsageFlags.VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT),
+                colorAttachmentCount = 1,
+                colorAttachmentFormats = new VkFormat[8],
+                depthAttachmentFormat = VkFormat.VK_FORMAT_D32_SFLOAT,
+                stencilAttachmentFormat = VkFormat.VK_FORMAT_UNDEFINED,
+                rasterizationSamples = VkSampleCountFlags.VK_SAMPLE_COUNT_1_BIT,
+                viewMask = 0,
+                occlusionQueryEnable = false,
+                occlusionQueryFlags = 0,
                 beginRecording = true
             };
+            desc.colorAttachmentFormats[0] = _swapchainFormat;
 
             var cmd = BeginSecondaryCommandBuffer(_device, desc);
 

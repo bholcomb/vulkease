@@ -350,20 +350,6 @@ bool AsteroidApp::initVulkEase()
 
    swapchainFormat_ = veGetSwapchainFormat(swapchain_);
 
-   inheritanceRendering_.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDERING_INFO;
-   inheritanceRendering_.pNext = nullptr;
-   inheritanceRendering_.colorAttachmentCount = 1;
-   inheritanceRendering_.pColorAttachmentFormats = &swapchainFormat_;
-   inheritanceRendering_.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
-   inheritanceRendering_.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
-   inheritanceRendering_.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-   inheritanceInfo_.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-   inheritanceInfo_.pNext = &inheritanceRendering_;
-   inheritanceInfo_.renderPass = VK_NULL_HANDLE;
-   inheritanceInfo_.subpass = 0;
-   inheritanceInfo_.framebuffer = VK_NULL_HANDLE;
-
    return true;
 }
 
@@ -739,7 +725,14 @@ void AsteroidApp::recordChunks(uint32_t width, uint32_t height, std::vector<Reco
       VESecondaryCommandBufferDesc desc{};
       desc.beginRecording = true;
       desc.usageFlags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
-      desc.inheritanceInfo = inheritanceInfo_;
+      desc.colorAttachmentCount = 1;
+      desc.colorAttachmentFormats[0] = swapchainFormat_;
+      desc.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
+      desc.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
+      desc.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+      desc.viewMask = 0;
+      desc.occlusionQueryEnable = false;
+      desc.occlusionQueryFlags = 0;
 
       VECommandBuffer *cmd = veBeginSecondaryCommandBuffer(device_, &desc);
       if (!cmd)

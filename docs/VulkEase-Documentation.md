@@ -564,7 +564,11 @@ Located in `examples/04_asteroid/` (C++) and `dotnet/examples/04_MultithreadedAs
 VESecondaryCommandBufferDesc desc{};
 desc.usageFlags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT |
                   VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
-desc.inheritanceInfo = cachedInheritanceInfo; // includes VkCommandBufferInheritanceRenderingInfo
+desc.colorAttachmentCount = 1;
+desc.colorAttachmentFormats[0] = swapchainFormat;
+desc.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
+desc.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
+desc.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
 VECommandBuffer* workerCmd = veBeginSecondaryCommandBuffer(device, &desc);
 veBindShaderConfig(workerCmd, shaderConfig);

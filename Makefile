@@ -15,6 +15,7 @@ BIN_DIR = bin
 SHADERS_DIR = $(EXAMPLES_DIR)/shaders
 DATA_DIR = $(EXAMPLES_DIR)/data
 DATA_DEST_DIR = $(BIN_DIR)/$(DATA_DIR)
+DOTNET_RUNTIME_DIR = dotnet/src/runtimes/linux-x64/native
 
 
 # Output library and examples
@@ -111,6 +112,9 @@ $(BUILD_DIR):
 $(BIN_DIR):
 	@mkdir -p $(BIN_DIR)
 
+$(DOTNET_RUNTIME_DIR):
+	@mkdir -p $(DOTNET_RUNTIME_DIR)
+
 # Compile C source files to object files
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
 	@echo "Compiling C file $<"
@@ -122,9 +126,10 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
 # Link shared library
-$(BIN_DIR)/$(LIBRARY): $(OBJECTS) | $(BIN_DIR)
+$(BIN_DIR)/$(LIBRARY): $(OBJECTS) | $(BIN_DIR) $(DOTNET_RUNTIME_DIR)
 	@echo "Linking shared library $(LIBRARY)"
 	$(CXX) -shared -Wl,-soname,$(LIBRARY) $(OBJECTS) $(LIBS) -o $@
+	@cp $@ $(DOTNET_RUNTIME_DIR)/$(LIBRARY)
 
 # Compile GLSL shaders to SPIR-V
 $(BIN_DIR)/%.vert.spv: %.vert | $(BIN_DIR)

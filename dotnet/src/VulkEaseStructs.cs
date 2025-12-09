@@ -430,53 +430,22 @@ namespace VulkEase
         public bool waitForCompletion;
     }
 
-    // Secondary command buffer descriptor
-    [StructLayout(LayoutKind.Explicit, Size = 72)]
+    // Secondary command buffer descriptor (flattened, no Vulkan inheritance structs)
+    [StructLayout(LayoutKind.Sequential)]
     public struct VESecondaryCommandBufferDesc
     {
-        [FieldOffset(0)]
-        public UInt32 usageFlags;                  // VkCommandBufferUsageFlags
-        [FieldOffset(8)]
-        public VkCommandBufferInheritanceInfo inheritanceInfo;
-        [FieldOffset(64)]
+        public UInt32 usageFlags;                             // VkCommandBufferUsageFlags
+        public UInt32 colorAttachmentCount;                   // Up to 8
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
+        public VkFormat[] colorAttachmentFormats;             // Fixed array of 8
+        public VkFormat depthAttachmentFormat;                // VK_FORMAT_UNDEFINED if none
+        public VkFormat stencilAttachmentFormat;              // VK_FORMAT_UNDEFINED if none
+        public VkSampleCountFlags rasterizationSamples;       // 0 defaults to 1
+        public UInt32 viewMask;                               // Multiview mask
+        [MarshalAs(UnmanagedType.U1)]
+        public bool occlusionQueryEnable;
+        public VkQueryControlFlags occlusionQueryFlags;
         [MarshalAs(UnmanagedType.U1)]
         public bool beginRecording;
-    }
-
-    // VkCommandBufferInheritanceInfo for secondary command buffers
-    [StructLayout(LayoutKind.Explicit, Size = 56)]
-    public struct VkCommandBufferInheritanceInfo
-    {
-        [FieldOffset(0)]
-        public UInt32 sType;                       // VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO = 41
-        [FieldOffset(8)]
-        public IntPtr pNext;
-        [FieldOffset(16)]
-        public IntPtr renderPass;                  // VkRenderPass
-        [FieldOffset(24)]
-        public UInt32 subpass;
-        [FieldOffset(32)]
-        public IntPtr framebuffer;                 // VkFramebuffer
-        [FieldOffset(40)]
-        public UInt32 occlusionQueryEnable;        // VkBool32 (4 bytes in Vulkan, not C# bool)
-        [FieldOffset(44)]
-        public UInt32 queryFlags;                  // VkQueryControlFlags
-        [FieldOffset(48)]
-        public UInt32 pipelineStatistics;          // VkQueryPipelineStatisticFlags
-    }
-
-    // VkCommandBufferInheritanceRenderingInfo for dynamic rendering with secondary command buffers
-    [StructLayout(LayoutKind.Sequential)]
-    public struct VkCommandBufferInheritanceRenderingInfo
-    {
-        public UInt32 sType;                       // VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDERING_INFO = 1000044004
-        public IntPtr pNext;
-        public UInt32 flags;                       // VkRenderingFlags
-        public UInt32 viewMask;
-        public UInt32 colorAttachmentCount;
-        public IntPtr pColorAttachmentFormats;     // const VkFormat*
-        public VkFormat depthAttachmentFormat;
-        public VkFormat stencilAttachmentFormat;
-        public VkSampleCountFlags rasterizationSamples;
     }
 }
