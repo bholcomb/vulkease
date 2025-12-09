@@ -28,13 +28,17 @@
 #include <cstdint>
 #include <memory>
 #include <atomic>
+#include <condition_variable>
 #include <mutex>
+#include <thread>
+#include <unordered_map>
+#include <vector>
 
 struct VEDeviceInternal;
 struct VECommandPool;
 struct VECommandBufferInternal;
 struct VEDeviceQueueLocks;
-struct VEShaderHotReloadState;
+struct VEDeferredDeletionQueue;
 
 // =============================================================================
 // Internal Constants
@@ -77,6 +81,13 @@ struct VEQueueFamilies
    uint32_t graphicsFamily;
    uint32_t computeFamily;
    uint32_t transferFamily;
+};
+
+enum class VECommandPoolKind
+{
+   Graphics,
+   Compute,
+   Transfer
 };
 
 struct VEDeviceFeatures
@@ -148,6 +159,7 @@ struct VECommandBufferInternal
    bool fenceActive{false};
    VkPrimitiveTopology currentTopology{VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
    uint32_t currentPatchControlPoints{0};
+   std::vector<VECommandBufferInternal *> executedSecondaries;
 
    void clearFenceTracking();
    void markFenceActive(VkFence fence);
@@ -176,9 +188,59 @@ struct VECommandPool
    [[nodiscard]] VEResult allocate(VECommandBufferInternal **outCmd);
    void release(VECommandBufferInternal &cmd);
    void notifyFenceSignaled(VkFence fence);
+   void finishRelease(VECommandBufferInternal &cmd);
 
  private:
    void releaseCommandBufferResources();
+};
+
+struct VEThreadCommandPools
+{
+   struct PoolSet
+   {
+      std::unique_ptr<VECommandPool> graphics;
+      std::unique_ptr<VECommandPool> compute;
+      std::unique_ptr<VECommandPool> transfer;
+   };
+
+   std::mutex mutex;
+   std::unordered_map<std::thread::id, std::unique_ptr<PoolSet>> perThread;
+   std::unordered_map<VkFence, std::vector<VECommandBufferInternal *>> inFlight;
+
+   VECommandPool *acquire(VEDeviceInternal *device, VECommandPoolKind kind);
+   void trackInFlight(VkFence fence, VECommandBufferInternal *cmd);
+   void reclaimInFlight(VEDeviceInternal *device);
+   void destroyAll(VEDeviceInternal *device);
+
+   template <typename Callback>
+   void forEach(Callback &&callback)
+   {
+      // Copy out the pool pointers so callbacks do not hold the mutex while
+      // potentially taking other locks inside the pool (avoids lock inversion).
+      std::vector<VECommandPool *> pools;
+      {
+         std::lock_guard<std::mutex> lock(mutex);
+         pools.reserve(perThread.size() * 3);
+         for (auto &entry : perThread)
+         {
+            PoolSet &set = *entry.second;
+            if (set.graphics)
+               pools.push_back(set.graphics.get());
+            if (set.compute)
+               pools.push_back(set.compute.get());
+            if (set.transfer)
+               pools.push_back(set.transfer.get());
+         }
+      }
+
+      for (VECommandPool *pool : pools)
+      {
+         if (pool)
+         {
+            callback(*pool);
+         }
+      }
+   }
 };
 
 struct VEBufferInternal
@@ -285,11 +347,67 @@ struct VEShaderConfigInternal
    VEDeviceInternal *device;
 };
 
+// =============================================================================
+// Shader Hot Reload State
+// =============================================================================
+
+struct VEShaderHotReloadState
+{
+   std::mutex mutex;
+   std::condition_variable cv;
+   bool enabled{false};
+   bool stopRequested{false};
+   bool threadRunning{false};
+   std::thread watcherThread;
+   std::vector<VEShaderInternal *> trackedShaders;
+};
+
+// =============================================================================
+// Deferred Deletion Queue
+// =============================================================================
+
+enum class VEDeferredResourceType
+{
+   Buffer,
+   Texture,
+   Sampler,
+   Shader
+};
+
+struct VEDeferredDeletion
+{
+   VEDeferredResourceType type;
+   uint64_t frameIndex;  // Frame when deletion was requested
+   union {
+      VEBufferAddress bufferAddress;
+      VETextureIndex textureIndex;
+      VESamplerIndex samplerIndex;
+      VEShader* shader;
+   };
+};
+
+struct VEDeferredDeletionQueue
+{
+   std::mutex mutex;
+   std::vector<VEDeferredDeletion> pending;
+   uint64_t currentFrame{0};
+   static constexpr uint64_t kFrameDelay = VE_MAX_FRAMES_IN_FLIGHT + 1;
+
+   void enqueueBuffer(VEBufferAddress address);
+   void enqueueTexture(VETextureIndex index);
+   void enqueueSampler(VESamplerIndex index);
+   void enqueueShader(VEShader* shader);
+   void advanceFrame();
+   void processPending(VEDeviceInternal* device);
+   void flush(VEDeviceInternal* device);
+};
+
 struct VESwapchainInternal
 {
    VkSwapchainKHR swapchain{VK_NULL_HANDLE};
    VkSurfaceKHR surface{VK_NULL_HANDLE};
    VkFormat format{VK_FORMAT_UNDEFINED};
+   VkFormat requestedFormat{VK_FORMAT_UNDEFINED};
    uint32_t width{0};
    uint32_t height{0};
    uint32_t imageCount{0};
@@ -306,6 +424,8 @@ struct VESwapchainInternal
    VkSemaphore renderFinishedSemaphores[VE_MAX_SWAPCHAIN_IMAGES]{};
 
    bool needsRecreation{false};
+   bool vsyncEnabled{true};
+   void* windowHandle{nullptr};
    VEDeviceInternal *device{nullptr};
 
    VESwapchainInternal() = default;
@@ -322,6 +442,7 @@ struct VESwapchainInternal
    void requestRecreation(bool value = true) noexcept;
    bool hasDevice() const noexcept;
    void destroy();
+   [[nodiscard]] VEResult recreate();
 
  private:
    VEResult waitForCurrentFrameFence();
@@ -329,6 +450,7 @@ struct VESwapchainInternal
    void destroySyncObjects();
    void destroyImageViews();
    void destroySurfaceAndSwapchain();
+   VEResult createSwapchainResources();
 };
 
 struct VEDeviceInternal
@@ -351,18 +473,21 @@ struct VEDeviceInternal
 
    // Resource management - simplified for address-only API
    void *bufferMap; // std::unordered_map<VEBufferAddress, VEBufferInternal*>*
+   std::unique_ptr<std::mutex> bufferMapMutex;  // Protects bufferMap access
 
    VETextureInternal *textures;
    uint32_t *freeTextureIndices;
-   uint32_t freeTextureCount;
-   uint32_t textureCount;
+   std::atomic<uint32_t> freeTextureCount{0};
+   std::atomic<uint32_t> textureCount{0};
    uint32_t maxTextures;
+   std::unique_ptr<std::mutex> textureIndexMutex;  // Protects texture index allocation
 
    VESamplerInternal *samplers;
    uint32_t *freeSamplerIndices;
-   uint32_t freeSamplerCount;
-   uint32_t samplerCount;
+   std::atomic<uint32_t> freeSamplerCount{0};
+   std::atomic<uint32_t> samplerCount{0};
    uint32_t maxSamplers;
+   std::unique_ptr<std::mutex> samplerIndexMutex;  // Protects sampler index allocation
 
    VEShaderInternal *shaders;
    uint32_t shaderCount;
@@ -379,10 +504,6 @@ struct VEDeviceInternal
    VEShaderConfigInternal *shaderConfigs;
    uint32_t shaderConfigCount;
    uint32_t maxShaderConfigs;
-
-   VECommandPool *graphicsCommandPool;
-   VECommandPool *computeCommandPool;
-   VECommandPool *transferCommandPool;
 
    VkDescriptorPool descriptorPool;
    VkDescriptorSetLayout textureDescriptorSetLayout;
@@ -401,7 +522,11 @@ struct VEDeviceInternal
 
    std::unique_ptr<VEDeviceQueueLocks> queueLocks;
 
-   VEShaderHotReloadState *shaderHotReloadState{nullptr};
+   std::unique_ptr<VEShaderHotReloadState> shaderHotReloadState;
+
+   std::unique_ptr<VEDeferredDeletionQueue> deferredDeletionQueue;
+
+   VEThreadCommandPools threadCommandPools;
 
    VEResult initializeVma();
    void cleanupVma();

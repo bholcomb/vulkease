@@ -20,16 +20,7 @@
 #include <vector>
 #include <limits>
 
-struct VEShaderHotReloadState
-{
-   std::mutex mutex;
-   std::condition_variable cv;
-   bool enabled{false};
-   bool stopRequested{false};
-   bool threadRunning{false};
-   std::thread watcherThread;
-   std::vector<VEShaderInternal *> trackedShaders;
-};
+// VEShaderHotReloadState is now defined in ve_internal.h
 
 static uint64_t queryFileTimestamp(const char *path)
 {
@@ -60,10 +51,10 @@ static VEShaderHotReloadState *ensureHotReloadState(VEDeviceInternal *deviceInte
 
    if (!deviceInternal->shaderHotReloadState)
    {
-      deviceInternal->shaderHotReloadState = new VEShaderHotReloadState();
+      deviceInternal->shaderHotReloadState = std::make_unique<VEShaderHotReloadState>();
    }
 
-   return deviceInternal->shaderHotReloadState;
+   return deviceInternal->shaderHotReloadState.get();
 }
 
 static void shaderHotReloadThread(VEShaderHotReloadState *state)
@@ -154,7 +145,7 @@ static void unregisterFileShader(VEDeviceInternal *deviceInternal, VEShaderInter
       return;
    }
 
-   VEShaderHotReloadState *state = deviceInternal->shaderHotReloadState;
+   VEShaderHotReloadState *state = deviceInternal->shaderHotReloadState.get();
    if (!state)
    {
       return;
@@ -182,7 +173,7 @@ void veShutdownShaderHotReload(VEDeviceInternal *deviceInternal)
       return;
    }
 
-   VEShaderHotReloadState *state = deviceInternal->shaderHotReloadState;
+   VEShaderHotReloadState *state = deviceInternal->shaderHotReloadState.get();
 
    {
       std::unique_lock<std::mutex> lock(state->mutex);
@@ -203,8 +194,8 @@ void veShutdownShaderHotReload(VEDeviceInternal *deviceInternal)
       state->trackedShaders.clear();
    }
 
-   delete state;
-   deviceInternal->shaderHotReloadState = nullptr;
+   // unique_ptr automatically handles deletion
+   deviceInternal->shaderHotReloadState.reset();
 }
 
 // =============================================================================
@@ -376,6 +367,13 @@ static VkShaderEXT createShaderObject(VEDeviceInternal *deviceInternal, VkShader
       return VK_NULL_HANDLE;
    }
 
+   if (deviceInternal->textureDescriptorSetLayout == VK_NULL_HANDLE ||
+       deviceInternal->samplerDescriptorSetLayout == VK_NULL_HANDLE)
+   {
+      veSetError("Descriptor set layouts are not initialized for shader creation");
+      return VK_NULL_HANDLE;
+   }
+
    VkDescriptorSetLayout setLayouts[2] = {deviceInternal->textureDescriptorSetLayout,
                                           deviceInternal->samplerDescriptorSetLayout};
 
@@ -396,7 +394,6 @@ static VkShaderEXT createShaderObject(VEDeviceInternal *deviceInternal, VkShader
    shaderCreateInfo.pSetLayouts = setLayouts;
    shaderCreateInfo.pushConstantRangeCount = 1;
    shaderCreateInfo.pPushConstantRanges = &shaderPushRange;
-
    VkShaderEXT shaderObject = VK_NULL_HANDLE;
    VkResult result = veFuncs.vkCreateShadersEXT(deviceInternal->device, 1, &shaderCreateInfo, NULL, &shaderObject);
    if (result != VK_SUCCESS)

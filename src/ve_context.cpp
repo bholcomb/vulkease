@@ -66,18 +66,25 @@ VEFuncs veFuncs;
 // =============================================================================
 
 static char g_lastError[512] = {0};
+static std::mutex g_errorMutex;
 
 void veSetError(const char *format, ...)
 {
+   std::lock_guard<std::mutex> lock(g_errorMutex);
+   
    va_list args;
    va_start(args, format);
    vsnprintf(g_lastError, sizeof(g_lastError), format, args);
    va_end(args);
 
-   printf("VULKEASE ERROR: %s", g_lastError);
+   printf("VULKEASE ERROR: %s\n", g_lastError);
 }
 
-const char *veGetLastError(void) { return g_lastError[0] ? g_lastError : "No error"; }
+const char *veGetLastError(void) 
+{ 
+   std::lock_guard<std::mutex> lock(g_errorMutex);
+   return g_lastError[0] ? g_lastError : "No error"; 
+}
 
 const char *getMessageTypeString(VkDebugUtilsMessageTypeFlagsEXT messageType)
 {
@@ -723,7 +730,7 @@ VEDevice *veCreateDevice(VEContext *context)
 
    VEContextInternal *contextInternal = (VEContextInternal *)context;
 
-   VEDeviceInternal *device = static_cast<VEDeviceInternal *>(calloc(1, sizeof(VEDeviceInternal)));
+   VEDeviceInternal *device = new (std::nothrow) VEDeviceInternal();
    if (!device)
    {
       veSetError("Failed to allocate device memory");
@@ -738,7 +745,7 @@ VEDevice *veCreateDevice(VEContext *context)
    if (deviceCount == 0)
    {
       veSetError("No Vulkan-capable GPUs found");
-      free(device);
+      delete device;
       return NULL;
    }
 
@@ -754,7 +761,7 @@ VEDevice *veCreateDevice(VEContext *context)
    if (!findQueueFamilies(device->physicalDevice, &device->queueFamilies))
    {
       veSetError("Failed to find suitable queue families");
-      free(device);
+      delete device;
       return NULL;
    }
 
@@ -864,7 +871,7 @@ VEDevice *veCreateDevice(VEContext *context)
    if (result != VK_SUCCESS)
    {
       veSetError("Failed to create Vulkan 1.4 logical device (VkResult: %d)", result);
-      free(device);
+      delete device;
       return NULL;
    }
 
@@ -880,79 +887,16 @@ VEDevice *veCreateDevice(VEContext *context)
    if (vmaResult != VE_SUCCESS)
    {
       vkDestroyDevice(device->device, NULL);
-      free(device);
+      delete device;
       return NULL;
-   }
-
-   // Initialize command pools
-   device->graphicsCommandPool = new (std::nothrow) VECommandPool();
-   if (!device->graphicsCommandPool ||
-       !device->graphicsCommandPool->initialize(device, device->queueFamilies.graphicsFamily))
-   {
-      vkDestroyDevice(device->device, NULL);
-      delete device->graphicsCommandPool;
-      device->graphicsCommandPool = nullptr;
-      free(device);
-      return NULL;
-   }
-
-   if (device->computeQueue != device->graphicsQueue)
-   {
-      device->computeCommandPool = new (std::nothrow) VECommandPool();
-      if (!device->computeCommandPool ||
-          !device->computeCommandPool->initialize(device, device->queueFamilies.computeFamily))
-      {
-         vkDestroyDevice(device->device, NULL);
-         delete device->computeCommandPool;
-         device->computeCommandPool = nullptr;
-         free(device);
-         return NULL;
-      }
-   }
-   else
-   {
-      device->computeCommandPool = device->graphicsCommandPool;
-   }
-
-   if (device->transferQueue != device->graphicsQueue)
-   {
-      device->transferCommandPool = new (std::nothrow) VECommandPool();
-      if (!device->transferCommandPool ||
-          !device->transferCommandPool->initialize(device, device->queueFamilies.transferFamily))
-      {
-         vkDestroyDevice(device->device, NULL);
-         delete device->transferCommandPool;
-         device->transferCommandPool = nullptr;
-         free(device);
-         return NULL;
-      }
-   }
-   else
-   {
-      device->transferCommandPool = device->graphicsCommandPool;
    }
 
    veInitializeQueueLocks(device);
    if (!device->queueLocks)
    {
       veSetError("Failed to initialize device queue locks");
-      if (device->transferCommandPool && device->transferCommandPool != device->graphicsCommandPool)
-      {
-         delete device->transferCommandPool;
-         device->transferCommandPool = NULL;
-      }
-      if (device->computeCommandPool && device->computeCommandPool != device->graphicsCommandPool)
-      {
-         delete device->computeCommandPool;
-         device->computeCommandPool = NULL;
-      }
-      if (device->graphicsCommandPool)
-      {
-         delete device->graphicsCommandPool;
-         device->graphicsCommandPool = NULL;
-      }
       vkDestroyDevice(device->device, NULL);
-      free(device);
+      delete device;
       return NULL;
    }
 
@@ -962,7 +906,16 @@ VEDevice *veCreateDevice(VEContext *context)
    {
       device->cleanupVma();
       vkDestroyDevice(device->device, NULL);
-      free(device);
+      delete device;
+      return NULL;
+   }
+   if (device->textureDescriptorSetLayout == VK_NULL_HANDLE || device->samplerDescriptorSetLayout == VK_NULL_HANDLE ||
+       device->textureDescriptorSet == VK_NULL_HANDLE || device->samplerDescriptorSet == VK_NULL_HANDLE)
+   {
+      veSetError("Bindless descriptors not initialized correctly");
+      device->cleanupVma();
+      vkDestroyDevice(device->device, NULL);
+      delete device;
       return NULL;
    }
 
@@ -1010,7 +963,7 @@ VEDevice *veCreateDevice(VEContext *context)
    if (result != VK_SUCCESS)
    {
       veSetError("Failed to create graphics pipeline layout (VkResult: %d)", result);
-      free(device);
+      delete device;
       return NULL;
    }
 
@@ -1031,7 +984,16 @@ VEDevice *veCreateDevice(VEContext *context)
    if (result != VK_SUCCESS)
    {
       veSetError("Failed to create compute pipeline layout (VkResult: %d)", result);
-      free(device);
+      delete device;
+      return NULL;
+   }
+
+   // Initialize deferred deletion queue
+   device->deferredDeletionQueue = std::make_unique<VEDeferredDeletionQueue>();
+   if (!device->deferredDeletionQueue)
+   {
+      veSetError("Failed to allocate deferred deletion queue");
+      delete device;
       return NULL;
    }
 
@@ -1050,6 +1012,13 @@ void veDestroyDevice(VEDevice *device)
       vkDeviceWaitIdle(internal->device);
    }
 
+   // Flush deferred deletions first (processes any pending resource cleanup)
+   if (internal->deferredDeletionQueue)
+   {
+      internal->deferredDeletionQueue->flush(internal);
+      internal->deferredDeletionQueue.reset();
+   }
+
    // free internal config buffers
    free(internal->shaderConfigs);
    free(internal->vertexConfigs);
@@ -1059,23 +1028,7 @@ void veDestroyDevice(VEDevice *device)
    vkDestroyPipelineLayout(internal->device, internal->globalGraphicsPipelineLayout, NULL);
    vkDestroyPipelineLayout(internal->device, internal->globalComputePipelineLayout, NULL);
 
-   if (internal->transferCommandPool && internal->transferCommandPool != internal->graphicsCommandPool)
-   {
-      delete internal->transferCommandPool;
-      internal->transferCommandPool = NULL;
-   }
-
-   if (internal->computeCommandPool && internal->computeCommandPool != internal->graphicsCommandPool)
-   {
-      delete internal->computeCommandPool;
-      internal->computeCommandPool = NULL;
-   }
-
-   if (internal->graphicsCommandPool)
-   {
-      delete internal->graphicsCommandPool;
-      internal->graphicsCommandPool = NULL;
-   }
+   internal->threadCommandPools.destroyAll(internal);
 
    veDestroyQueueLocks(internal);
 
@@ -1089,7 +1042,7 @@ void veDestroyDevice(VEDevice *device)
 
    veShutdownShaderHotReload(internal);
 
-   free(internal);
+   delete internal;
 }
 
 VEResult veDeviceWaitIdle(VEDevice *device)

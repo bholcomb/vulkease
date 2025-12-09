@@ -30,14 +30,7 @@ static VEDeviceQueueLocks *ensureQueueLocks(VEDeviceInternal *device)
 
    if (!device->queueLocks)
    {
-      std::unique_ptr<VEDeviceQueueLocks> locks(new (std::nothrow) VEDeviceQueueLocks());
-      if (!locks)
-      {
-         veSetError("Failed to allocate queue locks");
-         return nullptr;
-      }
-
-      device->queueLocks.reset(locks.release());
+      device->queueLocks = std::make_unique<VEDeviceQueueLocks>();
    }
 
    return device->queueLocks.get();

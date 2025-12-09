@@ -632,6 +632,14 @@ VEResult VEDeviceInternal::initializeBindlessDescriptors()
    textureDescriptorSet = descriptorSets[0];
    samplerDescriptorSet = descriptorSets[1];
 
+   if (textureDescriptorSetLayout == VK_NULL_HANDLE || samplerDescriptorSetLayout == VK_NULL_HANDLE ||
+       textureDescriptorSet == VK_NULL_HANDLE || samplerDescriptorSet == VK_NULL_HANDLE)
+   {
+      veSetError("Bindless descriptor initialization produced null handles");
+      cleanupBindlessDescriptors();
+      return VE_ERROR_UNKNOWN;
+   }
+
    // Initialize texture management
    maxTextures = textureCapacity;
    textures = static_cast<VETextureInternal *>(calloc(maxTextures, sizeof(VETextureInternal)));
@@ -649,8 +657,17 @@ VEResult VEDeviceInternal::initializeBindlessDescriptors()
    {
       freeTextureIndices[i] = i + 1;
    }
-   freeTextureCount = maxTextures - 1;
-   textureCount = 0;
+   freeTextureCount.store(maxTextures - 1, std::memory_order_relaxed);
+   textureCount.store(0, std::memory_order_relaxed);
+
+   // Initialize texture index mutex
+   textureIndexMutex = std::make_unique<std::mutex>();
+   if (!textureIndexMutex)
+   {
+      veSetError("Failed to allocate texture index mutex");
+      cleanupBindlessDescriptors();
+      return VE_ERROR_OUT_OF_MEMORY;
+   }
 
    // Initialize sampler management
    maxSamplers = samplerCapacity;
@@ -669,8 +686,17 @@ VEResult VEDeviceInternal::initializeBindlessDescriptors()
    {
       freeSamplerIndices[i] = i + 1;
    }
-   freeSamplerCount = maxSamplers - 1;
-   samplerCount = 0;
+   freeSamplerCount.store(maxSamplers - 1, std::memory_order_relaxed);
+   samplerCount.store(0, std::memory_order_relaxed);
+
+   // Initialize sampler index mutex
+   samplerIndexMutex = std::make_unique<std::mutex>();
+   if (!samplerIndexMutex)
+   {
+      veSetError("Failed to allocate sampler index mutex");
+      cleanupBindlessDescriptors();
+      return VE_ERROR_OUT_OF_MEMORY;
+   }
 
    return VE_SUCCESS;
 }
@@ -752,29 +778,42 @@ void VEDeviceInternal::cleanupBindlessDescriptors()
 
 uint32_t VEDeviceInternal::allocateTextureIndex()
 {
-   if (freeTextureCount == 0)
+   if (!textureIndexMutex)
+   {
+      veSetError("Texture index mutex not initialized");
+      return VE_INVALID_TEXTURE_INDEX;
+   }
+
+   std::lock_guard<std::mutex> lock(*textureIndexMutex);
+   
+   uint32_t currentFreeCount = freeTextureCount.load(std::memory_order_relaxed);
+   if (currentFreeCount == 0)
    {
       veSetError("No free texture indices available (max: %u)", maxTextures);
       return VE_INVALID_TEXTURE_INDEX;
    }
 
-   freeTextureCount--;
-   uint32_t index = freeTextureIndices[freeTextureCount];
-   textureCount++;
+   uint32_t newFreeCount = currentFreeCount - 1;
+   uint32_t index = freeTextureIndices[newFreeCount];
+   freeTextureCount.store(newFreeCount, std::memory_order_relaxed);
+   textureCount.fetch_add(1, std::memory_order_relaxed);
 
    return index;
 }
 
 void VEDeviceInternal::freeTextureIndex(uint32_t index)
 {
-   if (index == 0 || index >= maxTextures)
+   if (index == 0 || index >= maxTextures || !textureIndexMutex)
    {
       return;
    }
 
-   freeTextureIndices[freeTextureCount] = index;
-   freeTextureCount++;
-   textureCount--;
+   std::lock_guard<std::mutex> lock(*textureIndexMutex);
+   
+   uint32_t currentFreeCount = freeTextureCount.load(std::memory_order_relaxed);
+   freeTextureIndices[currentFreeCount] = index;
+   freeTextureCount.store(currentFreeCount + 1, std::memory_order_relaxed);
+   textureCount.fetch_sub(1, std::memory_order_relaxed);
 }
 
 VETextureInternal *VEDeviceInternal::getTexture(VETextureIndex index)

@@ -2,6 +2,10 @@
 
 #include <mutex>
 #include <new>
+#include <unordered_map>
+#include <vector>
+#include <thread>
+#include <functional>
 
 void VECommandBufferInternal::clearFenceTracking()
 {
@@ -28,6 +32,7 @@ void VECommandBufferInternal::resetState()
    clearFenceTracking();
    currentTopology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
    currentPatchControlPoints = 0;
+   executedSecondaries.clear();
 }
 
 VECommandPool::~VECommandPool() { destroy(); }
@@ -141,11 +146,6 @@ VEResult VECommandPool::allocate(VECommandBufferInternal **outCmd)
             VkResult fenceStatus = vkGetFenceStatus(ownerDevice->device, fenceToCheck);
             if (fenceStatus == VK_SUCCESS)
             {
-               if (candidate->commandBuffer)
-               {
-                  vkResetCommandBuffer(candidate->commandBuffer, 0);
-               }
-
                candidate->clearFenceTracking();
                commandBufferInUse[nextBuffer] = false;
                if (commandBufferCount > 0)
@@ -160,6 +160,13 @@ VEResult VECommandPool::allocate(VECommandBufferInternal **outCmd)
                return VE_ERROR_UNKNOWN;
             }
          }
+      }
+      else
+      {
+         // Marked in-use but no active fence: this buffer was returned without
+         // being tracked in-flight. Surface this so we can find the culprit.
+         veSetError("Command buffer reuse without fence tracking (cb=%p index=%u pool=%p)",
+                    (void *)candidate->commandBuffer, candidate->index, (void *)this);
       }
 
       nextBuffer = (nextBuffer + 1) % VE_MAX_COMMAND_BUFFERS;
@@ -227,13 +234,55 @@ void VECommandPool::release(VECommandBufferInternal &cmd)
       return;
    }
 
-   std::lock_guard<std::mutex> lock(*allocationLock);
+   // Lock ordering: never hold allocationLock while taking the global
+   // threadCommandPools mutex (trackInFlight). Take allocationLock first,
+   // decide whether we need to defer, then drop the lock before tracking.
+   std::unique_lock<std::mutex> lock(*allocationLock);
 
    if (cmd.index >= VE_MAX_COMMAND_BUFFERS || !commandBuffers || !commandBufferInUse)
    {
       return;
    }
 
+   // If still in-flight, defer reclaim until fence is signaled.
+   if (cmd.fenceActive)
+   {
+      VkFence fence = cmd.currentFence();
+      if (fence != VK_NULL_HANDLE)
+      {
+         // Drop allocationLock before grabbing the global pool mutex to avoid
+         // lock-order inversion with reclaimInFlight/forEach.
+         lock.unlock();
+         ownerDevice->threadCommandPools.trackInFlight(fence, &cmd);
+         return;
+      }
+   }
+   else if (commandBufferInUse[cmd.index])
+   {
+      VkFence fence = cmd.currentFence();
+      if (fence != VK_NULL_HANDLE)
+      {
+         VkResult status = vkGetFenceStatus(ownerDevice->device, fence);
+         if (status == VK_NOT_READY)
+         {
+            const size_t threadHash = std::hash<std::thread::id>{}(std::this_thread::get_id());
+            veSetError("Releasing buffer while fence is still pending (cb=%p index=%u pool=%p fence=%p thread=%zu)",
+                       (void *)cmd.commandBuffer, cmd.index, (void *)this, (void *)fence, threadHash);
+         }
+      }
+      else
+      {
+         const size_t threadHash = std::hash<std::thread::id>{}(std::this_thread::get_id());
+         veSetError("Releasing buffer without fence handle (cb=%p index=%u pool=%p thread=%zu)",
+                    (void *)cmd.commandBuffer, cmd.index, (void *)this, threadHash);
+      }
+   }
+
+   finishRelease(cmd);
+}
+
+void VECommandPool::finishRelease(VECommandBufferInternal &cmd)
+{
    commandBufferInUse[cmd.index] = false;
    if (commandBufferCount > 0)
    {
@@ -241,11 +290,6 @@ void VECommandPool::release(VECommandBufferInternal &cmd)
    }
 
    cmd.resetState();
-
-   if (cmd.commandBuffer && ownerDevice && ownerDevice->device)
-   {
-      vkResetCommandBuffer(cmd.commandBuffer, 0);
-   }
 }
 
 void VECommandPool::notifyFenceSignaled(VkFence fence)
@@ -272,11 +316,6 @@ void VECommandPool::notifyFenceSignaled(VkFence fence)
          }
 
          cmd.clearFenceTracking();
-
-         if (cmd.commandBuffer)
-         {
-            vkResetCommandBuffer(cmd.commandBuffer, 0);
-         }
       }
    }
 }
@@ -328,19 +367,5 @@ void veNotifyCommandBufferFenceSignaled(VEDeviceInternal *device, VkFence fence)
       return;
    }
 
-   if (device->graphicsCommandPool)
-   {
-      device->graphicsCommandPool->notifyFenceSignaled(fence);
-   }
-
-   if (device->computeCommandPool && device->computeCommandPool != device->graphicsCommandPool)
-   {
-      device->computeCommandPool->notifyFenceSignaled(fence);
-   }
-
-   if (device->transferCommandPool && device->transferCommandPool != device->graphicsCommandPool &&
-       device->transferCommandPool != device->computeCommandPool)
-   {
-      device->transferCommandPool->notifyFenceSignaled(fence);
-   }
+   device->threadCommandPools.forEach([fence](VECommandPool &pool) { pool.notifyFenceSignaled(fence); });
 }
