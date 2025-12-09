@@ -245,34 +245,26 @@ namespace VulkEaseExamples
                     ulong dataSize = (ulong)(TriangleVertices.Length * Marshal.SizeOf<Vertex>());
 
                     // Create vertex buffer with initial data
-                    IntPtr debugNamePtr = Marshal.StringToHGlobalAnsi("TriangleVertexBuffer");
-                    try
+                    var bufferDesc = new VEBufferDesc
                     {
-                        var bufferDesc = new VEBufferDesc
-                        {
-                            size = dataSize,
-                            usage = VkBufferUsageFlags.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                            initialData = dataPtr,
-                            initialDataSize = dataSize,
-                            persistentlyMapped = false,
-                            debugName = debugNamePtr
-                        };
+                        size = dataSize,
+                        usage = VkBufferUsageFlags.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                        initialData = dataPtr,
+                        initialDataSize = dataSize,
+                        persistentlyMapped = false,
+                        debugName = "TriangleVertexBuffer"
+                    };
 
-                        _vertexBuffer = VulkEase.VulkEase.CreateBuffer(_device, bufferDesc);
+                    _vertexBuffer = VulkEase.VulkEase.CreateBuffer(_device, bufferDesc);
 
-                        if (_vertexBuffer.native == VEConstants.VE_INVALID_ADDRESS.native)
-                        {
-                            Console.Error.WriteLine("Failed to create vertex buffer");
-                            return false;
-                        }
-
-                        Console.WriteLine($"Created vertex buffer at address: 0x{_vertexBuffer.native:X}");
-                        return true;
-                    }
-                    finally
+                    if (_vertexBuffer.native == VEConstants.VE_INVALID_ADDRESS.native)
                     {
-                        Marshal.FreeHGlobal(debugNamePtr);
+                        Console.Error.WriteLine("Failed to create vertex buffer");
+                        return false;
                     }
+
+                    Console.WriteLine($"Created vertex buffer at address: 0x{_vertexBuffer.native:X}");
+                    return true;
                 }
                 finally
                 {

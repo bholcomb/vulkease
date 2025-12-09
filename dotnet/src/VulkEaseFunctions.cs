@@ -134,7 +134,7 @@ namespace VulkEase
         // Buffer Management
         public static VEBufferAddress CreateBuffer(VEDevice device, VEBufferDesc desc)
         {
-            return new VEBufferAddress { native = VulkEaseDll.veCreateBuffer(device.native, ref desc)};
+            return new VEBufferAddress { native = VulkEaseDll.veCreateBuffer(device.native, ref desc) };
         }
 
         public static void DestroyBuffer(VEDevice device, VEBufferAddress address)
@@ -772,9 +772,18 @@ namespace VulkEase
             return new VECommandBuffer { native = VulkEaseDll.veBeginCommandBuffer(device.native) };
         }
 
-        public static VECommandBuffer BeginSecondaryCommandBuffer(VEDevice device)
+        public static VECommandBuffer BeginSecondaryCommandBuffer(VEDevice device, VESecondaryCommandBufferDesc desc)
         {
-            return new VECommandBuffer { native = VulkEaseDll.veBeginSecondaryCommandBuffer(device.native, IntPtr.Zero) };
+            IntPtr descPtr = Marshal.AllocHGlobal(Marshal.SizeOf<VESecondaryCommandBufferDesc>());
+            try
+            {
+                Marshal.StructureToPtr(desc, descPtr, false);
+                return new VECommandBuffer { native = VulkEaseDll.veBeginSecondaryCommandBuffer(device.native, descPtr) };
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(descPtr);
+            }
         }
 
         public static VEResult EndCommandBuffer(VECommandBuffer cmd)
@@ -1227,37 +1236,6 @@ namespace VulkEase
         public static VEResult ValidateRenderConfig(VERenderConfig config)
         {
             return VulkEaseDll.veValidateRenderConfig(config.native);
-        }
-
-        // Deferred Deletion
-        public static void EnqueueBufferDeletion(VEDevice device, VEBufferAddress address)
-        {
-            VulkEaseDll.veEnqueueBufferDeletion(device.native, address.native);
-        }
-
-        public static void EnqueueTextureDeletion(VEDevice device, VETextureIndex index)
-        {
-            VulkEaseDll.veEnqueueTextureDeletion(device.native, index.native);
-        }
-
-        public static void EnqueueSamplerDeletion(VEDevice device, VESamplerIndex index)
-        {
-            VulkEaseDll.veEnqueueSamplerDeletion(device.native, index.native);
-        }
-
-        public static void EnqueueShaderDeletion(VEShader shader)
-        {
-            VulkEaseDll.veEnqueueShaderDeletion(shader.native);
-        }
-
-        public static void ProcessDeferredDeletions(VEDevice device)
-        {
-            VulkEaseDll.veProcessDeferredDeletions(device.native);
-        }
-
-        public static void FlushDeferredDeletions(VEDevice device)
-        {
-            VulkEaseDll.veFlushDeferredDeletions(device.native);
         }
     }
 }

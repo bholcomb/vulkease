@@ -7,12 +7,17 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using VulkEase;
+using static VulkEase.VulkEase;
+
+// Use System.Numerics for Matrix4x4 operations
+using Matrix4x4 = System.Numerics.Matrix4x4;
+using SysVector3 = System.Numerics.Vector3;
+using SysVector4 = System.Numerics.Vector4;
 
 namespace VulkEaseExamples
 {
@@ -27,22 +32,22 @@ namespace VulkEaseExamples
         [StructLayout(LayoutKind.Sequential)]
         private struct Vertex
         {
-            public Vector3 Position;
-            public Vector3 Normal;
+            public SysVector3 Position;
+            public SysVector3 Normal;
         }
 
         [StructLayout(LayoutKind.Sequential)]
         private struct InstanceData
         {
             public Matrix4x4 Model;
-            public Vector4 Color;
+            public SysVector4 Color;
         }
 
         [StructLayout(LayoutKind.Sequential)]
         private struct CameraData
         {
             public Matrix4x4 ViewProj;
-            public Vector4 CameraPos;
+            public SysVector4 CameraPos;
         }
 
         private readonly record struct Chunk(int FirstInstance, int Count);
@@ -177,7 +182,7 @@ namespace VulkEaseExamples
                     InstanceData instance = _state[i];
 
                     float jitter = (float)(_rng.NextDouble() - 0.5) * 0.1f;
-                    var axis = Vector3.Normalize(new Vector3(
+                    var axis = SysVector3.Normalize(new SysVector3(
                         (float)_rng.NextDouble(),
                         (float)_rng.NextDouble(),
                         (float)_rng.NextDouble()));
@@ -218,6 +223,11 @@ namespace VulkEaseExamples
         private VEBufferAddress _instanceBuffer;
         private VEBufferAddress _cameraBuffer;
 
+        // Depth buffer for proper 3D rendering
+        private VETextureIndex _depthTexture;
+        private uint _depthWidth;
+        private uint _depthHeight;
+
         private readonly List<Chunk> _chunks = new();
         private InstanceData[] _instances = Array.Empty<InstanceData>();
 
@@ -229,9 +239,17 @@ namespace VulkEaseExamples
 
         private readonly Stopwatch _frameTimer = Stopwatch.StartNew();
         private ulong _frameIndex;
+        private double _elapsedTime;  // Total elapsed time for framerate-independent animation
         private bool _multithreaded = true;
 
         private uint _indexCount;
+
+        // Swapchain format for inheritance info
+        private VkFormat _swapchainFormat = VkFormat.VK_FORMAT_B8G8R8A8_SRGB;
+
+        // Cached rendering inheritance info for secondary command buffers (allocated in unmanaged memory)
+        private IntPtr _inheritanceRenderingPtr;
+        private IntPtr _colorFormatsPtr;
 
         public MultithreadedAsteroids(string[] args)
             : base(GameWindowSettings.Default, new NativeWindowSettings
@@ -283,33 +301,37 @@ namespace VulkEaseExamples
 
             if (_device.native != IntPtr.Zero)
             {
-                VulkEase.DeviceWaitIdle(_device);
+                DeviceWaitIdle(_device);
             }
 
+            CleanupInheritanceInfo();
+
+            if (_depthTexture.native != VEConstants.VE_INVALID_TEXTURE_INDEX.native)
+                DestroyTexture(_device, _depthTexture);
             if (_cameraBuffer.native != 0)
-                VulkEase.DestroyBuffer(_device, _cameraBuffer);
+                DestroyBuffer(_device, _cameraBuffer);
             if (_instanceBuffer.native != 0)
-                VulkEase.DestroyBuffer(_device, _instanceBuffer);
+                DestroyBuffer(_device, _instanceBuffer);
             if (_indexBuffer.native != 0)
-                VulkEase.DestroyBuffer(_device, _indexBuffer);
+                DestroyBuffer(_device, _indexBuffer);
             if (_vertexBuffer.native != 0)
-                VulkEase.DestroyBuffer(_device, _vertexBuffer);
+                DestroyBuffer(_device, _vertexBuffer);
 
             if (_renderConfig.native != IntPtr.Zero)
-                VulkEase.DestroyRenderConfig(_renderConfig);
+                DestroyRenderConfig(_renderConfig);
             if (_shaderConfig.native != IntPtr.Zero)
-                VulkEase.DestroyShaderConfig(_shaderConfig);
+                DestroyShaderConfig(_shaderConfig);
             if (_fragmentShader.native != IntPtr.Zero)
-                VulkEase.DestroyShader(_fragmentShader);
+                DestroyShader(_fragmentShader);
             if (_vertexShader.native != IntPtr.Zero)
-                VulkEase.DestroyShader(_vertexShader);
+                DestroyShader(_vertexShader);
 
             if (_swapchain.native != IntPtr.Zero)
-                VulkEase.DestroySwapchain(_swapchain);
+                DestroySwapchain(_swapchain);
             if (_device.native != IntPtr.Zero)
-                VulkEase.DestroyDevice(_device);
+                DestroyDevice(_device);
             if (_context.native != IntPtr.Zero)
-                VulkEase.DestroyContext(_context);
+                DestroyContext(_context);
 
             base.OnUnload();
         }
@@ -320,8 +342,45 @@ namespace VulkEaseExamples
 
             if (_swapchain.native != IntPtr.Zero && e.Width > 0 && e.Height > 0)
             {
-                VulkEase.ResizeSwapchain(_swapchain, (uint)e.Width, (uint)e.Height);
+                ResizeSwapchain(_swapchain, (uint)e.Width, (uint)e.Height);
+                RecreateDepthBuffer((uint)e.Width, (uint)e.Height);
             }
+        }
+
+        private bool RecreateDepthBuffer(uint width, uint height)
+        {
+            if (_device.native == IntPtr.Zero)
+                return false;
+
+            // Skip if dimensions haven't changed
+            if (width == _depthWidth && height == _depthHeight && 
+                _depthTexture.native != VEConstants.VE_INVALID_TEXTURE_INDEX.native)
+                return true;
+
+            // Wait for GPU to finish using the old depth buffer
+            DeviceWaitIdle(_device);
+
+            // Destroy old depth buffer
+            if (_depthTexture.native != VEConstants.VE_INVALID_TEXTURE_INDEX.native)
+            {
+                DestroyTexture(_device, _depthTexture);
+                _depthTexture = VEConstants.VE_INVALID_TEXTURE_INDEX;
+            }
+
+            // Create new depth buffer at the new size
+            _depthTexture = CreateTexture2D(_device, width, height, VkFormat.VK_FORMAT_D32_SFLOAT,
+                VkImageUsageFlags.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VkImageUsageFlags.VK_IMAGE_USAGE_SAMPLED_BIT,
+                "AsteroidDepthBuffer");
+
+            if (_depthTexture.native == VEConstants.VE_INVALID_TEXTURE_INDEX.native)
+            {
+                Console.WriteLine($"Failed to recreate depth buffer: {GetLastError()}");
+                return false;
+            }
+
+            _depthWidth = width;
+            _depthHeight = height;
+            return true;
         }
 
         protected override void OnKeyDown(KeyboardKeyEventArgs e)
@@ -355,6 +414,9 @@ namespace VulkEaseExamples
             double frameMs = _frameTimer.Elapsed.TotalMilliseconds;
             _frameTimer.Restart();
 
+            // Track elapsed time for framerate-independent animation
+            _elapsedTime += args.Time;
+
             double fps = frameMs > 0.0 ? 1000.0 / frameMs : 0.0;
             _metrics.Submit(new MetricsSample(_frameIndex, frameMs, recordMs, submitMs, streamingMs, fps,
                 _multithreaded ? Environment.ProcessorCount : 1, _multithreaded), args.Time);
@@ -363,23 +425,23 @@ namespace VulkEaseExamples
             _frameIndex++;
         }
 
-        private bool InitializeVulkEase()
+        private unsafe bool InitializeVulkEase()
         {
-            _context = VulkEase.CreateContext("VulkEase Asteroids");
+            _context = CreateContext("VulkEase Asteroids");
             if (_context.native == IntPtr.Zero)
             {
-                Console.Error.WriteLine("Failed to create context: " + VulkEase.GetLastError());
+                Console.Error.WriteLine("Failed to create context: " + GetLastError());
                 return false;
             }
 
-            _device = VulkEase.CreateDevice(_context);
+            _device = CreateDevice(_context);
             if (_device.native == IntPtr.Zero)
             {
-                Console.Error.WriteLine("Failed to create device: " + VulkEase.GetLastError());
+                Console.Error.WriteLine("Failed to create device: " + GetLastError());
                 return false;
             }
 
-            Console.WriteLine($"Using device {VulkEase.GetDeviceName(_device)}");
+            Console.WriteLine($"Using device {GetDeviceName(_device)}");
 
             IntPtr windowHandle;
             IntPtr linuxHandleBlock = IntPtr.Zero;
@@ -406,11 +468,11 @@ namespace VulkEaseExamples
                 return false;
             }
 
-            _swapchain = VulkEase.CreateSwapchain(_device, windowHandle, (uint)ClientSize.X, (uint)ClientSize.Y,
+            _swapchain = CreateSwapchain(_device, windowHandle, (uint)ClientSize.X, (uint)ClientSize.Y,
                 VkFormat.VK_FORMAT_B8G8R8A8_SRGB, true);
             if (_swapchain.native == IntPtr.Zero)
             {
-                Console.Error.WriteLine("Failed to create swapchain: " + VulkEase.GetLastError());
+                Console.Error.WriteLine("Failed to create swapchain: " + GetLastError());
                 if (linuxHandleBlock != IntPtr.Zero)
                     Marshal.FreeHGlobal(linuxHandleBlock);
                 return false;
@@ -419,22 +481,63 @@ namespace VulkEaseExamples
             if (linuxHandleBlock != IntPtr.Zero)
                 Marshal.FreeHGlobal(linuxHandleBlock);
 
+            // Initialize inheritance info for secondary command buffers (dynamic rendering)
+            InitializeInheritanceInfo();
+
             return true;
+        }
+
+        private void InitializeInheritanceInfo()
+        {
+            // Allocate unmanaged memory for the color formats array
+            _colorFormatsPtr = Marshal.AllocHGlobal(sizeof(int)); // VkFormat is an int (4 bytes)
+            Marshal.WriteInt32(_colorFormatsPtr, (int)_swapchainFormat);
+
+            // Allocate and populate the inheritance rendering info in unmanaged memory
+            var inheritanceRendering = new VkCommandBufferInheritanceRenderingInfo
+            {
+                sType = 1000044004, // VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDERING_INFO
+                pNext = IntPtr.Zero,
+                flags = 0,
+                viewMask = 0,
+                colorAttachmentCount = 1,
+                pColorAttachmentFormats = _colorFormatsPtr,
+                depthAttachmentFormat = VkFormat.VK_FORMAT_D32_SFLOAT,
+                stencilAttachmentFormat = VkFormat.VK_FORMAT_UNDEFINED,
+                rasterizationSamples = VkSampleCountFlags.VK_SAMPLE_COUNT_1_BIT
+            };
+
+            _inheritanceRenderingPtr = Marshal.AllocHGlobal(Marshal.SizeOf<VkCommandBufferInheritanceRenderingInfo>());
+            Marshal.StructureToPtr(inheritanceRendering, _inheritanceRenderingPtr, false);
+        }
+
+        private void CleanupInheritanceInfo()
+        {
+            if (_inheritanceRenderingPtr != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(_inheritanceRenderingPtr);
+                _inheritanceRenderingPtr = IntPtr.Zero;
+            }
+            if (_colorFormatsPtr != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(_colorFormatsPtr);
+                _colorFormatsPtr = IntPtr.Zero;
+            }
         }
 
         private bool LoadAssets()
         {
-            _vertexShader = VulkEase.LoadShaderFromFile(_device, VertexShaderPath, VkShaderStageFlags.VK_SHADER_STAGE_VERTEX_BIT, "main", "AsteroidVertex");
+            _vertexShader = LoadShaderFromFile(_device, VertexShaderPath, VkShaderStageFlags.VK_SHADER_STAGE_VERTEX_BIT, "main", "AsteroidVertex");
             if (_vertexShader.native == IntPtr.Zero)
             {
-                Console.Error.WriteLine("Failed to load vertex shader: " + VulkEase.GetLastError());
+                Console.Error.WriteLine("Failed to load vertex shader: " + GetLastError());
                 return false;
             }
 
-            _fragmentShader = VulkEase.LoadShaderFromFile(_device, FragmentShaderPath, VkShaderStageFlags.VK_SHADER_STAGE_FRAGMENT_BIT, "main", "AsteroidFragment");
+            _fragmentShader = LoadShaderFromFile(_device, FragmentShaderPath, VkShaderStageFlags.VK_SHADER_STAGE_FRAGMENT_BIT, "main", "AsteroidFragment");
             if (_fragmentShader.native == IntPtr.Zero)
             {
-                Console.Error.WriteLine("Failed to load fragment shader: " + VulkEase.GetLastError());
+                Console.Error.WriteLine("Failed to load fragment shader: " + GetLastError());
                 return false;
             }
 
@@ -444,34 +547,34 @@ namespace VulkEaseExamples
                 fragmentShader = _fragmentShader,
                 debugName = "AsteroidShader"
             };
-            _shaderConfig = VulkEase.CreateShaderConfig(_device, shaderDesc);
+            _shaderConfig = CreateShaderConfig(_device, shaderDesc);
             if (_shaderConfig.native == IntPtr.Zero)
             {
-                Console.Error.WriteLine("Failed to create shader config: " + VulkEase.GetLastError());
+                Console.Error.WriteLine("Failed to create shader config: " + GetLastError());
                 return false;
             }
 
-            _renderConfig = VulkEase.CreateOpaqueRenderConfig(_device, "AsteroidRenderConfig");
+            _renderConfig = CreateOpaqueRenderConfig(_device, "AsteroidRenderConfig");
             if (_renderConfig.native == IntPtr.Zero)
             {
-                Console.Error.WriteLine("Failed to create render config: " + VulkEase.GetLastError());
+                Console.Error.WriteLine("Failed to create render config: " + GetLastError());
                 return false;
             }
 
             var vertices = BuildIcosahedronVertices();
             var indices = BuildIcosahedronIndices();
 
-            _vertexBuffer = CreateVertexBuffer(_device, vertices, "AsteroidVertices");
+            _vertexBuffer = CreateVertexBufferFromArray(_device, vertices, "AsteroidVertices");
             if (_vertexBuffer.native == 0)
             {
-                Console.Error.WriteLine("Failed to create vertex buffer: " + VulkEase.GetLastError());
+                Console.Error.WriteLine("Failed to create vertex buffer: " + GetLastError());
                 return false;
             }
 
-            _indexBuffer = CreateIndexBuffer(_device, indices, "AsteroidIndices");
+            _indexBuffer = CreateIndexBufferFromArray(_device, indices, "AsteroidIndices");
             if (_indexBuffer.native == 0)
             {
-                Console.Error.WriteLine("Failed to create index buffer: " + VulkEase.GetLastError());
+                Console.Error.WriteLine("Failed to create index buffer: " + GetLastError());
                 return false;
             }
             _indexCount = (uint)indices.Length;
@@ -483,13 +586,12 @@ namespace VulkEaseExamples
                 size = (ulong)(_instances.Length * Marshal.SizeOf<InstanceData>()),
                 usage = VkBufferUsageFlags.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VkBufferUsageFlags.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                 persistentlyMapped = false,
-                debugName = Marshal.StringToHGlobalAnsi("AsteroidInstances")
+                debugName = "AsteroidInstances"
             };
-            _instanceBuffer = VulkEase.CreateBuffer(_device, instanceDesc);
-            Marshal.FreeHGlobal(instanceDesc.debugName);
+            _instanceBuffer = CreateBuffer(_device, instanceDesc);
             if (_instanceBuffer.native == 0)
             {
-                Console.Error.WriteLine("Failed to create instance buffer: " + VulkEase.GetLastError());
+                Console.Error.WriteLine("Failed to create instance buffer: " + GetLastError());
                 return false;
             }
             UploadInstances(_instances, 0);
@@ -499,15 +601,27 @@ namespace VulkEaseExamples
                 size = (ulong)Marshal.SizeOf<CameraData>(),
                 usage = VkBufferUsageFlags.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                 persistentlyMapped = false,
-                debugName = Marshal.StringToHGlobalAnsi("AsteroidCamera")
+                debugName = "AsteroidCamera"
             };
-            _cameraBuffer = VulkEase.CreateBuffer(_device, cameraDesc);
-            Marshal.FreeHGlobal(cameraDesc.debugName);
+            _cameraBuffer = CreateBuffer(_device, cameraDesc);
             if (_cameraBuffer.native == 0)
             {
-                Console.Error.WriteLine("Failed to create camera buffer: " + VulkEase.GetLastError());
+                Console.Error.WriteLine("Failed to create camera buffer: " + GetLastError());
                 return false;
             }
+
+            // Create depth buffer
+            GetSwapchainSize(_swapchain, out uint fbWidth, out uint fbHeight);
+            _depthTexture = CreateTexture2D(_device, fbWidth, fbHeight, VkFormat.VK_FORMAT_D32_SFLOAT,
+                VkImageUsageFlags.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VkImageUsageFlags.VK_IMAGE_USAGE_SAMPLED_BIT,
+                "AsteroidDepthBuffer");
+            if (_depthTexture.native == VEConstants.VE_INVALID_TEXTURE_INDEX.native)
+            {
+                Console.Error.WriteLine("Failed to create depth buffer: " + GetLastError());
+                return false;
+            }
+            _depthWidth = fbWidth;
+            _depthHeight = fbHeight;
 
             _chunks.Clear();
             for (int first = 0; first < _instances.Length; first += ChunkSize)
@@ -579,18 +693,31 @@ namespace VulkEaseExamples
         {
             Stopwatch sw = Stopwatch.StartNew();
 
-            var backbuffer = VulkEase.AcquireNextImage(_swapchain);
+            var backbuffer = AcquireNextImage(_swapchain);
             if (backbuffer.native == VEConstants.VE_INVALID_TEXTURE_INDEX.native)
             {
+                // Swapchain may have been recreated or window minimized - try to handle resize
+                GetSwapchainSize(_swapchain, out uint newWidth, out uint newHeight);
+                if (newWidth > 0 && newHeight > 0)
+                {
+                    ResizeSwapchain(_swapchain, newWidth, newHeight);
+                    RecreateDepthBuffer(newWidth, newHeight);
+                }
                 sw.Stop();
                 return sw.Elapsed.TotalMilliseconds;
             }
 
-            var cmd = VulkEase.BeginCommandBuffer(_device);
+            // Check if swapchain size changed and depth buffer needs recreation
+            GetSwapchainSize(_swapchain, out uint width, out uint height);
+            if (width != _depthWidth || height != _depthHeight)
+            {
+                RecreateDepthBuffer(width, height);
+            }
 
-            VulkEase.TransitionTextureForColorAttachment(cmd, backbuffer);
+            var cmd = BeginCommandBuffer(_device);
 
-            VulkEase.GetSwapchainSize(_swapchain, out uint width, out uint height);
+            TransitionTextureForColorAttachment(cmd, backbuffer);
+            TransitionTextureForDepthAttachment(cmd, _depthTexture);
 
             var colorAttachment = new VERenderingAttachment
             {
@@ -601,16 +728,26 @@ namespace VulkEaseExamples
                 resolveTexture = VEConstants.VE_INVALID_TEXTURE_INDEX
             };
 
+            var depthAttachment = new VERenderingAttachment
+            {
+                texture = _depthTexture,
+                loadOp = VkAttachmentLoadOp.VK_ATTACHMENT_LOAD_OP_CLEAR,
+                storeOp = VkAttachmentStoreOp.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                clearValue = new VEColor(1.0f, 0.0f, 0.0f, 0.0f),  // Clear depth to 1.0
+                resolveTexture = VEConstants.VE_INVALID_TEXTURE_INDEX
+            };
+
             var renderingInfo = new VERenderingInfo
             {
                 RenderAreaX = 0,
                 RenderAreaY = 0,
                 RenderAreaWidth = width,
-                RenderAreaHeight = height
+                RenderAreaHeight = height,
+                DepthAttachment = depthAttachment
             };
             renderingInfo.ColorAttachments.Add(colorAttachment);
 
-            VulkEase.BeginRendering(cmd, renderingInfo);
+            BeginRendering(cmd, renderingInfo);
 
             UpdateCameraBuffer(width, height);
 
@@ -621,19 +758,22 @@ namespace VulkEaseExamples
                 {
                     _secondaryScratch.Add(entry.CommandBuffer);
                 }
-                VulkEase.ExecuteSecondaryCommandBuffers(cmd, _secondaryScratch);
+                ExecuteSecondaryCommandBuffers(cmd, _secondaryScratch);
             }
 
-            VulkEase.EndRendering(cmd);
+            EndRendering(cmd);
 
-            VulkEase.TransitionTextureForPresent(cmd, backbuffer);
+            TransitionTextureForPresent(cmd, backbuffer);
 
-            var present = VulkEase.PresentImage(_swapchain, cmd);
+            var present = PresentImage(_swapchain, cmd);
             if (present == VEResult.VE_ERROR_SWAPCHAIN_OUT_OF_DATE)
             {
-                VulkEase.GetSwapchainSize(_swapchain, out uint newWidth, out uint newHeight);
+                GetSwapchainSize(_swapchain, out uint newWidth, out uint newHeight);
                 if (newWidth > 0 && newHeight > 0)
-                    VulkEase.ResizeSwapchain(_swapchain, newWidth, newHeight);
+                {
+                    ResizeSwapchain(_swapchain, newWidth, newHeight);
+                    RecreateDepthBuffer(newWidth, newHeight);
+                }
             }
 
             sw.Stop();
@@ -642,18 +782,16 @@ namespace VulkEaseExamples
 
         private void UpdateCameraBuffer(uint width, uint height)
         {
-            float time = (float)_frameIndex * 0.016f;
-            Vector3 eye = new(
+            // Use actual elapsed time so animation speed is framerate-independent
+            float time = (float)_elapsedTime;
+            SysVector3 eye = new(
                 MathF.Cos(time * 0.25f) * CameraRadius,
                 15.0f,
                 MathF.Sin(time * 0.25f) * CameraRadius);
-            Vector3 target = Vector3.Zero;
-            Vector3 up = Vector3.UnitY;
+            SysVector3 target = SysVector3.Zero;
+            SysVector3 up = SysVector3.UnitY;
 
-            Matrix4x4 view = Matrix4x4.CreateLookAt(
-                new System.Numerics.Vector3(eye.X, eye.Y, eye.Z),
-                new System.Numerics.Vector3(target.X, target.Y, target.Z),
-                new System.Numerics.Vector3(up.X, up.Y, up.Z));
+            Matrix4x4 view = Matrix4x4.CreateLookAt(eye, target, up);
 
             float aspect = width / (float)height;
             Matrix4x4 proj = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 3.0f, aspect, 0.1f, 500.0f);
@@ -664,32 +802,54 @@ namespace VulkEaseExamples
             CameraData data = new()
             {
                 ViewProj = Matrix4x4.Transpose(viewProj),
-                CameraPos = new Vector4(eye.X, eye.Y, eye.Z, 1.0f)
+                CameraPos = new SysVector4(eye.X, eye.Y, eye.Z, 1.0f)
             };
 
             IntPtr ptr = Marshal.AllocHGlobal(Marshal.SizeOf<CameraData>());
             Marshal.StructureToPtr(data, ptr, false);
-            VulkEase.UpdateBuffer(_device, _cameraBuffer, ptr, (ulong)Marshal.SizeOf<CameraData>(), 0);
+            UpdateBuffer(_device, _cameraBuffer, ptr, (ulong)Marshal.SizeOf<CameraData>(), 0);
             Marshal.FreeHGlobal(ptr);
         }
 
         private ChunkRecord RecordChunk(int chunkIndex)
         {
             var chunk = _chunks[chunkIndex];
-            var cmd = VulkEase.BeginSecondaryCommandBuffer(_device);
 
-            VulkEase.BindShaderConfig(cmd, _shaderConfig);
-            VulkEase.ApplyRenderConfig(cmd, _renderConfig);
-            VulkEase.SetViewport(cmd, 0.0f, 0.0f, ClientSize.X, ClientSize.Y, 0.0f, 1.0f);
-            VulkEase.SetScissor(cmd, 0, 0, (uint)ClientSize.X, (uint)ClientSize.Y);
+            // Create secondary command buffer descriptor with inheritance info for dynamic rendering
+            var inheritanceInfo = new VkCommandBufferInheritanceInfo
+            {
+                sType = 41, // VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO
+                pNext = _inheritanceRenderingPtr, // Points to our pre-allocated unmanaged memory
+                renderPass = IntPtr.Zero,
+                subpass = 0,
+                framebuffer = IntPtr.Zero,
+                occlusionQueryEnable = 0, // VK_FALSE
+                queryFlags = 0,
+                pipelineStatistics = 0
+            };
+
+            var desc = new VESecondaryCommandBufferDesc
+            {
+                usageFlags = 0, // Let C code use default (ONE_TIME_SUBMIT | RENDER_PASS_CONTINUE)
+                inheritanceInfo = inheritanceInfo,
+                beginRecording = true
+            };
+
+            var cmd = BeginSecondaryCommandBuffer(_device, desc);
+
+            BindShaderConfig(cmd, _shaderConfig);
+            ApplyRenderConfig(cmd, _renderConfig);
+            SetViewport(cmd, 0.0f, 0.0f, ClientSize.X, ClientSize.Y, 0.0f, 1.0f);
+            SetScissor(cmd, 0, 0, (uint)ClientSize.X, (uint)ClientSize.Y);
 
             var push = new VEGraphicsPushConstants
             {
                 vertexBuffer = _vertexBuffer.native,
                 indexBuffer = _indexBuffer.native,
-                uniformBuffers = new ulong[4],
-                textures = new uint[8],
-                samplers = new uint[8],
+                uniformBuffers = new ulong[8],
+                textures = new uint[16],
+                samplers = new uint[16],
+                reserved = new uint[7],
                 objectScale = 1.0f,
                 activeUniformCount = 2,
                 activeTextureCount = 0,
@@ -698,15 +858,12 @@ namespace VulkEaseExamples
             push.uniformBuffers[0] = _cameraBuffer.native;
             push.uniformBuffers[1] = _instanceBuffer.native;
 
-            IntPtr pcPtr = Marshal.AllocHGlobal(Marshal.SizeOf<VEGraphicsPushConstants>());
-            Marshal.StructureToPtr(push, pcPtr, false);
-            VulkEase.PushConstants(cmd, pcPtr, (nuint)Marshal.SizeOf<VEGraphicsPushConstants>(), 0);
-            Marshal.FreeHGlobal(pcPtr);
+            PushConstants(cmd, push);
 
-            VulkEase.BindIndexBuffer(cmd, _indexBuffer, 0, VkIndexType.VK_INDEX_TYPE_UINT16);
-            VulkEase.DrawIndexed(cmd, _indexCount, (uint)chunk.Count, 0, 0, (uint)chunk.FirstInstance);
+            BindIndexBuffer(cmd, _indexBuffer, 0, VkIndexType.VK_INDEX_TYPE_UINT16);
+            DrawIndexed(cmd, _indexCount, (uint)chunk.Count, 0, 0, (uint)chunk.FirstInstance);
 
-            VulkEase.EndCommandBuffer(cmd);
+            EndCommandBuffer(cmd);
 
             return new ChunkRecord(chunkIndex, cmd);
         }
@@ -722,7 +879,7 @@ namespace VulkEaseExamples
                 Marshal.StructureToPtr(instances[i], ptr + i * stride, false);
             }
 
-            VulkEase.UpdateBuffer(_device, _instanceBuffer, ptr, (ulong)size, (ulong)(offset * stride));
+            UpdateBuffer(_device, _instanceBuffer, ptr, (ulong)size, (ulong)(offset * stride));
             Marshal.FreeHGlobal(ptr);
         }
 
@@ -731,24 +888,24 @@ namespace VulkEaseExamples
             float phi = (1.0f + MathF.Sqrt(5.0f)) * 0.5f;
             var positions = new[]
             {
-                new Vector3(-1,  phi, 0),
-                new Vector3( 1,  phi, 0),
-                new Vector3(-1, -phi, 0),
-                new Vector3( 1, -phi, 0),
-                new Vector3(0, -1,  phi),
-                new Vector3(0,  1,  phi),
-                new Vector3(0, -1, -phi),
-                new Vector3(0,  1, -phi),
-                new Vector3( phi, 0, -1),
-                new Vector3( phi, 0,  1),
-                new Vector3(-phi, 0, -1),
-                new Vector3(-phi, 0,  1)
+                new SysVector3(-1,  phi, 0),
+                new SysVector3( 1,  phi, 0),
+                new SysVector3(-1, -phi, 0),
+                new SysVector3( 1, -phi, 0),
+                new SysVector3(0, -1,  phi),
+                new SysVector3(0,  1,  phi),
+                new SysVector3(0, -1, -phi),
+                new SysVector3(0,  1, -phi),
+                new SysVector3( phi, 0, -1),
+                new SysVector3( phi, 0,  1),
+                new SysVector3(-phi, 0, -1),
+                new SysVector3(-phi, 0,  1)
             };
 
             var vertices = new Vertex[positions.Length];
             for (int i = 0; i < positions.Length; ++i)
             {
-                Vector3 pos = Vector3.Normalize(positions[i]);
+                SysVector3 pos = SysVector3.Normalize(positions[i]);
                 vertices[i] = new Vertex
                 {
                     Position = pos,
@@ -783,7 +940,7 @@ namespace VulkEaseExamples
 
                 Matrix4x4 model =
                     Matrix4x4.CreateScale(scale) *
-                    Matrix4x4.CreateFromAxisAngle(Vector3.Normalize(new Vector3(
+                    Matrix4x4.CreateFromAxisAngle(SysVector3.Normalize(new SysVector3(
                         (float)rng.NextDouble(),
                         (float)rng.NextDouble(),
                         (float)rng.NextDouble())), (float)rng.NextDouble() * MathF.PI * 2.0f) *
@@ -795,7 +952,7 @@ namespace VulkEaseExamples
                 data[i] = new InstanceData
                 {
                     Model = Matrix4x4.Transpose(model),
-                    Color = new Vector4(
+                    Color = new SysVector4(
                         0.5f + 0.5f * (float)rng.NextDouble(),
                         0.4f + 0.4f * (float)rng.NextDouble(),
                         0.3f + 0.4f * (float)rng.NextDouble(),
@@ -806,33 +963,29 @@ namespace VulkEaseExamples
             return data;
         }
 
-        private static unsafe VEBufferAddress CreateVertexBuffer(VEDevice device, Vertex[] vertices, string name)
+        private static VEBufferAddress CreateVertexBufferFromArray(VEDevice device, Vertex[] vertices, string name)
         {
             GCHandle handle = GCHandle.Alloc(vertices, GCHandleType.Pinned);
-            IntPtr namePtr = Marshal.StringToHGlobalAnsi(name);
             try
             {
-                return VulkEase.CreateVertexBuffer(device, handle.AddrOfPinnedObject(), (ulong)(vertices.Length * Marshal.SizeOf<Vertex>()), namePtr);
+                return CreateVertexBuffer(device, handle.AddrOfPinnedObject(), (ulong)(vertices.Length * Marshal.SizeOf<Vertex>()), name);
             }
             finally
             {
                 handle.Free();
-                Marshal.FreeHGlobal(namePtr);
             }
         }
 
-        private static unsafe VEBufferAddress CreateIndexBuffer(VEDevice device, ushort[] indices, string name)
+        private static VEBufferAddress CreateIndexBufferFromArray(VEDevice device, ushort[] indices, string name)
         {
             GCHandle handle = GCHandle.Alloc(indices, GCHandleType.Pinned);
-            IntPtr namePtr = Marshal.StringToHGlobalAnsi(name);
             try
             {
-                return VulkEase.CreateIndexBuffer(device, handle.AddrOfPinnedObject(), (ulong)(indices.Length * sizeof(ushort)), namePtr);
+                return CreateIndexBuffer(device, handle.AddrOfPinnedObject(), (ulong)(indices.Length * sizeof(ushort)), name);
             }
             finally
             {
                 handle.Free();
-                Marshal.FreeHGlobal(namePtr);
             }
         }
 

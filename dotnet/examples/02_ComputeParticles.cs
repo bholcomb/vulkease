@@ -278,30 +278,22 @@ namespace VulkEaseExamples
                     IntPtr particleDataPtr = particleHandle.AddrOfPinnedObject();
                     ulong particleDataSize = (ulong)(particles.Length * Marshal.SizeOf<Particle>());
 
-                    IntPtr particleDebugNamePtr = Marshal.StringToHGlobalAnsi("ParticleStorageBuffer");
-                    try
+                    var particleBufferDesc = new VEBufferDesc
                     {
-                        var particleBufferDesc = new VEBufferDesc
-                        {
-                            size = particleDataSize,
-                            usage = VkBufferUsageFlags.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                            initialData = particleDataPtr,
-                            initialDataSize = particleDataSize,
-                            persistentlyMapped = false,
-                            debugName = particleDebugNamePtr
-                        };
+                        size = particleDataSize,
+                        usage = VkBufferUsageFlags.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                        initialData = particleDataPtr,
+                        initialDataSize = particleDataSize,
+                        persistentlyMapped = false,
+                        debugName = "ParticleStorageBuffer"
+                    };
 
-                        _particleBuffer = VulkEase.VulkEase.CreateBuffer(_device, particleBufferDesc);
+                    _particleBuffer = VulkEase.VulkEase.CreateBuffer(_device, particleBufferDesc);
 
-                        if (_particleBuffer.native == VEConstants.VE_INVALID_ADDRESS.native)
-                        {
-                            Console.Error.WriteLine("Failed to create particle buffer");
-                            return false;
-                        }
-                    }
-                    finally
+                    if (_particleBuffer.native == VEConstants.VE_INVALID_ADDRESS.native)
                     {
-                        Marshal.FreeHGlobal(particleDebugNamePtr);
+                        Console.Error.WriteLine("Failed to create particle buffer");
+                        return false;
                     }
                 }
                 finally
@@ -316,30 +308,22 @@ namespace VulkEaseExamples
                     IntPtr vertexDataPtr = vertexHandle.AddrOfPinnedObject();
                     ulong vertexDataSize = (ulong)(QuadVertices.Length * Marshal.SizeOf<Vector2>());
 
-                    IntPtr vertexDebugNamePtr = Marshal.StringToHGlobalAnsi("QuadVertexBuffer");
-                    try
+                    var vertexBufferDesc = new VEBufferDesc
                     {
-                        var vertexBufferDesc = new VEBufferDesc
-                        {
-                            size = vertexDataSize,
-                            usage = VkBufferUsageFlags.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                            initialData = vertexDataPtr,
-                            initialDataSize = vertexDataSize,
-                            persistentlyMapped = false,
-                            debugName = vertexDebugNamePtr
-                        };
+                        size = vertexDataSize,
+                        usage = VkBufferUsageFlags.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                        initialData = vertexDataPtr,
+                        initialDataSize = vertexDataSize,
+                        persistentlyMapped = false,
+                        debugName = "QuadVertexBuffer"
+                    };
 
-                        _vertexBuffer = VulkEase.VulkEase.CreateBuffer(_device, vertexBufferDesc);
+                    _vertexBuffer = VulkEase.VulkEase.CreateBuffer(_device, vertexBufferDesc);
 
-                        if (_vertexBuffer.native == VEConstants.VE_INVALID_ADDRESS.native)
-                        {
-                            Console.Error.WriteLine("Failed to create vertex buffer");
-                            return false;
-                        }
-                    }
-                    finally
+                    if (_vertexBuffer.native == VEConstants.VE_INVALID_ADDRESS.native)
                     {
-                        Marshal.FreeHGlobal(vertexDebugNamePtr);
+                        Console.Error.WriteLine("Failed to create vertex buffer");
+                        return false;
                     }
                 }
                 finally

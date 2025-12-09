@@ -84,7 +84,8 @@ namespace VulkEase
         public UInt64 initialDataSize;
         [MarshalAs(UnmanagedType.U1)]
         public bool persistentlyMapped;
-        public IntPtr debugName;
+        [MarshalAs(UnmanagedType.LPStr)]
+        public string? debugName;
     }
 
     // Texture descriptor
@@ -101,7 +102,8 @@ namespace VulkEase
         public VkSampleCountFlags sampleCount;
         public IntPtr initialData;
         public UInt64 initialDataSize;
-        public IntPtr debugName;
+        [MarshalAs(UnmanagedType.LPStr)]
+        public string? debugName;
     }
 
     // Sampler descriptor
@@ -120,7 +122,8 @@ namespace VulkEase
         public VkCompareOp compareOp;
         public float minLod;
         public float maxLod;
-        public IntPtr debugName;
+        [MarshalAs(UnmanagedType.LPStr)]
+        public string? debugName;
     }
 
     // Raster configuration
@@ -264,7 +267,8 @@ namespace VulkEase
         public IntPtr vertexInputConfig; // const VEVertexInputConfig*
         public UInt32 shaderCount;
         public IntPtr shaders; // VEShader* const*
-        public IntPtr debugName;
+        [MarshalAs(UnmanagedType.LPStr)]
+        public string? debugName;
     }
 
     // Shader config descriptor
@@ -277,7 +281,8 @@ namespace VulkEase
         public VEShader tessControlShader;
         public VEShader tessEvalShader;
         public VEShader computeShader;
-        public IntPtr debugName;
+        [MarshalAs(UnmanagedType.LPStr)]
+        public string? debugName;
     }
 
     // Rendering attachment
@@ -426,27 +431,52 @@ namespace VulkEase
     }
 
     // Secondary command buffer descriptor
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Explicit, Size = 72)]
     public struct VESecondaryCommandBufferDesc
     {
+        [FieldOffset(0)]
         public UInt32 usageFlags;                  // VkCommandBufferUsageFlags
+        [FieldOffset(8)]
         public VkCommandBufferInheritanceInfo inheritanceInfo;
+        [FieldOffset(64)]
         [MarshalAs(UnmanagedType.U1)]
         public bool beginRecording;
     }
 
     // VkCommandBufferInheritanceInfo for secondary command buffers
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Explicit, Size = 56)]
     public struct VkCommandBufferInheritanceInfo
     {
+        [FieldOffset(0)]
         public UInt32 sType;                       // VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO = 41
+        [FieldOffset(8)]
         public IntPtr pNext;
+        [FieldOffset(16)]
         public IntPtr renderPass;                  // VkRenderPass
+        [FieldOffset(24)]
         public UInt32 subpass;
+        [FieldOffset(32)]
         public IntPtr framebuffer;                 // VkFramebuffer
-        [MarshalAs(UnmanagedType.U1)]
-        public bool occlusionQueryEnable;
+        [FieldOffset(40)]
+        public UInt32 occlusionQueryEnable;        // VkBool32 (4 bytes in Vulkan, not C# bool)
+        [FieldOffset(44)]
         public UInt32 queryFlags;                  // VkQueryControlFlags
+        [FieldOffset(48)]
         public UInt32 pipelineStatistics;          // VkQueryPipelineStatisticFlags
+    }
+
+    // VkCommandBufferInheritanceRenderingInfo for dynamic rendering with secondary command buffers
+    [StructLayout(LayoutKind.Sequential)]
+    public struct VkCommandBufferInheritanceRenderingInfo
+    {
+        public UInt32 sType;                       // VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDERING_INFO = 1000044004
+        public IntPtr pNext;
+        public UInt32 flags;                       // VkRenderingFlags
+        public UInt32 viewMask;
+        public UInt32 colorAttachmentCount;
+        public IntPtr pColorAttachmentFormats;     // const VkFormat*
+        public VkFormat depthAttachmentFormat;
+        public VkFormat stencilAttachmentFormat;
+        public VkSampleCountFlags rasterizationSamples;
     }
 }
