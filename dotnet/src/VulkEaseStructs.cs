@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 namespace VulkEase
@@ -369,36 +370,83 @@ namespace VulkEase
         public UInt32 overrides;
     }
 
-    // Push constants structures
+    // Push constants structures - Updated to match C API (256 bytes each)
     [StructLayout(LayoutKind.Sequential)]
     public struct VEGraphicsPushConstants
     {
-        public UInt64 vertexBuffer;
-        public UInt64 indexBuffer;
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 4)]
-        public UInt64[] uniformBuffers;
+        public UInt64 vertexBuffer;                              // 8 bytes
+        public UInt64 indexBuffer;                               // 8 bytes
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
-        public UInt32[] textures;
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
-        public UInt32[] samplers;
-        public float objectScale;
-        public UInt32 activeTextureCount;
-        public UInt32 activeSamplerCount;
-        public UInt32 activeUniformCount;
-    }
+        public UInt64[] uniformBuffers;                          // 64 bytes (8 * 8)
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)]
+        public UInt32[] textures;                                // 64 bytes (16 * 4)
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)]
+        public UInt32[] samplers;                                // 64 bytes (16 * 4)
+        public float objectScale;                                // 4 bytes
+        public UInt32 activeTextureCount;                        // 4 bytes
+        public UInt32 activeSamplerCount;                        // 4 bytes
+        public UInt32 activeUniformCount;                        // 4 bytes
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 7)]
+        public UInt32[] reserved;                                // 28 bytes (7 * 4)
+    }                                                            // Total: 256 bytes
 
     [StructLayout(LayoutKind.Sequential)]
     public struct VEComputePushConstants
     {
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)]
+        public UInt64[] buffers;                                 // 128 bytes (16 * 8)
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)]
+        public UInt32[] textures;                                // 64 bytes (16 * 4)
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
-        public UInt64[] buffers;
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
-        public UInt32[] textures;
+        public UInt32[] samplers;                                // 32 bytes (8 * 4)
+        public UInt32 elementCount;                              // 4 bytes
+        public UInt32 activeBufferCount;                         // 4 bytes
+        public UInt32 activeTextureCount;                        // 4 bytes
+        public UInt32 activeSamplerCount;                        // 4 bytes
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 4)]
-        public UInt32[] samplers;
-        public UInt32 elementCount;
-        public UInt32 activeBufferCount;
-        public UInt32 activeTextureCount;
-        public UInt32 activeSamplerCount;
+        public UInt32[] reserved;                                // 16 bytes (4 * 4)
+    }                                                            // Total: 256 bytes
+
+    // Submit info for advanced synchronization
+    [StructLayout(LayoutKind.Sequential)]
+    public struct VESubmitInfo
+    {
+        public IntPtr waitSemaphores;              // const VkSemaphore*
+        public IntPtr waitSemaphoreValues;         // const uint64_t*
+        public IntPtr waitStageMasks;              // const VkPipelineStageFlags2*
+        public UInt32 waitSemaphoreCount;
+
+        public IntPtr signalSemaphores;            // const VkSemaphore*
+        public IntPtr signalSemaphoreValues;       // const uint64_t*
+        public UInt32 signalSemaphoreCount;
+
+        public IntPtr fence;                       // VkFence
+        [MarshalAs(UnmanagedType.U1)]
+        public bool waitForCompletion;
+    }
+
+    // Secondary command buffer descriptor
+    [StructLayout(LayoutKind.Sequential)]
+    public struct VESecondaryCommandBufferDesc
+    {
+        public UInt32 usageFlags;                  // VkCommandBufferUsageFlags
+        public VkCommandBufferInheritanceInfo inheritanceInfo;
+        [MarshalAs(UnmanagedType.U1)]
+        public bool beginRecording;
+    }
+
+    // VkCommandBufferInheritanceInfo for secondary command buffers
+    [StructLayout(LayoutKind.Sequential)]
+    public struct VkCommandBufferInheritanceInfo
+    {
+        public UInt32 sType;                       // VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO = 41
+        public IntPtr pNext;
+        public IntPtr renderPass;                  // VkRenderPass
+        public UInt32 subpass;
+        public IntPtr framebuffer;                 // VkFramebuffer
+        [MarshalAs(UnmanagedType.U1)]
+        public bool occlusionQueryEnable;
+        public UInt32 queryFlags;                  // VkQueryControlFlags
+        public UInt32 pipelineStatistics;          // VkQueryPipelineStatisticFlags
     }
 }

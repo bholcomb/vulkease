@@ -438,4 +438,18 @@ namespace VulkEase
         VK_INDEX_TYPE_NONE_KHR = 1000165000,
         VK_INDEX_TYPE_UINT8_EXT = 1000265000
     }
+
+    [Flags]
+    public enum VEConfigTypeFlags : UInt32
+    {
+        VE_CONFIG_TYPE_VERTEX_INPUT = 0x1,  // Vertex layout and input assembly
+        VE_CONFIG_TYPE_RASTERIZATION = 0x2, // Culling, polygon mode, depth bias
+        VE_CONFIG_TYPE_DEPTH_STENCIL = 0x4, // Depth/stencil testing and operations
+        VE_CONFIG_TYPE_COLOR_BLEND = 0x8,   // Color blending and write masks
+        VE_CONFIG_TYPE_MULTISAMPLE = 0x10,  // MSAA and coverage operations
+        VE_CONFIG_TYPE_SHADERS = 0x20,      // Shader object bindings
+        VE_CONFIG_TYPE_VIEWPORT = 0x40,     // Viewport settings
+        VE_CONFIG_TYPE_SCISSOR = 0x80,      // Scissor settings
+        VE_CONFIG_TYPE_COMPLETE = 0xFF      // All categories combined
+    }
 }

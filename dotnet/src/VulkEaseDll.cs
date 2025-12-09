@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace VulkEase
@@ -80,6 +81,28 @@ namespace VulkEase
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern IntPtr veGetLastError();
+
+        // Vulkan handle accessors
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr veGetVkInstance(IntPtr context);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr veGetVkPhysicalDevice(IntPtr device);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr veGetVkDevice(IntPtr device);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr veGetVkGraphicsQueue(IntPtr device);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr veGetVkComputeQueue(IntPtr device);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr veGetVkTransferQueue(IntPtr device);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr veGetVkCommandBufferFence(IntPtr cmd);
         #endregion
         
 
@@ -174,6 +197,25 @@ namespace VulkEase
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veSaveTexture(IntPtr device, UInt32 texture, IntPtr filename);
+
+        // Host image copy functions
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veHostCopyToTexture(IntPtr device, UInt32 textureIndex, IntPtr srcData,
+            UIntPtr dataSize, UInt32 offsetX, UInt32 offsetY, UInt32 offsetZ,
+            UInt32 width, UInt32 height, UInt32 depth);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veHostCopyFromTexture(IntPtr device, UInt32 textureIndex, IntPtr dstData,
+            UIntPtr dataSize, UInt32 offsetX, UInt32 offsetY, UInt32 offsetZ,
+            UInt32 width, UInt32 height, UInt32 depth);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veHostUpdateEntireTexture(IntPtr device, UInt32 textureIndex, IntPtr srcData,
+            UIntPtr dataSize);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veHostCopyEntireTexture(IntPtr device, UInt32 textureIndex, IntPtr dstData,
+            UIntPtr dataSize);
         #endregion
 
         #region Sampler Management
@@ -289,7 +331,25 @@ namespace VulkEase
         internal static extern IntPtr veBeginCommandBuffer(IntPtr device);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr veBeginSecondaryCommandBuffer(IntPtr device, IntPtr desc);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veEndCommandBuffer(IntPtr cmd);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veExecuteSecondaryCommandBuffers(IntPtr primaryCmd, UInt32 count, IntPtr[] secondaryCmds);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veSubmitCommandBuffer(IntPtr cmd, bool waitForCompletion);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veSubmitCommandBufferEx(IntPtr cmd, ref VESubmitInfo submitInfo);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veResetCommandBuffer(IntPtr cmd);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void veReleaseCommandBuffer(IntPtr cmd);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void veBeginRendering(IntPtr cmd, ref VERenderingInfoInternal renderingInfo);
@@ -489,6 +549,26 @@ namespace VulkEase
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veValidateRenderConfig(IntPtr config);
-        #endregion        
+        #endregion
+
+        #region Deferred Deletion
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void veEnqueueBufferDeletion(IntPtr device, UInt64 address);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void veEnqueueTextureDeletion(IntPtr device, UInt32 index);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void veEnqueueSamplerDeletion(IntPtr device, UInt32 index);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void veEnqueueShaderDeletion(IntPtr shader);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void veProcessDeferredDeletions(IntPtr device);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void veFlushDeferredDeletions(IntPtr device);
+        #endregion
     }
 }
