@@ -652,15 +652,10 @@ void veDestroyShader(VEShader *shader)
 
    VEShaderInternal *internal = (VEShaderInternal *)shader;
    VEDeviceInternal *deviceInternal = internal->device;
-   VEDeferredDeletionQueue *queue = deviceInternal ? deviceInternal->deferredDeletionQueue.get() : nullptr;
-
-   if (queue)
-   {
-      queue->enqueueShader(shader);
+   if (!deviceInternal)
       return;
-   }
 
-   veDestroyShaderImmediate(shader);
+   deviceInternal->deferredDeletionQueue->enqueueShader(shader);
 }
 
 // =============================================================================
