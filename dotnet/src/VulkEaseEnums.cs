@@ -259,6 +259,20 @@ namespace VulkEase
         VK_SAMPLE_COUNT_64_BIT = 0x00000040
     }
 
+    [Flags]
+    public enum VkCommandBufferUsageFlags : UInt32
+    {
+        VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT = 0x00000001,
+        VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT = 0x00000002,
+        VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT = 0x00000004
+    }
+
+    [Flags]
+    public enum VkQueryControlFlags : UInt32
+    {
+        VK_QUERY_CONTROL_PRECISE_BIT = 0x00000001
+    }
+
     public enum VkFilter : Int32
     {
         VK_FILTER_NEAREST = 0,

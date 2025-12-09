@@ -804,14 +804,11 @@ namespace VulkEase
             GCHandle depthAttachmentHandle = default;
             GCHandle stencilAttachmentHandle = default;
 
-            VkRenderingAttachmentInfoInternal[] colorAttachmentsArray = null;
             IntPtr colorAttachmentsPtr = IntPtr.Zero;
 
             if (renderingInfo.ColorAttachments != null && renderingInfo.ColorAttachments.Count > 0)
             {
-                colorAttachmentsArray = renderingInfo.ColorAttachments
-                    .Select(ca => new VkRenderingAttachmentInfoInternal(ca))
-                    .ToArray();
+                var colorAttachmentsArray = renderingInfo.ColorAttachments.ToArray();
                 colorAttachmentsHandle = GCHandle.Alloc(colorAttachmentsArray, GCHandleType.Pinned);
                 colorAttachmentsPtr = colorAttachmentsHandle.AddrOfPinnedObject();
             }
@@ -819,7 +816,7 @@ namespace VulkEase
             IntPtr depthAttachmentPtr = IntPtr.Zero;
             if (renderingInfo.DepthAttachment.HasValue)
             {
-                var depthAttachment = new VkRenderingAttachmentInfoInternal(renderingInfo.DepthAttachment.Value);
+                var depthAttachment = renderingInfo.DepthAttachment.Value;
                 depthAttachmentHandle = GCHandle.Alloc(depthAttachment, GCHandleType.Pinned);
                 depthAttachmentPtr = depthAttachmentHandle.AddrOfPinnedObject();
             }
@@ -827,7 +824,7 @@ namespace VulkEase
             IntPtr stencilAttachmentPtr = IntPtr.Zero;
             if (renderingInfo.StencilAttachment.HasValue)
             {
-                var stencilAttachment = new VkRenderingAttachmentInfoInternal(renderingInfo.StencilAttachment.Value);
+                var stencilAttachment = renderingInfo.StencilAttachment.Value;
                 stencilAttachmentHandle = GCHandle.Alloc(stencilAttachment, GCHandleType.Pinned);
                 stencilAttachmentPtr = stencilAttachmentHandle.AddrOfPinnedObject();
             }
