@@ -55,7 +55,7 @@ struct VEDeferredDeletionQueue;
 #define VE_MAX_SHADERS 4096
 #define VE_MAX_SWAPCHAIN_IMAGES 8
 #define VE_MAX_FRAMES_IN_FLIGHT 3
-#define VE_MAX_COLOR_ATTACHMENTS 4
+// VE_MAX_COLOR_ATTACHMENTS is defined in vulkease.h (public API)
 #define VE_MAX_VERTEX_BINDINGS 16
 #define VE_MAX_VERTEX_ATTRIBUTES 16
 #define VE_MAX_PUSH_CONSTANT_BYTES 256
@@ -160,6 +160,13 @@ struct VECommandBufferInternal
    VkPrimitiveTopology currentTopology{VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
    uint32_t currentPatchControlPoints{0};
    std::vector<VECommandBufferInternal *> executedSecondaries;
+
+   // Current render area (set by veBeginRendering, used by veApplyRenderState for default viewport/scissor)
+   bool inRenderPass{false};
+   uint32_t renderAreaX{0};
+   uint32_t renderAreaY{0};
+   uint32_t renderAreaWidth{0};
+   uint32_t renderAreaHeight{0};
 
    void clearFenceTracking();
    void markFenceActive(VkFence fence);
@@ -408,6 +415,36 @@ void veDestroyTextureImmediate(VEDeviceInternal* device, VETextureIndex index);
 void veDestroySamplerImmediate(VEDeviceInternal* device, VESamplerIndex index);
 void veDestroyShaderImmediate(VEShader* shader);
 
+struct VERenderTargetInternal
+{
+   VEDeviceInternal *device{nullptr};
+   uint32_t width{0};
+   uint32_t height{0};
+   VkFormat colorFormat{VK_FORMAT_UNDEFINED};
+   VkFormat depthFormat{VK_FORMAT_UNDEFINED};
+   VkSampleCountFlagBits sampleCount{VK_SAMPLE_COUNT_1_BIT};
+   bool hasResolveTarget{false};
+
+   VETextureIndex colorTexture{VE_INVALID_TEXTURE_INDEX};
+   VETextureIndex depthTexture{VE_INVALID_TEXTURE_INDEX};
+   VETextureIndex resolveTexture{VE_INVALID_TEXTURE_INDEX};
+
+   char debugName[VE_MAX_DEBUG_NAME_LENGTH]{};
+
+   VERenderTargetInternal() = default;
+   VERenderTargetInternal(const VERenderTargetInternal &) = delete;
+   VERenderTargetInternal &operator=(const VERenderTargetInternal &) = delete;
+   ~VERenderTargetInternal();
+
+   [[nodiscard]] VEResult create(VEDeviceInternal *deviceInternal, const VERenderTargetDesc *desc);
+   [[nodiscard]] VEResult resize(uint32_t newWidth, uint32_t newHeight);
+   void destroy();
+
+private:
+   void destroyTextures();
+   [[nodiscard]] VEResult createTextures();
+};
+
 struct VESwapchainInternal
 {
    VkSwapchainKHR swapchain{VK_NULL_HANDLE};
@@ -431,7 +468,7 @@ struct VESwapchainInternal
 
    bool needsRecreation{false};
    bool vsyncEnabled{true};
-   void* windowHandle{nullptr};
+   VESurfaceDesc surfaceDesc{};
    VEDeviceInternal *device{nullptr};
 
    VESwapchainInternal() = default;
@@ -442,7 +479,7 @@ struct VESwapchainInternal
    void attachDevice(VEDeviceInternal *deviceInternal) noexcept;
    void markForResize(uint32_t newWidth, uint32_t newHeight) noexcept;
    [[nodiscard]] VETextureIndex acquireNextImage();
-   [[nodiscard]] VEResult present(VECommandBufferInternal &cmd);
+   [[nodiscard]] VEResult present(VECommandBufferInternal &cmd, bool releaseCommandBuffer);
    void querySize(uint32_t *outWidth, uint32_t *outHeight) const noexcept;
    [[nodiscard]] VkFormat currentFormat() const noexcept;
    void requestRecreation(bool value = true) noexcept;
@@ -642,5 +679,8 @@ extern VEFuncs veFuncs;
 
 bool initializeInstanceFunctions(VkInstance instance);
 bool initializeDeviceFunctions(VkDevice device);
+
+// Internal functions (not part of public API)
+extern "C" VETextureIndex veAcquireNextImage(VESwapchain *swapchain);
 
 #endif // VE_INTERNAL_H

@@ -309,14 +309,15 @@ bool AsteroidApp::initVulkEase()
    bool vsync = false;
 #endif
 
-   context_ = veCreateContext("VulkEase Asteroid Demo");
+   context_ = veCreateContext("VulkEase Asteroid Demo", nullptr, 0);
    if (!context_)
    {
       std::fprintf(stderr, "Failed to create VulkEase context: %s\n", veGetLastError());
       return false;
    }
 
-   device_ = veCreateDevice(context_);
+   // Create device (VK_NULL_HANDLE = auto-select best GPU)
+   device_ = veCreateDevice(context_, VK_NULL_HANDLE, nullptr, 0);
    if (!device_)
    {
       std::fprintf(stderr, "Failed to create VulkEase device: %s\n", veGetLastError());
@@ -327,20 +328,29 @@ bool AsteroidApp::initVulkEase()
    uint32_t height = kInitialHeight;
    glfwGetFramebufferSize(window_, reinterpret_cast<int *>(&width), reinterpret_cast<int *>(&height));
 
+   // Set up swapchain descriptor with platform-specific surface
+   VESwapchainDesc swapchainDesc{};
+   swapchainDesc.width = width;
+   swapchainDesc.height = height;
+   swapchainDesc.colorFormat = VK_FORMAT_B8G8R8A8_SRGB;
+   swapchainDesc.vsync = vsync;
+   swapchainDesc.debugName = "AsteroidSwapchain";
+
 #if defined(_WIN32)
-   HWND hwnd = glfwGetWin32Window(window_);
-   swapchain_ = veCreateSwapchain(device_, hwnd, width, height, VK_FORMAT_B8G8R8A8_SRGB, vsync);
+   swapchainDesc.surface.type = VE_SURFACE_TYPE_WIN32;
+   swapchainDesc.surface.win32.hwnd = glfwGetWin32Window(window_);
 #elif defined(__linux__)
-   auto display = glfwGetX11Display();
-   auto windowHandle = glfwGetX11Window(window_);
-   void *handle[2] = {display, reinterpret_cast<void *>(windowHandle)};
-   swapchain_ = veCreateSwapchain(device_, handle, width, height, VK_FORMAT_B8G8R8A8_SRGB, vsync);
+   swapchainDesc.surface.type = VE_SURFACE_TYPE_XLIB;
+   swapchainDesc.surface.xlib.display = glfwGetX11Display();
+   swapchainDesc.surface.xlib.window = glfwGetX11Window(window_);
 #elif defined(__APPLE__)
-   void *windowHandle = glfwGetCocoaWindow(window_);
-   swapchain_ = veCreateSwapchain(device_, windowHandle, width, height, VK_FORMAT_B8G8R8A8_SRGB, vsync);
+   swapchainDesc.surface.type = VE_SURFACE_TYPE_COCOA;
+   swapchainDesc.surface.cocoa.window = glfwGetCocoaWindow(window_);
 #else
 #error "Unsupported platform"
 #endif
+
+   swapchain_ = veCreateSwapchain(device_, &swapchainDesc);
 
    if (!swapchain_)
    {
@@ -349,6 +359,36 @@ bool AsteroidApp::initVulkEase()
    }
 
    swapchainFormat_ = veGetSwapchainFormat(swapchain_);
+
+   // Create render target for offscreen rendering (with depth buffer)
+   int rtWidth, rtHeight;
+   glfwGetFramebufferSize(window_, &rtWidth, &rtHeight);
+
+   VERenderTargetDesc rtDesc{};
+   rtDesc.width = static_cast<uint32_t>(rtWidth);
+   rtDesc.height = static_cast<uint32_t>(rtHeight);
+   rtDesc.colorFormat = swapchainFormat_;
+   rtDesc.depthFormat = VK_FORMAT_D32_SFLOAT;
+   rtDesc.sampleCount = 1;
+   rtDesc.hasResolveTarget = false;
+   rtDesc.debugName = "AsteroidRenderTarget";
+
+   renderTarget_ = veCreateRenderTarget(device_, &rtDesc);
+   if (!renderTarget_)
+   {
+      std::fprintf(stderr, "Failed to create render target: %s\n", veGetLastError());
+      return false;
+   }
+
+   // Build rendering info once (reused every frame)
+   renderingInfo_ = veCreateRenderingInfo(static_cast<uint32_t>(rtWidth), static_cast<uint32_t>(rtHeight));
+   veRenderingAddColorAttachment(&renderingInfo_,
+                                  veGetRenderTargetColorTexture(renderTarget_),
+                                  VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                  VEColor{0.01f, 0.01f, 0.015f, 1.0f}); // Dark space background
+   veRenderingSetDepthAttachment(&renderingInfo_,
+                                  veGetRenderTargetDepthTexture(renderTarget_),
+                                  VK_ATTACHMENT_LOAD_OP_CLEAR, 1.0f);
 
    return true;
 }
@@ -361,6 +401,12 @@ void AsteroidApp::shutdownVulkEase()
    }
 
    destroyAssets();
+
+   if (renderTarget_)
+   {
+      veDestroyRenderTarget(renderTarget_);
+      renderTarget_ = nullptr;
+   }
 
    if (swapchain_)
    {
@@ -484,21 +530,6 @@ bool AsteroidApp::createAssets()
       return false;
    }
 
-   // Create depth buffer
-   uint32_t fbWidth, fbHeight;
-   veGetSwapchainSize(swapchain_, &fbWidth, &fbHeight);
-   // Include VK_IMAGE_USAGE_SAMPLED_BIT so VulkEase's bindless descriptor system can register it
-   depthTexture_ = veCreateTexture2D(device_, fbWidth, fbHeight, VK_FORMAT_D32_SFLOAT,
-                                      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                                      "AsteroidDepthBuffer");
-   if (depthTexture_ == VE_INVALID_TEXTURE_INDEX)
-   {
-      std::fprintf(stderr, "Failed to create depth buffer: %s\n", veGetLastError());
-      return false;
-   }
-   depthWidth_ = fbWidth;
-   depthHeight_ = fbHeight;
-
    // Upload initial data.
    if (veUpdateBuffer(device_, instanceBuffer_, cpuInstances_.data(),
                       static_cast<uint64_t>(cpuInstances_.size() * sizeof(AsteroidInstance)), 0) != VE_SUCCESS)
@@ -519,50 +550,10 @@ bool AsteroidApp::createAssets()
    return true;
 }
 
-bool AsteroidApp::recreateDepthBuffer(uint32_t width, uint32_t height)
-{
-   if (!device_)
-      return false;
-
-   // Skip if dimensions haven't changed
-   if (width == depthWidth_ && height == depthHeight_ && depthTexture_ != VE_INVALID_TEXTURE_INDEX)
-      return true;
-
-   // Wait for GPU to finish using the old depth buffer
-   veDeviceWaitIdle(device_);
-
-   // Destroy old depth buffer
-   if (depthTexture_ != VE_INVALID_TEXTURE_INDEX)
-   {
-      veDestroyTexture(device_, depthTexture_);
-      depthTexture_ = VE_INVALID_TEXTURE_INDEX;
-   }
-
-   // Create new depth buffer at the new size
-   depthTexture_ = veCreateTexture2D(device_, width, height, VK_FORMAT_D32_SFLOAT,
-                                      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                                      "AsteroidDepthBuffer");
-   if (depthTexture_ == VE_INVALID_TEXTURE_INDEX)
-   {
-      std::fprintf(stderr, "Failed to recreate depth buffer: %s\n", veGetLastError());
-      return false;
-   }
-
-   depthWidth_ = width;
-   depthHeight_ = height;
-
-   return true;
-}
-
 void AsteroidApp::destroyAssets()
 {
    if (device_)
    {
-      if (depthTexture_ != VE_INVALID_TEXTURE_INDEX)
-      {
-         veDestroyTexture(device_, depthTexture_);
-         depthTexture_ = VE_INVALID_TEXTURE_INDEX;
-      }
       if (cameraBuffer_ != VE_INVALID_ADDRESS)
       {
          veDestroyBuffer(device_, cameraBuffer_);
@@ -722,6 +713,10 @@ void AsteroidApp::recordChunks(uint32_t width, uint32_t height, std::vector<Reco
    out.reserve(chunks_.size());
 
    auto recordChunk = [this, width, height](uint32_t chunkIndex, RecordedChunk &outChunk) -> bool {
+      // Set up secondary command buffer descriptor.
+      // Note: We specify formats directly here rather than using vePopulateSecondaryDescFromRenderingInfo
+      // because secondary buffers are recorded in parallel BEFORE we acquire the swapchain image.
+      // The formats are known constants (swapchainFormat_, VK_FORMAT_D32_SFLOAT).
       VESecondaryCommandBufferDesc desc{};
       desc.beginRecording = true;
       desc.usageFlags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
@@ -733,6 +728,11 @@ void AsteroidApp::recordChunks(uint32_t width, uint32_t height, std::vector<Reco
       desc.viewMask = 0;
       desc.occlusionQueryEnable = false;
       desc.occlusionQueryFlags = 0;
+      // Render area for veApplyRenderState defaults
+      desc.renderAreaX = 0;
+      desc.renderAreaY = 0;
+      desc.renderAreaWidth = width;
+      desc.renderAreaHeight = height;
 
       VECommandBuffer *cmd = veBeginSecondaryCommandBuffer(device_, &desc);
       if (!cmd)
@@ -742,10 +742,12 @@ void AsteroidApp::recordChunks(uint32_t width, uint32_t height, std::vector<Reco
 
       // With VK_EXT_shader_object, dynamic state is NOT inherited by secondary command buffers.
       // Each secondary must set all required state before drawing.
-      veBindShaderConfig(cmd, shaderConfig_);
-      veApplyRenderConfig(cmd, renderConfig_);
-      veSetViewport(cmd, 0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height), 0.0f, 1.0f);
-      veSetScissor(cmd, 0, 0, width, height);
+      VERenderState renderState{};
+      renderState.shaderConfig = shaderConfig_;
+      renderState.renderConfig = renderConfig_;
+      renderState.viewport = nullptr;  // Use full render area from desc
+      renderState.scissor = nullptr;   // Use full render area from desc
+      veApplyRenderState(cmd, &renderState);
 
       VEGraphicsPushConstants push = VE_INIT_GRAPHICS_PUSH_CONSTANTS();
       push.vertexBuffer = vertexBuffer_;
@@ -819,33 +821,9 @@ void AsteroidApp::submitFrame(const std::vector<RecordedChunk> &recorded, double
 {
    auto start = std::chrono::high_resolution_clock::now();
 
-   VETextureIndex backbuffer = veAcquireNextImage(swapchain_);
-   if (backbuffer == VE_INVALID_TEXTURE_INDEX)
-   {
-      // Swapchain may have been recreated or window minimized - try to handle resize
-      int framebufferWidth = 0;
-      int framebufferHeight = 0;
-      glfwGetFramebufferSize(window_, &framebufferWidth, &framebufferHeight);
-      if (framebufferWidth > 0 && framebufferHeight > 0)
-      {
-         veResizeSwapchain(swapchain_, static_cast<uint32_t>(framebufferWidth),
-                           static_cast<uint32_t>(framebufferHeight));
-         recreateDepthBuffer(static_cast<uint32_t>(framebufferWidth),
-                             static_cast<uint32_t>(framebufferHeight));
-      }
-      // Skip this frame
-      return;
-   }
-
-   // Check if swapchain size changed and depth buffer needs recreation
+   // Get render target size for camera projection
    uint32_t width, height;
-   veGetSwapchainSize(swapchain_, &width, &height);
-
-   // Check for size mismatch (happens when swapchain auto-recreates)
-   if (width != depthWidth_ || height != depthHeight_)
-   {
-      recreateDepthBuffer(width, height);
-   }
+   veGetRenderTargetSize(renderTarget_, &width, &height);
 
    VECommandBuffer *primary = veBeginCommandBuffer(device_);
    if (!primary)
@@ -853,34 +831,8 @@ void AsteroidApp::submitFrame(const std::vector<RecordedChunk> &recorded, double
       fatal("Failed to begin primary command buffer: %s", veGetLastError());
    }
 
-   veTransitionTextureForColorAttachment(primary, backbuffer);
-   veTransitionTextureForDepthAttachment(primary, depthTexture_);
-
-   VERenderingAttachment colorAttachment{};
-   colorAttachment.texture = backbuffer;
-   colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-   colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-   colorAttachment.clearValue = {0.01f, 0.01f, 0.015f, 1.0f};
-   colorAttachment.resolveTexture = VE_INVALID_TEXTURE_INDEX;
-
-   VERenderingAttachment depthAttachment{};
-   depthAttachment.texture = depthTexture_;
-   depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-   depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-   depthAttachment.clearValue = {1.0f, 0.0f, 0.0f, 0.0f};  // Clear depth to 1.0
-   depthAttachment.resolveTexture = VE_INVALID_TEXTURE_INDEX;
-
-   VERenderingInfo renderingInfo{};
-   renderingInfo.renderAreaX = 0;
-   renderingInfo.renderAreaY = 0;
-   renderingInfo.renderAreaWidth = width;
-   renderingInfo.renderAreaHeight = height;
-   renderingInfo.colorAttachmentCount = 1;
-   renderingInfo.colorAttachments = &colorAttachment;
-   renderingInfo.depthAttachment = &depthAttachment;
-   renderingInfo.stencilAttachment = nullptr;
-
-   veBeginRendering(primary, &renderingInfo);
+   // Begin rendering (automatically handles texture transitions)
+   veBeginRendering(primary, &renderingInfo_);
 
    // Update camera buffer once per frame before executing secondary buffers.
    // Use actual elapsed time so animation speed is framerate-independent.
@@ -912,10 +864,14 @@ void AsteroidApp::submitFrame(const std::vector<RecordedChunk> &recorded, double
    veUpdateBuffer(device_, cameraBuffer_, &cameraData, sizeof(CameraData), 0);
 
    // Set render state once in the primary buffer - this is inherited by all secondary buffers.
-   veBindShaderConfig(primary, shaderConfig_);
-   veApplyRenderConfig(primary, renderConfig_);
-   veSetViewport(primary, 0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height), 0.0f, 1.0f);
-   veSetScissor(primary, 0, 0, width, height);
+   // Note: With VK_EXT_shader_object, dynamic state is NOT inherited by secondary command buffers,
+   // so each secondary must also set state. We set it here for reference/documentation.
+   VERenderState renderState{};
+   renderState.shaderConfig = shaderConfig_;
+   renderState.renderConfig = renderConfig_;
+   renderState.viewport = nullptr;  // Use full render area
+   renderState.scissor = nullptr;   // Use full render area
+   veApplyRenderState(primary, &renderState);
 
    if (!recorded.empty())
    {
@@ -927,7 +883,7 @@ void AsteroidApp::submitFrame(const std::vector<RecordedChunk> &recorded, double
       }
       VEResult execResult =
           veExecuteSecondaryCommandBuffers(primary, static_cast<uint32_t>(secondaryCmds.size()),
-                                           secondaryCmds.data());
+                                           secondaryCmds.data(), true);  // Release secondary command buffers
       if (execResult != VE_SUCCESS)
       {
          fatal("Failed to execute secondary command buffers: %s", veGetLastError());
@@ -936,10 +892,9 @@ void AsteroidApp::submitFrame(const std::vector<RecordedChunk> &recorded, double
 
    veEndRendering(primary);
 
-   veTransitionTextureForPresent(primary, backbuffer);
-
-   VEResult presentResult = vePresentImage(swapchain_, primary);
-   if (presentResult == VE_ERROR_SWAPCHAIN_OUT_OF_DATE)
+   // Blit render target to swapchain (acquires swapchain image automatically)
+   VEResult blitResult = veBlitToSwapchain(primary, renderTarget_, swapchain_, VK_FILTER_LINEAR);
+   if (blitResult == VE_ERROR_SWAPCHAIN_OUT_OF_DATE)
    {
       int framebufferWidth = 0;
       int framebufferHeight = 0;
@@ -948,25 +903,33 @@ void AsteroidApp::submitFrame(const std::vector<RecordedChunk> &recorded, double
       {
          veResizeSwapchain(swapchain_, static_cast<uint32_t>(framebufferWidth),
                            static_cast<uint32_t>(framebufferHeight));
-         // Recreate depth buffer to match new swapchain size
-         recreateDepthBuffer(static_cast<uint32_t>(framebufferWidth),
-                             static_cast<uint32_t>(framebufferHeight));
+         veResizeRenderTarget(renderTarget_, static_cast<uint32_t>(framebufferWidth),
+                              static_cast<uint32_t>(framebufferHeight));
+         
+         // Rebuild rendering info with new size and texture handles
+         renderingInfo_ = veCreateRenderingInfo(static_cast<uint32_t>(framebufferWidth),
+                                                 static_cast<uint32_t>(framebufferHeight));
+         veRenderingAddColorAttachment(&renderingInfo_,
+                                        veGetRenderTargetColorTexture(renderTarget_),
+                                        VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                        VEColor{0.01f, 0.01f, 0.015f, 1.0f});
+         veRenderingSetDepthAttachment(&renderingInfo_,
+                                        veGetRenderTargetDepthTexture(renderTarget_),
+                                        VK_ATTACHMENT_LOAD_OP_CLEAR, 1.0f);
       }
+      // Release command buffer manually on early return
+      veReleaseCommandBuffer(primary);
+      auto end = std::chrono::high_resolution_clock::now();
+      submitCpuMs = toMilliseconds(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start));
+      return;
    }
-   else if (presentResult != VE_SUCCESS)
+   
+   // Present (releases primary command buffer)
+   VEResult presentResult = vePresentImage(swapchain_, primary, true);
+   if (presentResult != VE_SUCCESS)
    {
       fatal("Failed to present image: %s", veGetLastError());
    }
-
-   // Hand buffers back immediately; the library will defer reuse until safe.
-   for (const RecordedChunk &chunk : recorded)
-   {
-      if (chunk.cmd)
-      {
-         veReleaseCommandBuffer(chunk.cmd);
-      }
-   }
-   veReleaseCommandBuffer(primary);
 
    auto end = std::chrono::high_resolution_clock::now();
    submitCpuMs = toMilliseconds(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start));

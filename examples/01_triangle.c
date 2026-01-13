@@ -29,10 +29,12 @@ typedef struct {
 static VEContext* g_context = NULL;
 static VEDevice* g_device = NULL;
 static VESwapchain* g_swapchain = NULL;
+static VERenderTarget* g_renderTarget = NULL;
 static VEShader* g_vertexShader = NULL;
 static VEShader* g_fragmentShader = NULL;
 static VEBufferAddress g_vertexBuffer = VE_INVALID_ADDRESS;
 static VERenderConfig* g_renderConfig = NULL;
+static VERenderingInfo g_renderingInfo;
 
 int win_width = 800;
 int win_height = 600;
@@ -63,8 +65,20 @@ static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
         return;
     }
     
-    if (g_swapchain && width > 0 && height > 0) {
-        veResizeSwapchain(g_swapchain, (uint32_t)width, (uint32_t)height);
+    if (width > 0 && height > 0) {
+        if (g_swapchain) {
+            veResizeSwapchain(g_swapchain, (uint32_t)width, (uint32_t)height);
+        }
+        if (g_renderTarget) {
+            veResizeRenderTarget(g_renderTarget, (uint32_t)width, (uint32_t)height);
+            
+            // Rebuild rendering info with new size and texture handle
+            g_renderingInfo = veCreateRenderingInfo((uint32_t)width, (uint32_t)height);
+            veRenderingAddColorAttachment(&g_renderingInfo, 
+                                           veGetRenderTargetColorTexture(g_renderTarget),
+                                           VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                           (VEColor){0.1f, 0.1f, 0.1f, 1.0f});
+        }
     }
 }
 
@@ -85,7 +99,7 @@ static bool initGLFW() {
 
 static bool initVulkEase(GLFWwindow* window) {
     // Create context
-    g_context = veCreateContext("VulkEase Spinning Triangle");
+    g_context = veCreateContext("VulkEase Spinning Triangle", NULL, 0);
     if (!g_context) {
         fprintf(stderr, "Failed to create VulkEase context: %s\n", veGetLastError());
         return false;
@@ -93,8 +107,8 @@ static bool initVulkEase(GLFWwindow* window) {
     
     printf("VulkEase initialized successfully\n");
     
-    // Create device
-    g_device = veCreateDevice(g_context);
+    // Create device (VK_NULL_HANDLE = auto-select best GPU)
+    g_device = veCreateDevice(g_context, VK_NULL_HANDLE, NULL, 0);
     if (!g_device) {
         fprintf(stderr, "Failed to create VulkEase device: %s\n", veGetLastError());
         return false;
@@ -102,47 +116,40 @@ static bool initVulkEase(GLFWwindow* window) {
     
     printf("VulkEase device created successfully\n");
     printf("Device: %s\n", veGetDeviceName(g_device));
-        
+    
+    // Set up swapchain descriptor with platform-specific surface
+    VESwapchainDesc swapchainDesc = {0};
+    swapchainDesc.width = (uint32_t)win_width;
+    swapchainDesc.height = (uint32_t)win_height;
+    swapchainDesc.colorFormat = VK_FORMAT_B8G8R8A8_SRGB;
+    swapchainDesc.vsync = vsync;
+    swapchainDesc.debugName = "TriangleSwapchain";
+
 #if defined(_WIN32)
-    void* windowHandle = NULL;    
-    
-    windowHandle = glfwGetWin32Window(window);
-    if (!windowHandle) {
+    swapchainDesc.surface.type = VE_SURFACE_TYPE_WIN32;
+    swapchainDesc.surface.win32.hwnd = glfwGetWin32Window(window);
+    if (!swapchainDesc.surface.win32.hwnd) {
         fprintf(stderr, "Failed to get native window data\n");
         return false;
     }
-
-    g_swapchain = veCreateSwapchain(g_device, windowHandle, width, height, VE_FORMAT_BGRA8_SRGB);
 #elif defined(__linux__)
-    // Get native window handle for VulkEase's simple approach
-    void* displayHandle = NULL;
-    void* windowHandle = NULL;
-    
-    // For simplicity, assume X11 for now
-    // In production, you'd detect the platform properly
-    displayHandle = (void*)glfwGetX11Display();
-    windowHandle = (void*)glfwGetX11Window(window);
-    
-    if (!displayHandle || !windowHandle) {
+    swapchainDesc.surface.type = VE_SURFACE_TYPE_XLIB;
+    swapchainDesc.surface.xlib.display = (void*)glfwGetX11Display();
+    swapchainDesc.surface.xlib.window = glfwGetX11Window(window);
+    if (!swapchainDesc.surface.xlib.display || !swapchainDesc.surface.xlib.window) {
         fprintf(stderr, "Failed to get native window data\n");
         return false;
     }
-
-    void* windowData[] = {displayHandle, windowHandle};
-
-    // Create swapchain using VulkEase's simple window handle approach
-    g_swapchain = veCreateSwapchain(g_device, windowData, (uint32_t)win_width, (uint32_t)win_height, VK_FORMAT_B8G8R8A8_SRGB, vsync);
-
 #elif defined(__APPLE__)
-    void* windowHandle = NULL;    
-    
-    windowHandle = glfwGetCocoaWindow(window);
-    if (!windowHandle) {
+    swapchainDesc.surface.type = VE_SURFACE_TYPE_COCOA;
+    swapchainDesc.surface.cocoa.window = glfwGetCocoaWindow(window);
+    if (!swapchainDesc.surface.cocoa.window) {
         fprintf(stderr, "Failed to get native window data\n");
         return false;
     }
-    g_swapchain = veCreateSwapchain(g_device, windowHandle, width, height, VE_FORMAT_BGRA8_SRGB);
-#endif    
+#endif
+
+    g_swapchain = veCreateSwapchain(g_device, &swapchainDesc);    
     
     if (!g_swapchain) {
         fprintf(stderr, "Failed to create swapchain: %s\n", veGetLastError());
@@ -150,6 +157,31 @@ static bool initVulkEase(GLFWwindow* window) {
     }
     
     printf("Swapchain created: %dx%d\n", win_width, win_height);
+
+    // Create render target for offscreen rendering
+    VERenderTargetDesc rtDesc = {0};
+    rtDesc.width = (uint32_t)win_width;
+    rtDesc.height = (uint32_t)win_height;
+    rtDesc.colorFormat = veGetSwapchainFormat(g_swapchain);
+    rtDesc.depthFormat = VK_FORMAT_UNDEFINED;  // No depth buffer for this example
+    rtDesc.sampleCount = 1;
+    rtDesc.hasResolveTarget = false;
+    rtDesc.debugName = "TriangleRenderTarget";
+
+    g_renderTarget = veCreateRenderTarget(g_device, &rtDesc);
+    if (!g_renderTarget) {
+        fprintf(stderr, "Failed to create render target: %s\n", veGetLastError());
+        return false;
+    }
+    
+    // Build rendering info once (reused every frame)
+    g_renderingInfo = veCreateRenderingInfo((uint32_t)win_width, (uint32_t)win_height);
+    veRenderingAddColorAttachment(&g_renderingInfo, 
+                                   veGetRenderTargetColorTexture(g_renderTarget),
+                                   VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                   (VEColor){0.1f, 0.1f, 0.1f, 1.0f}); // Dark gray background
+
+    printf("Render target created: %dx%d\n", win_width, win_height);
     
     // Initialize animation timer
     g_startTime = glfwGetTime();
@@ -223,21 +255,12 @@ static void createRotationMatrix(float matrix[16], float angleRadians) {
 }
 
 static void render() {
-    // Acquire next swapchain image
-    VETextureIndex backbuffer = veAcquireNextImage(g_swapchain);
-    if (backbuffer == VE_INVALID_TEXTURE_INDEX) {
-        // Swapchain needs recreation or other error
-        return;
-    }
-    
     // Begin command buffer
     VECommandBuffer* cmd = veBeginCommandBuffer(g_device);
     if (!cmd) {
         fprintf(stderr, "Failed to begin command buffer\n");
         return;
     }
-
-    veTransitionTextureForColorAttachment(cmd, backbuffer); //TODO:  Find a way to remove this from the user's workload
     
     // Calculate animation
     double currentTime = glfwGetTime();
@@ -248,45 +271,23 @@ static void render() {
     float mvpMatrix[16];
     createRotationMatrix(mvpMatrix, rotationAngle);
     
-    // Set up rendering info
-    VERenderingAttachment colorAttachment = {
-        .texture = backbuffer,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .clearValue = {0.1f, 0.1f, 0.1f, 1.0f}, // Dark gray background
-        .resolveTexture = VE_INVALID_TEXTURE_INDEX
-    };
-    
-    uint32_t width, height;
-    veGetSwapchainSize(g_swapchain, &width, &height);
-    
-    VERenderingInfo renderingInfo = {
-        .renderAreaX = 0,
-        .renderAreaY = 0,
-        .renderAreaWidth = width,
-        .renderAreaHeight = height,
-        .colorAttachmentCount = 1,
-        .colorAttachments = &colorAttachment,
-        .depthAttachment = NULL,
-        .stencilAttachment = NULL, 
-    };
-    
-    // Begin rendering
-    veBeginRendering(cmd, &renderingInfo);
+    // Begin rendering (automatically handles texture transitions)
+    veBeginRendering(cmd, &g_renderingInfo);
     
     // Bind shaders
     veBindShader(cmd, g_vertexShader);
     veBindShader(cmd, g_fragmentShader);
     
-    //setup viewport and scissoring state
-    veSetViewport(cmd, 0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f);
-    veSetScissor(cmd, 0, 0, width, height);
-
-    //default render state
-    veApplyRenderConfig(cmd, g_renderConfig);
+    // Apply render state (NULL shaderConfig since we bind shaders individually, 
+    // NULL viewport/scissor to use full render area)
+    VERenderState renderState = {
+        .shaderConfig = NULL,
+        .renderConfig = g_renderConfig,
+        .viewport = NULL,  // Use full render area
+        .scissor = NULL    // Use full render area
+    };
+    veApplyRenderState(cmd, &renderState);
     
-    // Set vertex input (using VulkEase's flexible vertex input)
-    // VulkEase uses bindless buffers - vertex data is accessed via push constants!
     // Set up push constants with the vertex buffer address
     typedef struct {
         float mvpMatrix[16];
@@ -306,14 +307,15 @@ static void render() {
     // End rendering
     veEndRendering(cmd);
     
-    // Present
-    veTransitionTextureForPresent(cmd, backbuffer);  //TODO:  Find a way to remove this from the user's work load
-
-    VEResult result = vePresentImage(g_swapchain, cmd);
+    // Blit render target to swapchain (acquires swapchain image automatically)
+    VEResult result = veBlitToSwapchain(cmd, g_renderTarget, g_swapchain, VK_FILTER_LINEAR);
     if (result == VE_ERROR_SWAPCHAIN_OUT_OF_DATE) {
-        // Handle swapchain recreation
-        veResizeSwapchain(g_swapchain, width, height);
+        // Handle swapchain recreation - resize callback handles this
+        return;
     }
+    
+    // Present
+    vePresentImage(g_swapchain, cmd, true);
 }
 
 static void cleanup() {
@@ -333,6 +335,10 @@ static void cleanup() {
         veDestroyShader(g_fragmentShader);
     }
     
+    if (g_renderTarget) {
+        veDestroyRenderTarget(g_renderTarget);
+    }
+
     if (g_swapchain) {
         veDestroySwapchain(g_swapchain);
     }

@@ -1,15 +1,14 @@
 /**
- * @file ve_swapchain.c
+ * @file ve_swapchain.cpp
  * @brief Swapchain and Presentation Implementation
  *
  * Platform-specific surface creation for Windows, Linux, and macOS.
- *
- * Window handle format by platform:
- * - Windows: windowHandle = HWND (window handle)
- * - Linux X11: windowHandle = uintptr_t[2] where [0] = Display*, [1] = Window
- * - Linux Wayland: windowHandle = uintptr_t[2] where [0] = wl_display*, [1] =
- * wl_surface*
- * - macOS: windowHandle = NSView* (Metal view)
+ * Uses VESurfaceDesc to specify platform-specific window handles:
+ * - VE_SURFACE_TYPE_WIN32: win32.hwnd = HWND
+ * - VE_SURFACE_TYPE_XLIB: xlib.display = Display*, xlib.window = Window
+ * - VE_SURFACE_TYPE_WAYLAND: wayland.display = wl_display*, wayland.surface = wl_surface*
+ * - VE_SURFACE_TYPE_COCOA: cocoa.window = NSWindow* (CAMetalLayer internally)
+ * - VE_SURFACE_TYPE_ANDROID: android.nativeWindow = ANativeWindow*
  */
 
 #include "ve_internal.h"
@@ -100,7 +99,7 @@ VETextureIndex VESwapchainInternal::acquireNextImage()
    return textureIndices[imageIndex];
 }
 
-VEResult VESwapchainInternal::present(VECommandBufferInternal &cmd)
+VEResult VESwapchainInternal::present(VECommandBufferInternal &cmd, bool releaseCommandBuffer)
 {
    if (!device)
    {
@@ -225,6 +224,12 @@ VEResult VESwapchainInternal::present(VECommandBufferInternal &cmd)
       device->lastFrameTimestampSeconds = nowSeconds;
       device->performanceStats = device->frameStats;
       device->frameStats = {};
+   }
+
+   // Release command buffer if requested
+   if (releaseCommandBuffer && device)
+   {
+      veFreeCommandBuffer(&cmd);
    }
 
    return VE_SUCCESS;
@@ -396,90 +401,98 @@ void VESwapchainInternal::destroySurfaceAndSwapchain()
 // Platform-Specific Surface Creation
 // =============================================================================
 
-VkResult veCreateSurface(VEContextInternal *context, void *windowHandle, VkSurfaceKHR *surface)
+VkResult veCreateSurfaceFromDesc(VEContextInternal *context, const VESurfaceDesc *surfaceDesc, VkSurfaceKHR *surface)
 {
-   if (!context || !windowHandle || !surface)
+   if (!context || !surfaceDesc || !surface)
    {
       return VK_ERROR_INITIALIZATION_FAILED;
    }
 
+   switch (surfaceDesc->type)
+   {
 #ifdef _WIN32
-   // Windows surface creation
-   VkWin32SurfaceCreateInfoKHR createInfo{};
-   createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-   createInfo.hinstance = GetModuleHandle(NULL);
-   createInfo.hwnd = reinterpret_cast<HWND>(windowHandle);
-
-   PFN_vkCreateWin32SurfaceKHR vkCreateWin32SurfaceKHR =
-       (PFN_vkCreateWin32SurfaceKHR)vkGetInstanceProcAddr(context->instance, "vkCreateWin32SurfaceKHR");
-
-   if (!vkCreateWin32SurfaceKHR)
+   case VE_SURFACE_TYPE_WIN32:
    {
-      return VK_ERROR_EXTENSION_NOT_PRESENT;
+      VkWin32SurfaceCreateInfoKHR createInfo{};
+      createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+      createInfo.hinstance = GetModuleHandle(NULL);
+      createInfo.hwnd = reinterpret_cast<HWND>(surfaceDesc->win32.hwnd);
+
+      PFN_vkCreateWin32SurfaceKHR vkCreateWin32SurfaceKHR =
+          (PFN_vkCreateWin32SurfaceKHR)vkGetInstanceProcAddr(context->instance, "vkCreateWin32SurfaceKHR");
+
+      if (!vkCreateWin32SurfaceKHR)
+      {
+         return VK_ERROR_EXTENSION_NOT_PRESENT;
+      }
+
+      return vkCreateWin32SurfaceKHR(context->instance, &createInfo, NULL, surface);
    }
+#endif
 
-   return vkCreateWin32SurfaceKHR(context->instance, &createInfo, NULL, surface);
-
-#elif defined(__linux__)
-   // Linux surface creation - try X11 first, then Wayland
-   // Note: In a real implementation, you would detect the windowing system at
-   // runtime
-
-   // Try X11 surface creation
-   PFN_vkCreateXlibSurfaceKHR vkCreateXlibSurfaceKHR =
-       (PFN_vkCreateXlibSurfaceKHR)vkGetInstanceProcAddr(context->instance, "vkCreateXlibSurfaceKHR");
-
-   if (vkCreateXlibSurfaceKHR)
+#ifdef __linux__
+   case VE_SURFACE_TYPE_XLIB:
    {
+      PFN_vkCreateXlibSurfaceKHR vkCreateXlibSurfaceKHR =
+          (PFN_vkCreateXlibSurfaceKHR)vkGetInstanceProcAddr(context->instance, "vkCreateXlibSurfaceKHR");
+
+      if (!vkCreateXlibSurfaceKHR)
+      {
+         return VK_ERROR_EXTENSION_NOT_PRESENT;
+      }
+
       VkXlibSurfaceCreateInfoKHR createInfo{};
       createInfo.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
-      auto handles = reinterpret_cast<uintptr_t *>(windowHandle);
-      createInfo.dpy = reinterpret_cast<Display *>(handles[0]);
-      createInfo.window = static_cast<Window>(handles[1]);
+      createInfo.dpy = reinterpret_cast<Display *>(surfaceDesc->xlib.display);
+      createInfo.window = static_cast<Window>(surfaceDesc->xlib.window);
 
       return vkCreateXlibSurfaceKHR(context->instance, &createInfo, NULL, surface);
    }
 
-   // Try Wayland surface creation if X11 failed
-   PFN_vkCreateWaylandSurfaceKHR vkCreateWaylandSurfaceKHR =
-       (PFN_vkCreateWaylandSurfaceKHR)vkGetInstanceProcAddr(context->instance, "vkCreateWaylandSurfaceKHR");
-
-   if (vkCreateWaylandSurfaceKHR)
+   case VE_SURFACE_TYPE_WAYLAND:
    {
+      PFN_vkCreateWaylandSurfaceKHR vkCreateWaylandSurfaceKHR =
+          (PFN_vkCreateWaylandSurfaceKHR)vkGetInstanceProcAddr(context->instance, "vkCreateWaylandSurfaceKHR");
+
+      if (!vkCreateWaylandSurfaceKHR)
+      {
+         return VK_ERROR_EXTENSION_NOT_PRESENT;
+      }
+
       VkWaylandSurfaceCreateInfoKHR createInfo{};
       createInfo.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
-      auto handles = reinterpret_cast<uintptr_t *>(windowHandle);
-      createInfo.display = reinterpret_cast<struct wl_display *>(handles[0]);
-      createInfo.surface = reinterpret_cast<struct wl_surface *>(handles[1]);
+      createInfo.display = reinterpret_cast<struct wl_display *>(surfaceDesc->wayland.display);
+      createInfo.surface = reinterpret_cast<struct wl_surface *>(surfaceDesc->wayland.surface);
 
       return vkCreateWaylandSurfaceKHR(context->instance, &createInfo, NULL, surface);
    }
-
-   return VK_ERROR_EXTENSION_NOT_PRESENT;
-
-#elif defined(__APPLE__)
-   // macOS surface creation
-   VkMacOSSurfaceCreateInfoMVK createInfo{};
-   createInfo.sType = VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK;
-   createInfo.pView = windowHandle;
-
-   PFN_vkCreateMacOSSurfaceMVK vkCreateMacOSSurfaceMVK =
-       (PFN_vkCreateMacOSSurfaceMVK)vkGetInstanceProcAddr(context->instance, "vkCreateMacOSSurfaceMVK");
-
-   if (!vkCreateMacOSSurfaceMVK)
-   {
-      return VK_ERROR_EXTENSION_NOT_PRESENT;
-   }
-
-   return vkCreateMacOSSurfaceMVK(context->instance, &createInfo, NULL, surface);
-
-#else
-   // Unsupported platform
-   (void)context;
-   (void)windowHandle;
-   (void)surface;
-   return VK_ERROR_FEATURE_NOT_PRESENT;
 #endif
+
+#ifdef __APPLE__
+   case VE_SURFACE_TYPE_COCOA:
+   {
+      VkMacOSSurfaceCreateInfoMVK createInfo{};
+      createInfo.sType = VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK;
+      createInfo.pView = surfaceDesc->cocoa.window;
+
+      PFN_vkCreateMacOSSurfaceMVK vkCreateMacOSSurfaceMVK =
+          (PFN_vkCreateMacOSSurfaceMVK)vkGetInstanceProcAddr(context->instance, "vkCreateMacOSSurfaceMVK");
+
+      if (!vkCreateMacOSSurfaceMVK)
+      {
+         return VK_ERROR_EXTENSION_NOT_PRESENT;
+      }
+
+      return vkCreateMacOSSurfaceMVK(context->instance, &createInfo, NULL, surface);
+   }
+#endif
+
+   default:
+      // Unsupported platform or surface type
+      (void)context;
+      (void)surface;
+      return VK_ERROR_FEATURE_NOT_PRESENT;
+   }
 }
 
 // =============================================================================
@@ -570,10 +583,9 @@ static VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR *capabilities,
 // Swapchain Implementation
 // =============================================================================
 
-VESwapchain *veCreateSwapchain(VEDevice *device, void *windowHandle, uint32_t width, uint32_t height, VkFormat format,
-                               bool vsync)
+VESwapchain *veCreateSwapchain(VEDevice *device, const VESwapchainDesc *desc)
 {
-   if (!device || !windowHandle || width == 0 || height == 0)
+   if (!device || !desc || desc->width == 0 || desc->height == 0)
    {
       veSetError("Invalid parameters for swapchain creation");
       return NULL;
@@ -589,19 +601,19 @@ VESwapchain *veCreateSwapchain(VEDevice *device, void *windowHandle, uint32_t wi
    }
 
    swapchain->attachDevice(deviceInternal);
-   swapchain->format = format;
-   swapchain->requestedFormat = format;
-   swapchain->width = width;
-   swapchain->height = height;
+   swapchain->format = desc->colorFormat;
+   swapchain->requestedFormat = desc->colorFormat;
+   swapchain->width = desc->width;
+   swapchain->height = desc->height;
    swapchain->maxFramesInFlight = VE_MAX_FRAMES_IN_FLIGHT;
    swapchain->currentFrame = 0;
    swapchain->currentImageIndex = UINT32_MAX;
-   swapchain->vsyncEnabled = vsync;
-   swapchain->windowHandle = windowHandle;
+   swapchain->vsyncEnabled = desc->vsync;
+   swapchain->surfaceDesc = desc->surface;
    std::fill_n(&swapchain->textureIndices[0], VE_MAX_SWAPCHAIN_IMAGES, VE_INVALID_TEXTURE_INDEX);
 
    // Create surface
-   VkResult result = veCreateSurface(deviceInternal->context, windowHandle, &swapchain->surface);
+   VkResult result = veCreateSurfaceFromDesc(deviceInternal->context, &desc->surface, &swapchain->surface);
    if (result != VK_SUCCESS)
    {
       veSetError("Failed to create surface (VkResult: %d)", result);
@@ -621,14 +633,14 @@ VESwapchain *veCreateSwapchain(VEDevice *device, void *windowHandle, uint32_t wi
 
    // Choose surface format
    VkSurfaceFormatKHR surfaceFormat =
-       chooseSwapSurfaceFormat(deviceInternal->physicalDevice, swapchain->surface, format);
+       chooseSwapSurfaceFormat(deviceInternal->physicalDevice, swapchain->surface, desc->colorFormat);
    swapchain->format = surfaceFormat.format;
 
    // Choose present mode
-   VkPresentModeKHR presentMode = chooseSwapPresentMode(deviceInternal->physicalDevice, swapchain->surface, vsync);
+   VkPresentModeKHR presentMode = chooseSwapPresentMode(deviceInternal->physicalDevice, swapchain->surface, desc->vsync);
 
    // Choose extent
-   VkExtent2D extent = chooseSwapExtent(&capabilities, width, height);
+   VkExtent2D extent = chooseSwapExtent(&capabilities, desc->width, desc->height);
    swapchain->width = extent.width;
    swapchain->height = extent.height;
 
@@ -653,7 +665,7 @@ VESwapchain *veCreateSwapchain(VEDevice *device, void *windowHandle, uint32_t wi
    createInfo.imageColorSpace = surfaceFormat.colorSpace;
    createInfo.imageExtent = extent;
    createInfo.imageArrayLayers = 1;
-   createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+   createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
    // Handle queue families
    uint32_t queueFamilyIndices[] = {
@@ -796,7 +808,7 @@ VETextureIndex veAcquireNextImage(VESwapchain *swapchain)
    return internal->acquireNextImage();
 }
 
-VEResult vePresentImage(VESwapchain *swapchain, VECommandBuffer *cmd)
+VEResult vePresentImage(VESwapchain *swapchain, VECommandBuffer *cmd, bool releaseCommandBuffer)
 {
    if (!swapchain || !cmd)
    {
@@ -806,7 +818,7 @@ VEResult vePresentImage(VESwapchain *swapchain, VECommandBuffer *cmd)
 
    VESwapchainInternal *internal = reinterpret_cast<VESwapchainInternal *>(swapchain);
    VECommandBufferInternal *cmdInternal = reinterpret_cast<VECommandBufferInternal *>(cmd);
-   return internal->present(*cmdInternal);
+   return internal->present(*cmdInternal, releaseCommandBuffer);
 }
 
 VEResult veResizeSwapchain(VESwapchain *swapchain, uint32_t width, uint32_t height)
@@ -897,7 +909,7 @@ VEResult VESwapchainInternal::createSwapchainResources()
    createInfo.imageColorSpace = surfaceFormat.colorSpace;
    createInfo.imageExtent = extent;
    createInfo.imageArrayLayers = 1;
-   createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+   createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
    createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
    createInfo.queueFamilyIndexCount = 1;
    uint32_t queueFamilyIndex = device->queueFamilies.graphicsFamily;

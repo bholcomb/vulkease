@@ -92,6 +92,7 @@ typedef struct CubeApp {
     VEContext* context;
     VEDevice* device;
     VESwapchain* swapchain;
+    VERenderTarget* renderTarget;
     
     // Resources
     VEBufferAddress vertexBuffer;
@@ -107,6 +108,9 @@ typedef struct CubeApp {
     
     // Render configuration
     VERenderConfig* renderConfig;
+    
+    // Cached rendering info (built once, reused every frame)
+    VERenderingInfo renderingInfo;
     
     // Animation
     float rotationAngle;
@@ -173,8 +177,23 @@ static void errorCallback(int error, const char* description) {
 
 static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
     CubeApp* app = (CubeApp*)glfwGetWindowUserPointer(window);
-    if (app && app->swapchain && width > 0 && height > 0) {
-        veResizeSwapchain(app->swapchain, (uint32_t)width, (uint32_t)height);
+    if (app && width > 0 && height > 0) {
+        if (app->swapchain) {
+            veResizeSwapchain(app->swapchain, (uint32_t)width, (uint32_t)height);
+        }
+        if (app->renderTarget) {
+            veResizeRenderTarget(app->renderTarget, (uint32_t)width, (uint32_t)height);
+            
+            // Rebuild rendering info with new size and texture handles
+            app->renderingInfo = veCreateRenderingInfo((uint32_t)width, (uint32_t)height);
+            veRenderingAddColorAttachment(&app->renderingInfo,
+                                           veGetRenderTargetColorTexture(app->renderTarget),
+                                           VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                           (VEColor){0.1f, 0.2f, 0.3f, 1.0f});
+            veRenderingSetDepthAttachment(&app->renderingInfo,
+                                           veGetRenderTargetDepthTexture(app->renderTarget),
+                                           VK_ATTACHMENT_LOAD_OP_CLEAR, 1.0f);
+        }
     }
 }
 
@@ -207,64 +226,86 @@ static bool initWindow(CubeApp* app) {
 // Initialize VulkEase
 static bool initVulkEase(CubeApp* app) {
     // Create context
-    app->context = veCreateContext("VulkEase Cube Demo");
+    app->context = veCreateContext("VulkEase Cube Demo", NULL, 0);
     if (!app->context) {
         fprintf(stderr, "Failed to create VulkEase context: %s\n", veGetLastError());
         return false;
     }
     
-    // Create device
-    app->device = veCreateDevice(app->context);
+    // Create device (VK_NULL_HANDLE = auto-select best GPU)
+    app->device = veCreateDevice(app->context, VK_NULL_HANDLE, NULL, 0);
     if (!app->device) {
         fprintf(stderr, "Failed to create VulkEase device: %s\n", veGetLastError());
         return false;
     }
 
+    // Set up swapchain descriptor with platform-specific surface
+    VESwapchainDesc swapchainDesc = {0};
+    swapchainDesc.width = WINDOW_WIDTH;
+    swapchainDesc.height = WINDOW_HEIGHT;
+    swapchainDesc.colorFormat = VK_FORMAT_B8G8R8A8_SRGB;
+    swapchainDesc.vsync = vsync;
+    swapchainDesc.debugName = "CubeSwapchain";
+
 #if defined(_WIN32)
-    void* windowHandle = NULL;    
-    
-    windowHandle = glfwGetWin32Window(app->window);
-    if (!windowHandle) {
+    swapchainDesc.surface.type = VE_SURFACE_TYPE_WIN32;
+    swapchainDesc.surface.win32.hwnd = glfwGetWin32Window(app->window);
+    if (!swapchainDesc.surface.win32.hwnd) {
         fprintf(stderr, "Failed to get native window data\n");
         return false;
     }
-
-    app->swapchain = veCreateSwapchain(g_device, windowHandle, width, height, VK_FORMAT_B8G8R8A8_SRGB, vsync);
 #elif defined(__linux__)
-    // Get native window handle for VulkEase's simple approach
-    void* displayHandle = NULL;
-    void* windowHandle = NULL;
-    
-    // For simplicity, assume X11 for now
-    // In production, you'd detect the platform properly
-    displayHandle = (void*)glfwGetX11Display();
-    windowHandle = (void*)glfwGetX11Window(app->window);
-    
-    if (!displayHandle || !windowHandle) {
+    swapchainDesc.surface.type = VE_SURFACE_TYPE_XLIB;
+    swapchainDesc.surface.xlib.display = (void*)glfwGetX11Display();
+    swapchainDesc.surface.xlib.window = glfwGetX11Window(app->window);
+    if (!swapchainDesc.surface.xlib.display || !swapchainDesc.surface.xlib.window) {
         fprintf(stderr, "Failed to get native window data\n");
         return false;
     }
-
-    void* windowData[] = {displayHandle, windowHandle};
-
-    // Create swapchain using VulkEase's simple window handle approach
-    app->swapchain = veCreateSwapchain(app->device, windowData, WINDOW_WIDTH, WINDOW_HEIGHT, VK_FORMAT_B8G8R8A8_SRGB, vsync);
-
 #elif defined(__APPLE__)
-    void* windowHandle = NULL;    
-    
-    windowHandle = glfwGetCocoaWindow(app->window);
-    if (!windowHandle) {
+    swapchainDesc.surface.type = VE_SURFACE_TYPE_COCOA;
+    swapchainDesc.surface.cocoa.window = glfwGetCocoaWindow(app->window);
+    if (!swapchainDesc.surface.cocoa.window) {
         fprintf(stderr, "Failed to get native window data\n");
         return false;
     }
-    app->swapchain = veCreateSwapchain(g_device, windowHandle, width, height, VK_FORMAT_B8G8R8A8_SRGB, vsync);
-#endif 
+#endif
+
+    app->swapchain = veCreateSwapchain(app->device, &swapchainDesc); 
 
     if (!app->swapchain) {
         fprintf(stderr, "Failed to create swapchain: %s\n", veGetLastError());
         return false;
     }
+
+    // Create render target for offscreen rendering (with depth buffer for cube)
+    int width, height;
+    glfwGetFramebufferSize(app->window, &width, &height);
+    
+    VERenderTargetDesc rtDesc = {0};
+    rtDesc.width = (uint32_t)width;
+    rtDesc.height = (uint32_t)height;
+    rtDesc.colorFormat = veGetSwapchainFormat(app->swapchain);
+    rtDesc.depthFormat = VK_FORMAT_D32_SFLOAT;  // Depth buffer for 3D rendering
+    rtDesc.sampleCount = 1;
+    rtDesc.hasResolveTarget = false;
+    rtDesc.debugName = "CubeRenderTarget";
+
+    app->renderTarget = veCreateRenderTarget(app->device, &rtDesc);
+    if (!app->renderTarget) {
+        fprintf(stderr, "Failed to create render target: %s\n", veGetLastError());
+        return false;
+    }
+    
+    // Build rendering info once (reused every frame)
+    app->renderingInfo = veCreateRenderingInfo((uint32_t)width, (uint32_t)height);
+    veRenderingAddColorAttachment(&app->renderingInfo,
+                                   veGetRenderTargetColorTexture(app->renderTarget),
+                                   VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                   (VEColor){0.1f, 0.2f, 0.3f, 1.0f}); // Dark blue background
+    veRenderingSetDepthAttachment(&app->renderingInfo,
+                                   veGetRenderTargetDepthTexture(app->renderTarget),
+                                   VK_ATTACHMENT_LOAD_OP_CLEAR, 1.0f);
     
     printf("VulkEase initialized successfully\n");
     printf("Device: %s\n", veGetDeviceName(app->device));
@@ -461,53 +502,24 @@ static void updateUniforms(CubeApp* app) {
 
 // Render one frame
 static void renderFrame(CubeApp* app) {
-    // Acquire next image
-    VETextureIndex backbuffer = veAcquireNextImage(app->swapchain);
-    if (backbuffer == VE_INVALID_TEXTURE_INDEX) {
-        return; // Swapchain out of date, will be recreated
-    }
-    
     // Begin command buffer
     VECommandBuffer* cmd = veBeginCommandBuffer(app->device);
     if (!cmd) {
         fprintf(stderr, "Failed to begin command buffer\n");
         return;
     }
-
-     veTransitionTextureForColorAttachment(cmd, backbuffer); //TODO:  Find a way to remove this from the user's workload
     
-    // Begin rendering to backbuffer
-    uint32_t width, height;
-    veGetSwapchainSize(app->swapchain, &width, &height);
+    // Begin rendering (automatically handles texture transitions)
+    veBeginRendering(cmd, &app->renderingInfo);
     
-    VERenderingAttachment colorAttachment = {
-        .texture = backbuffer,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .clearValue = {0.1f, 0.2f, 0.3f, 1.0f}, // Dark blue background
-        .resolveTexture = VE_INVALID_TEXTURE_INDEX
+    // Apply combined render state (shaders, config, full-screen viewport/scissor)
+    VERenderState renderState = {
+        .shaderConfig = app->shaderConfig,
+        .renderConfig = app->renderConfig,
+        .viewport = NULL,  // Use full render area
+        .scissor = NULL    // Use full render area
     };
-    
-    VERenderingInfo renderingInfo = {
-        .renderAreaX = 0,
-        .renderAreaY = 0,
-        .renderAreaWidth = width,
-        .renderAreaHeight = height,
-        .colorAttachmentCount = 1,
-        .colorAttachments = &colorAttachment,
-        .depthAttachment = NULL,
-        .stencilAttachment = NULL
-    };
-    
-    veBeginRendering(cmd, &renderingInfo);
-    
-    // Set viewport and scissor
-    veSetViewport(cmd, 0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f);
-    veSetScissor(cmd, 0, 0, width, height);
-    
-    // Bind shaders and render configuration
-    veBindShaderConfig(cmd, app->shaderConfig);
-    veApplyRenderConfig(cmd, app->renderConfig);
+    veApplyRenderState(cmd, &renderState);
     
     // Set up push constants with bindless resource indices
     VEGraphicsPushConstants pushConstants = VE_INIT_GRAPHICS_PUSH_CONSTANTS();
@@ -531,18 +543,15 @@ static void renderFrame(CubeApp* app) {
     // End rendering
     veEndRendering(cmd);
     
-    // Present the frame
-    veTransitionTextureForPresent(cmd, backbuffer);  //TODO:  Find a way to remove this from the user's work load
-    
-    VEResult result = vePresentImage(app->swapchain, cmd);
+    // Blit render target to swapchain (acquires swapchain image automatically)
+    VEResult result = veBlitToSwapchain(cmd, app->renderTarget, app->swapchain, VK_FILTER_LINEAR);
     if (result == VE_ERROR_SWAPCHAIN_OUT_OF_DATE) {
-        // Swapchain needs to be recreated (window resized)
-        int newWidth, newHeight;
-        glfwGetFramebufferSize(app->window, &newWidth, &newHeight);
-        if (newWidth > 0 && newHeight > 0) {
-            veResizeSwapchain(app->swapchain, (uint32_t)newWidth, (uint32_t)newHeight);
-        }
+        // Resize callback handles this
+        return;
     }
+    
+    // Present
+    vePresentImage(app->swapchain, cmd, true);
 }
 
 // Main loop
@@ -625,6 +634,9 @@ static void cleanup(CubeApp* app) {
     }
     
     // Destroy VulkEase objects
+    if (app->renderTarget) {
+        veDestroyRenderTarget(app->renderTarget);
+    }
     if (app->swapchain) {
         veDestroySwapchain(app->swapchain);
     }
