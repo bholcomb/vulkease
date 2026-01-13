@@ -208,6 +208,8 @@ namespace VulkEaseExamples
         private VEContext _context;
         private VEDevice _device;
         private VESwapchain _swapchain;
+        private VERenderTarget _renderTarget;
+        private VERenderingInfo _renderingInfo;
 
         private VEShader _vertexShader;
         private VEShader _fragmentShader;
@@ -218,11 +220,6 @@ namespace VulkEaseExamples
         private VEBufferAddress _indexBuffer;
         private VEBufferAddress _instanceBuffer;
         private VEBufferAddress _cameraBuffer;
-
-        // Depth buffer for proper 3D rendering
-        private VETextureIndex _depthTexture;
-        private uint _depthWidth;
-        private uint _depthHeight;
 
         private readonly List<Chunk> _chunks = new();
         private InstanceData[] _instances = Array.Empty<InstanceData>();
@@ -302,8 +299,6 @@ namespace VulkEaseExamples
                 DeviceWaitIdle(_device);
             }
 
-            if (_depthTexture.native != VEConstants.VE_INVALID_TEXTURE_INDEX.native)
-                DestroyTexture(_device, _depthTexture);
             if (_cameraBuffer.native != 0)
                 DestroyBuffer(_device, _cameraBuffer);
             if (_instanceBuffer.native != 0)
@@ -322,6 +317,8 @@ namespace VulkEaseExamples
             if (_vertexShader.native != IntPtr.Zero)
                 DestroyShader(_vertexShader);
 
+            if (_renderTarget.native != IntPtr.Zero)
+                DestroyRenderTarget(_renderTarget);
             if (_swapchain.native != IntPtr.Zero)
                 DestroySwapchain(_swapchain);
             if (_device.native != IntPtr.Zero)
@@ -339,44 +336,9 @@ namespace VulkEaseExamples
             if (_swapchain.native != IntPtr.Zero && e.Width > 0 && e.Height > 0)
             {
                 ResizeSwapchain(_swapchain, (uint)e.Width, (uint)e.Height);
-                RecreateDepthBuffer((uint)e.Width, (uint)e.Height);
+                ResizeRenderTarget(_renderTarget, (uint)e.Width, (uint)e.Height);
+                RebuildRenderingInfo();
             }
-        }
-
-        private bool RecreateDepthBuffer(uint width, uint height)
-        {
-            if (_device.native == IntPtr.Zero)
-                return false;
-
-            // Skip if dimensions haven't changed
-            if (width == _depthWidth && height == _depthHeight && 
-                _depthTexture.native != VEConstants.VE_INVALID_TEXTURE_INDEX.native)
-                return true;
-
-            // Wait for GPU to finish using the old depth buffer
-            DeviceWaitIdle(_device);
-
-            // Destroy old depth buffer
-            if (_depthTexture.native != VEConstants.VE_INVALID_TEXTURE_INDEX.native)
-            {
-                DestroyTexture(_device, _depthTexture);
-                _depthTexture = VEConstants.VE_INVALID_TEXTURE_INDEX;
-            }
-
-            // Create new depth buffer at the new size
-            _depthTexture = CreateTexture2D(_device, width, height, VkFormat.VK_FORMAT_D32_SFLOAT,
-                VkImageUsageFlags.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VkImageUsageFlags.VK_IMAGE_USAGE_SAMPLED_BIT,
-                "AsteroidDepthBuffer");
-
-            if (_depthTexture.native == VEConstants.VE_INVALID_TEXTURE_INDEX.native)
-            {
-                Console.WriteLine($"Failed to recreate depth buffer: {GetLastError()}");
-                return false;
-            }
-
-            _depthWidth = width;
-            _depthHeight = height;
-            return true;
         }
 
         protected override void OnKeyDown(KeyboardKeyEventArgs e)
@@ -430,6 +392,7 @@ namespace VulkEaseExamples
                 return false;
             }
 
+            // Create device (auto-select best GPU)
             _device = CreateDevice(_context);
             if (_device.native == IntPtr.Zero)
             {
@@ -439,45 +402,99 @@ namespace VulkEaseExamples
 
             Console.WriteLine($"Using device {GetDeviceName(_device)}");
 
-            IntPtr windowHandle;
-            IntPtr linuxHandleBlock = IntPtr.Zero;
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            // Create swapchain
+            var swapchainDesc = new VESwapchainDesc
             {
-                windowHandle = GLFW.GetWin32Window(WindowPtr);
-            }
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-            {
-                IntPtr display = (IntPtr)GLFW.GetX11Display();
-                IntPtr window = (IntPtr)GLFW.GetX11Window(WindowPtr);
-                linuxHandleBlock = Marshal.AllocHGlobal(IntPtr.Size * 2);
-                Marshal.WriteIntPtr(linuxHandleBlock, 0, display);
-                Marshal.WriteIntPtr(linuxHandleBlock, IntPtr.Size, window);
-                windowHandle = linuxHandleBlock;
-            }
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            {
-                windowHandle = GLFW.GetCocoaWindow(WindowPtr);
-            }
-            else
-            {
-                Console.Error.WriteLine("Unsupported platform");
-                return false;
-            }
-
-            _swapchain = CreateSwapchain(_device, windowHandle, (uint)ClientSize.X, (uint)ClientSize.Y,
-                VkFormat.VK_FORMAT_B8G8R8A8_SRGB, true);
+                Surface = GetSurfaceDesc(),
+                Width = (uint)ClientSize.X,
+                Height = (uint)ClientSize.Y,
+                ColorFormat = VkFormat.VK_FORMAT_B8G8R8A8_SRGB,
+                VSync = true
+            };
+            _swapchain = CreateSwapchain(_device, swapchainDesc);
             if (_swapchain.native == IntPtr.Zero)
             {
                 Console.Error.WriteLine("Failed to create swapchain: " + GetLastError());
-                if (linuxHandleBlock != IntPtr.Zero)
-                    Marshal.FreeHGlobal(linuxHandleBlock);
                 return false;
             }
 
-            if (linuxHandleBlock != IntPtr.Zero)
-                Marshal.FreeHGlobal(linuxHandleBlock);
+            // Create render target with depth buffer
+            var renderTargetDesc = new VERenderTargetDesc
+            {
+                Width = (uint)ClientSize.X,
+                Height = (uint)ClientSize.Y,
+                ColorFormat = VkFormat.VK_FORMAT_B8G8R8A8_SRGB,
+                DepthFormat = VkFormat.VK_FORMAT_D32_SFLOAT,
+                SampleCount = VkSampleCountFlags.VK_SAMPLE_COUNT_1_BIT,
+                HasResolveTarget = false,
+                DebugName = "AsteroidsRenderTarget"
+            };
+            _renderTarget = CreateRenderTarget(_device, renderTargetDesc);
+            if (_renderTarget.native == IntPtr.Zero)
+            {
+                Console.Error.WriteLine("Failed to create render target: " + GetLastError());
+                return false;
+            }
+
+            // Build rendering info
+            RebuildRenderingInfo();
 
             return true;
+        }
+
+        private unsafe VESurfaceDesc GetSurfaceDesc()
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            {
+                IntPtr display = (IntPtr)GLFW.GetX11Display();
+                IntPtr window = (IntPtr)GLFW.GetX11Window(WindowPtr);
+                return new VESurfaceDesc
+                {
+                    Type = VESurfaceType.Xlib,
+                    Handle1 = display,
+                    Handle2 = window
+                };
+            }
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                return new VESurfaceDesc
+                {
+                    Type = VESurfaceType.Win32,
+                    Handle1 = GLFW.GetWin32Window(WindowPtr)
+                };
+            }
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                return new VESurfaceDesc
+                {
+                    Type = VESurfaceType.Cocoa,
+                    Handle1 = GLFW.GetCocoaWindow(WindowPtr)
+                };
+            }
+            throw new PlatformNotSupportedException("Unsupported platform");
+        }
+
+        private void RebuildRenderingInfo()
+        {
+            GetRenderTargetSize(_renderTarget, out uint width, out uint height);
+            
+            _renderingInfo = new VERenderingInfo(width, height);
+            _renderingInfo.ColorAttachments.Add(new VERenderingAttachment
+            {
+                texture = GetRenderTargetColorTexture(_renderTarget),
+                loadOp = VkAttachmentLoadOp.VK_ATTACHMENT_LOAD_OP_CLEAR,
+                storeOp = VkAttachmentStoreOp.VK_ATTACHMENT_STORE_OP_STORE,
+                clearValue = new VEColor(0.02f, 0.02f, 0.05f, 1.0f),
+                resolveTexture = VEConstants.VE_INVALID_TEXTURE_INDEX
+            });
+            _renderingInfo.DepthAttachment = new VERenderingAttachment
+            {
+                texture = GetRenderTargetDepthTexture(_renderTarget),
+                loadOp = VkAttachmentLoadOp.VK_ATTACHMENT_LOAD_OP_CLEAR,
+                storeOp = VkAttachmentStoreOp.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                clearValue = new VEColor(1.0f, 0.0f, 0.0f, 0.0f),
+                resolveTexture = VEConstants.VE_INVALID_TEXTURE_INDEX
+            };
         }
 
         private bool LoadAssets()
@@ -565,18 +582,7 @@ namespace VulkEaseExamples
                 return false;
             }
 
-            // Create depth buffer
-            GetSwapchainSize(_swapchain, out uint fbWidth, out uint fbHeight);
-            _depthTexture = CreateTexture2D(_device, fbWidth, fbHeight, VkFormat.VK_FORMAT_D32_SFLOAT,
-                VkImageUsageFlags.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VkImageUsageFlags.VK_IMAGE_USAGE_SAMPLED_BIT,
-                "AsteroidDepthBuffer");
-            if (_depthTexture.native == VEConstants.VE_INVALID_TEXTURE_INDEX.native)
-            {
-                Console.Error.WriteLine("Failed to create depth buffer: " + GetLastError());
-                return false;
-            }
-            _depthWidth = fbWidth;
-            _depthHeight = fbHeight;
+            // Depth buffer is managed by the render target
 
             _chunks.Clear();
             for (int first = 0; first < _instances.Length; first += ChunkSize)
@@ -646,61 +652,12 @@ namespace VulkEaseExamples
         {
             Stopwatch sw = Stopwatch.StartNew();
 
-            var backbuffer = AcquireNextImage(_swapchain);
-            if (backbuffer.native == VEConstants.VE_INVALID_TEXTURE_INDEX.native)
-            {
-                // Swapchain may have been recreated or window minimized - try to handle resize
-                GetSwapchainSize(_swapchain, out uint newWidth, out uint newHeight);
-                if (newWidth > 0 && newHeight > 0)
-                {
-                    ResizeSwapchain(_swapchain, newWidth, newHeight);
-                    RecreateDepthBuffer(newWidth, newHeight);
-                }
-                sw.Stop();
-                return sw.Elapsed.TotalMilliseconds;
-            }
-
-            // Check if swapchain size changed and depth buffer needs recreation
-            GetSwapchainSize(_swapchain, out uint width, out uint height);
-            if (width != _depthWidth || height != _depthHeight)
-            {
-                RecreateDepthBuffer(width, height);
-            }
+            GetRenderTargetSize(_renderTarget, out uint width, out uint height);
 
             var cmd = BeginCommandBuffer(_device);
 
-            TransitionTextureForColorAttachment(cmd, backbuffer);
-            TransitionTextureForDepthAttachment(cmd, _depthTexture);
-
-            var colorAttachment = new VERenderingAttachment
-            {
-                texture = backbuffer,
-                loadOp = VkAttachmentLoadOp.VK_ATTACHMENT_LOAD_OP_CLEAR,
-                storeOp = VkAttachmentStoreOp.VK_ATTACHMENT_STORE_OP_STORE,
-                clearValue = new VEColor(0.01f, 0.01f, 0.015f, 1.0f),
-                resolveTexture = VEConstants.VE_INVALID_TEXTURE_INDEX
-            };
-
-            var depthAttachment = new VERenderingAttachment
-            {
-                texture = _depthTexture,
-                loadOp = VkAttachmentLoadOp.VK_ATTACHMENT_LOAD_OP_CLEAR,
-                storeOp = VkAttachmentStoreOp.VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                clearValue = new VEColor(1.0f, 0.0f, 0.0f, 0.0f),  // Clear depth to 1.0
-                resolveTexture = VEConstants.VE_INVALID_TEXTURE_INDEX
-            };
-
-            var renderingInfo = new VERenderingInfo
-            {
-                RenderAreaX = 0,
-                RenderAreaY = 0,
-                RenderAreaWidth = width,
-                RenderAreaHeight = height,
-                DepthAttachment = depthAttachment
-            };
-            renderingInfo.ColorAttachments.Add(colorAttachment);
-
-            BeginRendering(cmd, renderingInfo);
+            // Begin rendering to render target (transitions handled automatically)
+            BeginRendering(cmd, _renderingInfo);
 
             UpdateCameraBuffer(width, height);
 
@@ -716,8 +673,23 @@ namespace VulkEaseExamples
 
             EndRendering(cmd);
 
-            TransitionTextureForPresent(cmd, backbuffer);
+            // Blit render target to swapchain (acquires swapchain image internally)
+            var blitResult = BlitToSwapchain(cmd, _renderTarget, _swapchain, VkFilter.VK_FILTER_LINEAR);
 
+            if (blitResult == VEResult.VE_ERROR_SWAPCHAIN_OUT_OF_DATE)
+            {
+                GetSwapchainSize(_swapchain, out uint newWidth, out uint newHeight);
+                if (newWidth > 0 && newHeight > 0)
+                {
+                    ResizeSwapchain(_swapchain, newWidth, newHeight);
+                    ResizeRenderTarget(_renderTarget, newWidth, newHeight);
+                    RebuildRenderingInfo();
+                }
+                sw.Stop();
+                return sw.Elapsed.TotalMilliseconds;
+            }
+
+            // Present (auto-releases command buffer)
             var present = PresentImage(_swapchain, cmd);
             if (present == VEResult.VE_ERROR_SWAPCHAIN_OUT_OF_DATE)
             {
@@ -725,7 +697,8 @@ namespace VulkEaseExamples
                 if (newWidth > 0 && newHeight > 0)
                 {
                     ResizeSwapchain(_swapchain, newWidth, newHeight);
-                    RecreateDepthBuffer(newWidth, newHeight);
+                    ResizeRenderTarget(_renderTarget, newWidth, newHeight);
+                    RebuildRenderingInfo();
                 }
             }
 

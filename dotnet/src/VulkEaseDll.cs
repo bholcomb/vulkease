@@ -56,16 +56,33 @@ namespace VulkEase
         internal static extern UInt32 veGetVersion();
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veCreateContext([MarshalAs(UnmanagedType.LPStr)] string applicationName);
+        internal static extern IntPtr veCreateContext([MarshalAs(UnmanagedType.LPStr)] string applicationName,
+            IntPtr additionalInstanceExtensions, UInt32 additionalInstanceExtensionCount);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void veDestroyContext(IntPtr context);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veCreateDevice(IntPtr context);
+        internal static extern VEResult veEnumeratePhysicalDevices(IntPtr context, out UInt32 count);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veGetPhysicalDeviceInfo(IntPtr context, UInt32 deviceIndex,
+            out IntPtr physicalDevice, IntPtr deviceName, IntPtr deviceType);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr veCreateDevice(IntPtr context, IntPtr preferredDevice,
+            IntPtr additionalDeviceExtensions, UInt32 additionalDeviceExtensionCount);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void veDestroyDevice(IntPtr device);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        internal static extern bool veIsInstanceExtensionAvailable([MarshalAs(UnmanagedType.LPStr)] string extensionName);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        internal static extern bool veIsDeviceExtensionAvailable(IntPtr context, [MarshalAs(UnmanagedType.LPStr)] string extensionName);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veDeviceWaitIdle(IntPtr device);
@@ -344,7 +361,7 @@ namespace VulkEase
         internal static extern VEResult veEndCommandBuffer(IntPtr cmd);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veExecuteSecondaryCommandBuffers(IntPtr primaryCmd, UInt32 count, IntPtr[] secondaryCmds);
+        internal static extern VEResult veExecuteSecondaryCommandBuffers(IntPtr primaryCmd, UInt32 count, IntPtr[] secondaryCmds, [MarshalAs(UnmanagedType.I1)] bool releaseCommandBuffers);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veSubmitCommandBuffer(IntPtr cmd, bool waitForCompletion);
@@ -366,6 +383,10 @@ namespace VulkEase
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void veApplyRenderConfig(IntPtr cmd, IntPtr config);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void veApplyRenderState(IntPtr cmd, IntPtr shaderConfig, IntPtr renderConfig,
+            IntPtr viewport, IntPtr scissor);
         #endregion
 
         #region Shader binding
@@ -492,16 +513,13 @@ namespace VulkEase
 
         #region Swapchain
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veCreateSwapchain(IntPtr device, IntPtr windowHandle, UInt32 width, UInt32 height, VkFormat format, bool vsync);
+        internal static extern IntPtr veCreateSwapchain(IntPtr device, ref VESwapchainDescInternal desc);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void veDestroySwapchain(IntPtr swapchain);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt32 veAcquireNextImage(IntPtr swapchain);
-
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult vePresentImage(IntPtr swapchain, IntPtr cmd);
+        internal static extern VEResult vePresentImage(IntPtr swapchain, IntPtr cmd, [MarshalAs(UnmanagedType.I1)] bool releaseCommandBuffer);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veResizeSwapchain(IntPtr swapchain, UInt32 width, UInt32 height);
@@ -511,6 +529,38 @@ namespace VulkEase
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VkFormat veGetSwapchainFormat(IntPtr swapchain);
+        #endregion
+
+        #region Render Targets
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr veCreateRenderTarget(IntPtr device, ref VERenderTargetDescInternal desc);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void veDestroyRenderTarget(IntPtr renderTarget);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veResizeRenderTarget(IntPtr renderTarget, UInt32 width, UInt32 height);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern UInt32 veGetRenderTargetColorTexture(IntPtr renderTarget);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern UInt32 veGetRenderTargetDepthTexture(IntPtr renderTarget);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern UInt32 veGetRenderTargetResolveTexture(IntPtr renderTarget);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veGetRenderTargetSize(IntPtr renderTarget, out UInt32 width, out UInt32 height);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VkFormat veGetRenderTargetColorFormat(IntPtr renderTarget);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VkFormat veGetRenderTargetDepthFormat(IntPtr renderTarget);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veBlitToSwapchain(IntPtr cmd, IntPtr renderTarget, IntPtr swapchain, VkFilter filter);
         #endregion
 
         #region Debug and Profiling

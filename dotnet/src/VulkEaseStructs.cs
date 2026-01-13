@@ -9,6 +9,7 @@ namespace VulkEase
     [StructLayout(LayoutKind.Sequential)] public struct VEDevice { public IntPtr native; }
     [StructLayout(LayoutKind.Sequential)] public struct VECommandBuffer { public IntPtr native; }
     [StructLayout(LayoutKind.Sequential)] public struct VESwapchain { public IntPtr native; }
+    [StructLayout(LayoutKind.Sequential)] public struct VERenderTarget { public IntPtr native; }
     [StructLayout(LayoutKind.Sequential)] public struct VEShader { public IntPtr native; }
     [StructLayout(LayoutKind.Sequential)] public struct VERenderConfig { public IntPtr native; }
     [StructLayout(LayoutKind.Sequential)] public struct VEVertexConfig { public IntPtr native; }
@@ -72,6 +73,96 @@ namespace VulkEase
             this.minDepth = minDepth;
             this.maxDepth = maxDepth;
         }
+    }
+
+    // Surface type enum
+    public enum VESurfaceType
+    {
+        Win32,
+        Xlib,
+        Wayland,
+        Cocoa,
+        Android
+    }
+
+    // Surface descriptor (for C# use - will be converted to native format)
+    public struct VESurfaceDesc
+    {
+        public VESurfaceType Type;
+        // Platform-specific handles
+        public IntPtr Handle1;  // HWND (Windows), Display* (Xlib), wl_display* (Wayland), NSWindow* (Cocoa), ANativeWindow* (Android)
+        public IntPtr Handle2;  // Window (Xlib as ulong), wl_surface* (Wayland) - unused for others
+    }
+
+    // Internal surface descriptor for P/Invoke - matches C layout exactly
+    // On 64-bit: type (4 bytes) + 4 bytes padding + union (16 bytes for Xlib case)
+    [StructLayout(LayoutKind.Explicit, Size = 24)]
+    internal struct VESurfaceDescInternal
+    {
+        [FieldOffset(0)] public VESurfaceType type;
+        // Union starts at offset 8 (aligned to pointer size)
+        // Win32
+        [FieldOffset(8)] public IntPtr win32_hwnd;
+        // Xlib  
+        [FieldOffset(8)] public IntPtr xlib_display;
+        [FieldOffset(16)] public UInt64 xlib_window;
+        // Wayland
+        [FieldOffset(8)] public IntPtr wayland_display;
+        [FieldOffset(16)] public IntPtr wayland_surface;
+        // Cocoa
+        [FieldOffset(8)] public IntPtr cocoa_window;
+        // Android
+        [FieldOffset(8)] public IntPtr android_nativeWindow;
+    }
+
+    // Swapchain descriptor (for C# use)
+    public struct VESwapchainDesc
+    {
+        public VESurfaceDesc Surface;
+        public UInt32 Width;
+        public UInt32 Height;
+        public VkFormat ColorFormat;
+        public bool VSync;
+        public string? DebugName;
+    }
+
+    // Internal swapchain descriptor for P/Invoke
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct VESwapchainDescInternal
+    {
+        public VESurfaceDescInternal surface;
+        public UInt32 width;
+        public UInt32 height;
+        public VkFormat colorFormat;
+        [MarshalAs(UnmanagedType.I1)]
+        public bool vsync;
+        public IntPtr debugName;
+    }
+
+    // Render target descriptor (for C# use)
+    public struct VERenderTargetDesc
+    {
+        public UInt32 Width;
+        public UInt32 Height;
+        public VkFormat ColorFormat;
+        public VkFormat DepthFormat;
+        public VkSampleCountFlags SampleCount;
+        public bool HasResolveTarget;
+        public string? DebugName;
+    }
+
+    // Internal render target descriptor for P/Invoke
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct VERenderTargetDescInternal
+    {
+        public UInt32 width;
+        public UInt32 height;
+        public VkFormat colorFormat;
+        public VkFormat depthFormat;
+        public VkSampleCountFlags sampleCount;
+        [MarshalAs(UnmanagedType.I1)]
+        public bool hasResolveTarget;
+        public IntPtr debugName;
     }
 
     // Buffer descriptor
@@ -296,23 +387,40 @@ namespace VulkEase
         public VETextureIndex resolveTexture;
     }
 
-    // Internal PInvoke-friendly rendering info struct (with pointers)
+    // Constants for attachment array layout
+    public static class VERenderingConstants
+    {
+        public const int VE_MAX_COLOR_ATTACHMENTS = 8;
+        public const int VE_DEPTH_ATTACHMENT_INDEX = VE_MAX_COLOR_ATTACHMENTS;
+        public const int VE_STENCIL_ATTACHMENT_INDEX = VE_MAX_COLOR_ATTACHMENTS + 1;
+        public const int VE_TOTAL_ATTACHMENT_SLOTS = VE_MAX_COLOR_ATTACHMENTS + 2;
+    }
+
+    // Internal PInvoke-friendly rendering info struct - matches C layout exactly
+    // Layout of attachments array:
+    //   [0..colorAttachmentCount-1] = color attachments
+    //   [VE_DEPTH_ATTACHMENT_INDEX] = depth attachment (if hasDepthAttachment)
+    //   [VE_STENCIL_ATTACHMENT_INDEX] = stencil attachment (if hasStencilAttachment)
     [StructLayout(LayoutKind.Sequential)]
     internal struct VERenderingInfoInternal
     {
-        public UInt32 renderAreaX, renderAreaY;
+        public Int32 renderAreaX, renderAreaY;
         public UInt32 renderAreaWidth, renderAreaHeight;
         public UInt32 colorAttachmentCount;
-        public IntPtr colorAttachments; // const VERenderingAttachment*
-        public IntPtr depthAttachment; // const VERenderingAttachment*
-        public IntPtr stencilAttachment; // const VERenderingAttachment*
+        [MarshalAs(UnmanagedType.I1)]
+        public bool hasDepthAttachment;
+        [MarshalAs(UnmanagedType.I1)]
+        public bool hasStencilAttachment;
+        // Fixed-size array of attachments (VE_TOTAL_ATTACHMENT_SLOTS = 10)
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 10)]
+        public VERenderingAttachment[] attachments;
     }
 
     // User-friendly rendering info class (C# friendly)
     public class VERenderingInfo
     {
-        public UInt32 RenderAreaX { get; set; }
-        public UInt32 RenderAreaY { get; set; }
+        public Int32 RenderAreaX { get; set; }
+        public Int32 RenderAreaY { get; set; }
         public UInt32 RenderAreaWidth { get; set; }
         public UInt32 RenderAreaHeight { get; set; }
         public List<VERenderingAttachment> ColorAttachments { get; set; } = new List<VERenderingAttachment>();
@@ -323,12 +431,56 @@ namespace VulkEase
         {
         }
 
-        public VERenderingInfo(UInt32 renderAreaX, UInt32 renderAreaY, UInt32 renderAreaWidth, UInt32 renderAreaHeight)
+        public VERenderingInfo(UInt32 renderAreaWidth, UInt32 renderAreaHeight)
+        {
+            RenderAreaX = 0;
+            RenderAreaY = 0;
+            RenderAreaWidth = renderAreaWidth;
+            RenderAreaHeight = renderAreaHeight;
+        }
+
+        public VERenderingInfo(Int32 renderAreaX, Int32 renderAreaY, UInt32 renderAreaWidth, UInt32 renderAreaHeight)
         {
             RenderAreaX = renderAreaX;
             RenderAreaY = renderAreaY;
             RenderAreaWidth = renderAreaWidth;
             RenderAreaHeight = renderAreaHeight;
+        }
+
+        // Convert to internal struct for P/Invoke
+        internal VERenderingInfoInternal ToInternal()
+        {
+            var result = new VERenderingInfoInternal
+            {
+                renderAreaX = RenderAreaX,
+                renderAreaY = RenderAreaY,
+                renderAreaWidth = RenderAreaWidth,
+                renderAreaHeight = RenderAreaHeight,
+                colorAttachmentCount = (uint)ColorAttachments.Count,
+                hasDepthAttachment = DepthAttachment.HasValue,
+                hasStencilAttachment = StencilAttachment.HasValue,
+                attachments = new VERenderingAttachment[VERenderingConstants.VE_TOTAL_ATTACHMENT_SLOTS]
+            };
+
+            // Copy color attachments
+            for (int i = 0; i < ColorAttachments.Count && i < VERenderingConstants.VE_MAX_COLOR_ATTACHMENTS; i++)
+            {
+                result.attachments[i] = ColorAttachments[i];
+            }
+
+            // Set depth attachment if present
+            if (DepthAttachment.HasValue)
+            {
+                result.attachments[VERenderingConstants.VE_DEPTH_ATTACHMENT_INDEX] = DepthAttachment.Value;
+            }
+
+            // Set stencil attachment if present
+            if (StencilAttachment.HasValue)
+            {
+                result.attachments[VERenderingConstants.VE_STENCIL_ATTACHMENT_INDEX] = StencilAttachment.Value;
+            }
+
+            return result;
         }
     }
 
