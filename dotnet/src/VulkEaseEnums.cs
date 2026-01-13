@@ -39,6 +39,14 @@ namespace VulkEase
     }
 
     // Vulkan enums used by VulkEase
+    public enum VkPhysicalDeviceType : Int32
+    {
+        VK_PHYSICAL_DEVICE_TYPE_OTHER = 0,
+        VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU = 1,
+        VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU = 2,
+        VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU = 3,
+        VK_PHYSICAL_DEVICE_TYPE_CPU = 4
+    }
     public enum VkFormat : Int32
     {
         VK_FORMAT_UNDEFINED = 0,

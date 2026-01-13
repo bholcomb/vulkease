@@ -41,17 +41,38 @@ namespace VulkEase
         public static UInt32 GetVersion() => VulkEaseDll.veGetVersion();
 
         // Context and Device Management
-        public static VEContext CreateContext(string applicationName)
+        public static VEContext CreateContext(string applicationName, string[]? additionalInstanceExtensions = null)
         {
-            var namePtr = StringToHGlobalAnsi(applicationName);
+            IntPtr extensionsPtr = IntPtr.Zero;
+            IntPtr[] extensionPtrs = null;
+            uint extensionCount = 0;
+
             try
             {
-                return new VEContext { native = VulkEaseDll.veCreateContext(applicationName) };
+                if (additionalInstanceExtensions != null && additionalInstanceExtensions.Length > 0)
+                {
+                    extensionCount = (uint)additionalInstanceExtensions.Length;
+                    extensionPtrs = new IntPtr[extensionCount];
+                    for (int i = 0; i < extensionCount; i++)
+                    {
+                        extensionPtrs[i] = StringToHGlobalAnsi(additionalInstanceExtensions[i]);
+                    }
+                    extensionsPtr = Marshal.AllocHGlobal(IntPtr.Size * (int)extensionCount);
+                    Marshal.Copy(extensionPtrs.Select(p => p.ToInt64()).ToArray(), 0, extensionsPtr, (int)extensionCount);
+                }
+
+                return new VEContext { native = VulkEaseDll.veCreateContext(applicationName, extensionsPtr, extensionCount) };
             }
             finally
             {
-                if (namePtr != IntPtr.Zero)
-                    Marshal.FreeHGlobal(namePtr);
+                if (extensionPtrs != null)
+                {
+                    foreach (var ptr in extensionPtrs)
+                    {
+                        if (ptr != IntPtr.Zero) Marshal.FreeHGlobal(ptr);
+                    }
+                }
+                if (extensionsPtr != IntPtr.Zero) Marshal.FreeHGlobal(extensionsPtr);
             }
         }
 
@@ -60,14 +81,77 @@ namespace VulkEase
             VulkEaseDll.veDestroyContext(context.native);
         }
 
-        public static VEDevice CreateDevice(VEContext context)
+        public static VEResult EnumeratePhysicalDevices(VEContext context, out uint count)
         {
-            return new VEDevice { native = VulkEaseDll.veCreateDevice(context.native) };
+            return VulkEaseDll.veEnumeratePhysicalDevices(context.native, out count);
+        }
+
+        public static VEResult GetPhysicalDeviceInfo(VEContext context, uint deviceIndex, out IntPtr physicalDevice, out string? deviceName, out VkPhysicalDeviceType? deviceType)
+        {
+            IntPtr nameBuffer = Marshal.AllocHGlobal(256);
+            IntPtr typeBuffer = Marshal.AllocHGlobal(sizeof(int));
+            try
+            {
+                var result = VulkEaseDll.veGetPhysicalDeviceInfo(context.native, deviceIndex, out physicalDevice, nameBuffer, typeBuffer);
+                deviceName = result == VEResult.VE_SUCCESS ? PtrToStringAnsi(nameBuffer) : null;
+                deviceType = result == VEResult.VE_SUCCESS ? (VkPhysicalDeviceType)Marshal.ReadInt32(typeBuffer) : null;
+                return result;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(nameBuffer);
+                Marshal.FreeHGlobal(typeBuffer);
+            }
+        }
+
+        public static VEDevice CreateDevice(VEContext context, IntPtr preferredDevice = default, string[]? additionalDeviceExtensions = null)
+        {
+            IntPtr extensionsPtr = IntPtr.Zero;
+            IntPtr[] extensionPtrs = null;
+            uint extensionCount = 0;
+
+            try
+            {
+                if (additionalDeviceExtensions != null && additionalDeviceExtensions.Length > 0)
+                {
+                    extensionCount = (uint)additionalDeviceExtensions.Length;
+                    extensionPtrs = new IntPtr[extensionCount];
+                    for (int i = 0; i < extensionCount; i++)
+                    {
+                        extensionPtrs[i] = StringToHGlobalAnsi(additionalDeviceExtensions[i]);
+                    }
+                    extensionsPtr = Marshal.AllocHGlobal(IntPtr.Size * (int)extensionCount);
+                    Marshal.Copy(extensionPtrs.Select(p => p.ToInt64()).ToArray(), 0, extensionsPtr, (int)extensionCount);
+                }
+
+                return new VEDevice { native = VulkEaseDll.veCreateDevice(context.native, preferredDevice, extensionsPtr, extensionCount) };
+            }
+            finally
+            {
+                if (extensionPtrs != null)
+                {
+                    foreach (var ptr in extensionPtrs)
+                    {
+                        if (ptr != IntPtr.Zero) Marshal.FreeHGlobal(ptr);
+                    }
+                }
+                if (extensionsPtr != IntPtr.Zero) Marshal.FreeHGlobal(extensionsPtr);
+            }
         }
 
         public static void DestroyDevice(VEDevice device)
         {
             VulkEaseDll.veDestroyDevice(device.native);
+        }
+
+        public static bool IsInstanceExtensionAvailable(string extensionName)
+        {
+            return VulkEaseDll.veIsInstanceExtensionAvailable(extensionName);
+        }
+
+        public static bool IsDeviceExtensionAvailable(VEContext context, string extensionName)
+        {
+            return VulkEaseDll.veIsDeviceExtensionAvailable(context.native, extensionName);
         }
 
         public static VEResult DeviceWaitIdle(VEDevice device)
@@ -799,61 +883,8 @@ namespace VulkEase
                 desc.colorAttachmentFormats = new VkFormat[8];
             }
 
-            // Marshal VERenderingInfo into the internal struct with pinned attachments
-            GCHandle colorAttachmentsHandle = default;
-            GCHandle depthAttachmentHandle = default;
-            GCHandle stencilAttachmentHandle = default;
-
-            IntPtr colorAttachmentsPtr = IntPtr.Zero;
-
-            if (renderingInfo.ColorAttachments != null && renderingInfo.ColorAttachments.Count > 0)
-            {
-                var colorAttachmentsArray = renderingInfo.ColorAttachments.ToArray();
-                colorAttachmentsHandle = GCHandle.Alloc(colorAttachmentsArray, GCHandleType.Pinned);
-                colorAttachmentsPtr = colorAttachmentsHandle.AddrOfPinnedObject();
-            }
-
-            IntPtr depthAttachmentPtr = IntPtr.Zero;
-            if (renderingInfo.DepthAttachment.HasValue)
-            {
-                var depthAttachment = renderingInfo.DepthAttachment.Value;
-                depthAttachmentHandle = GCHandle.Alloc(depthAttachment, GCHandleType.Pinned);
-                depthAttachmentPtr = depthAttachmentHandle.AddrOfPinnedObject();
-            }
-
-            IntPtr stencilAttachmentPtr = IntPtr.Zero;
-            if (renderingInfo.StencilAttachment.HasValue)
-            {
-                var stencilAttachment = renderingInfo.StencilAttachment.Value;
-                stencilAttachmentHandle = GCHandle.Alloc(stencilAttachment, GCHandleType.Pinned);
-                stencilAttachmentPtr = stencilAttachmentHandle.AddrOfPinnedObject();
-            }
-
-            try
-            {
-                var internalInfo = new VERenderingInfoInternal
-                {
-                    renderAreaX = renderingInfo.RenderAreaX,
-                    renderAreaY = renderingInfo.RenderAreaY,
-                    renderAreaWidth = renderingInfo.RenderAreaWidth,
-                    renderAreaHeight = renderingInfo.RenderAreaHeight,
-                    colorAttachmentCount = (uint)(renderingInfo.ColorAttachments?.Count ?? 0),
-                    colorAttachments = colorAttachmentsPtr,
-                    depthAttachment = depthAttachmentPtr,
-                    stencilAttachment = stencilAttachmentPtr
-                };
-
-                return VulkEaseDll.vePopulateSecondaryDescFromRenderingInfo(device.native, ref internalInfo, ref desc);
-            }
-            finally
-            {
-                if (colorAttachmentsHandle.IsAllocated)
-                    colorAttachmentsHandle.Free();
-                if (depthAttachmentHandle.IsAllocated)
-                    depthAttachmentHandle.Free();
-                if (stencilAttachmentHandle.IsAllocated)
-                    stencilAttachmentHandle.Free();
-            }
+            var internalInfo = renderingInfo.ToInternal();
+            return VulkEaseDll.vePopulateSecondaryDescFromRenderingInfo(device.native, ref internalInfo, ref desc);
         }
 
         public static VEResult BeginSecondaryRecording(VECommandBuffer cmd, VESecondaryCommandBufferDesc desc)
@@ -880,7 +911,7 @@ namespace VulkEase
             return VulkEaseDll.veEndCommandBuffer(cmd.native);
         }
 
-        public static VEResult ExecuteSecondaryCommandBuffers(VECommandBuffer primary, IReadOnlyList<VECommandBuffer> secondaryBuffers)
+        public static VEResult ExecuteSecondaryCommandBuffers(VECommandBuffer primary, IReadOnlyList<VECommandBuffer> secondaryBuffers, bool releaseCommandBuffers = true)
         {
             if (secondaryBuffers == null || secondaryBuffers.Count == 0)
             {
@@ -893,7 +924,7 @@ namespace VulkEase
                 native[i] = secondaryBuffers[i].native;
             }
 
-            return VulkEaseDll.veExecuteSecondaryCommandBuffers(primary.native, (uint)native.Length, native);
+            return VulkEaseDll.veExecuteSecondaryCommandBuffers(primary.native, (uint)native.Length, native, releaseCommandBuffers);
         }
 
         public static VEResult SubmitCommandBuffer(VECommandBuffer cmd, bool waitForCompletion = false)
@@ -918,68 +949,8 @@ namespace VulkEase
 
         public static void BeginRendering(VECommandBuffer cmd, VERenderingInfo renderingInfo)
         {
-            // Pin color attachments array if it has any elements
-            // VERenderingAttachment is a blittable struct, so we can pin the array directly
-            IntPtr colorAttachmentsPtr = IntPtr.Zero;
-            GCHandle colorAttachmentsHandle = default;
-            
-            if (renderingInfo.ColorAttachments != null && renderingInfo.ColorAttachments.Count > 0)
-            {
-                var colorAttachmentsArray = renderingInfo.ColorAttachments.ToArray();
-                colorAttachmentsHandle = GCHandle.Alloc(colorAttachmentsArray, GCHandleType.Pinned);
-                colorAttachmentsPtr = colorAttachmentsHandle.AddrOfPinnedObject();
-            }
-
-            // Handle optional depth attachment - pin the struct to get its address
-            IntPtr depthAttachmentPtr = IntPtr.Zero;
-            GCHandle depthAttachmentHandle = default;
-            
-            if (renderingInfo.DepthAttachment.HasValue)
-            {
-                var depthAttachment = renderingInfo.DepthAttachment.Value;
-                depthAttachmentHandle = GCHandle.Alloc(depthAttachment, GCHandleType.Pinned);
-                depthAttachmentPtr = depthAttachmentHandle.AddrOfPinnedObject();
-            }
-
-            // Handle optional stencil attachment - pin the struct to get its address
-            IntPtr stencilAttachmentPtr = IntPtr.Zero;
-            GCHandle stencilAttachmentHandle = default;
-            
-            if (renderingInfo.StencilAttachment.HasValue)
-            {
-                var stencilAttachment = renderingInfo.StencilAttachment.Value;
-                stencilAttachmentHandle = GCHandle.Alloc(stencilAttachment, GCHandleType.Pinned);
-                stencilAttachmentPtr = stencilAttachmentHandle.AddrOfPinnedObject();
-            }
-
-            try
-            {
-                // Create the internal struct with pointers
-                var internalInfo = new VERenderingInfoInternal
-                {
-                    renderAreaX = renderingInfo.RenderAreaX,
-                    renderAreaY = renderingInfo.RenderAreaY,
-                    renderAreaWidth = renderingInfo.RenderAreaWidth,
-                    renderAreaHeight = renderingInfo.RenderAreaHeight,
-                    colorAttachmentCount = (uint)(renderingInfo.ColorAttachments?.Count ?? 0),
-                    colorAttachments = colorAttachmentsPtr,
-                    depthAttachment = depthAttachmentPtr,
-                    stencilAttachment = stencilAttachmentPtr
-                };
-
-                // Call the native function
-                VulkEaseDll.veBeginRendering(cmd.native, ref internalInfo);
-            }
-            finally
-            {
-                // Free all pinned handles
-                if (colorAttachmentsHandle.IsAllocated)
-                    colorAttachmentsHandle.Free();
-                if (depthAttachmentHandle.IsAllocated)
-                    depthAttachmentHandle.Free();
-                if (stencilAttachmentHandle.IsAllocated)
-                    stencilAttachmentHandle.Free();
-            }
+            var internalInfo = renderingInfo.ToInternal();
+            VulkEaseDll.veBeginRendering(cmd.native, ref internalInfo);
         }
 
         public static void EndRendering(VECommandBuffer cmd)
@@ -990,6 +961,34 @@ namespace VulkEase
         public static void ApplyRenderConfig(VECommandBuffer cmd, VERenderConfig config)
         {
             VulkEaseDll.veApplyRenderConfig(cmd.native, config.native);
+        }
+
+        public static void ApplyRenderState(VECommandBuffer cmd, VEShaderConfig shaderConfig, VERenderConfig renderConfig,
+            VEViewport? viewport = null, VERect2D? scissor = null)
+        {
+            IntPtr viewportPtr = IntPtr.Zero;
+            IntPtr scissorPtr = IntPtr.Zero;
+
+            try
+            {
+                if (viewport.HasValue)
+                {
+                    viewportPtr = Marshal.AllocHGlobal(Marshal.SizeOf<VEViewport>());
+                    Marshal.StructureToPtr(viewport.Value, viewportPtr, false);
+                }
+                if (scissor.HasValue)
+                {
+                    scissorPtr = Marshal.AllocHGlobal(Marshal.SizeOf<VERect2D>());
+                    Marshal.StructureToPtr(scissor.Value, scissorPtr, false);
+                }
+
+                VulkEaseDll.veApplyRenderState(cmd.native, shaderConfig.native, renderConfig.native, viewportPtr, scissorPtr);
+            }
+            finally
+            {
+                if (viewportPtr != IntPtr.Zero) Marshal.FreeHGlobal(viewportPtr);
+                if (scissorPtr != IntPtr.Zero) Marshal.FreeHGlobal(scissorPtr);
+            }
         }
 
         // Shader binding
@@ -1179,9 +1178,52 @@ namespace VulkEase
         }
 
         // Swapchain
-        public static VESwapchain CreateSwapchain(VEDevice device, IntPtr windowHandle, UInt32 width, UInt32 height, VkFormat format, bool vsync)
+        public static VESwapchain CreateSwapchain(VEDevice device, VESwapchainDesc desc)
         {
-            return new VESwapchain { native = VulkEaseDll.veCreateSwapchain(device.native, windowHandle, width, height, format, vsync) };
+            var namePtr = StringToHGlobalAnsi(desc.DebugName);
+            try
+            {
+                var internalDesc = new VESwapchainDescInternal
+                {
+                    surface = ConvertSurfaceDesc(desc.Surface),
+                    width = desc.Width,
+                    height = desc.Height,
+                    colorFormat = desc.ColorFormat,
+                    vsync = desc.VSync,
+                    debugName = namePtr
+                };
+                return new VESwapchain { native = VulkEaseDll.veCreateSwapchain(device.native, ref internalDesc) };
+            }
+            finally
+            {
+                if (namePtr != IntPtr.Zero) Marshal.FreeHGlobal(namePtr);
+            }
+        }
+
+        private static VESurfaceDescInternal ConvertSurfaceDesc(VESurfaceDesc desc)
+        {
+            var result = new VESurfaceDescInternal { type = desc.Type };
+            switch (desc.Type)
+            {
+                case VESurfaceType.Win32:
+                    result.win32_hwnd = desc.Handle1;
+                    break;
+                case VESurfaceType.Xlib:
+                    result.xlib_display = desc.Handle1;
+                    result.xlib_window = (ulong)desc.Handle2.ToInt64();
+                    break;
+                case VESurfaceType.Wayland:
+                    result.wayland_display = desc.Handle1;
+                    result.wayland_surface = desc.Handle2;
+                    break;
+                case VESurfaceType.Cocoa:
+                    result.cocoa_window = desc.Handle1;
+                    break;
+                case VESurfaceType.Android:
+                    result.android_nativeWindow = desc.Handle1;
+                    break;
+            }
+            return result;
         }
 
         public static void DestroySwapchain(VESwapchain swapchain)
@@ -1189,14 +1231,9 @@ namespace VulkEase
             VulkEaseDll.veDestroySwapchain(swapchain.native);
         }
 
-        public static VETextureIndex AcquireNextImage(VESwapchain swapchain)
+        public static VEResult PresentImage(VESwapchain swapchain, VECommandBuffer cmd, bool releaseCommandBuffer = true)
         {
-            return new VETextureIndex { native = VulkEaseDll.veAcquireNextImage(swapchain.native) };
-        }
-
-        public static VEResult PresentImage(VESwapchain swapchain, VECommandBuffer cmd)
-        {
-            return  VulkEaseDll.vePresentImage(swapchain.native, cmd.native);
+            return VulkEaseDll.vePresentImage(swapchain.native, cmd.native, releaseCommandBuffer);
         }
 
         public static VEResult ResizeSwapchain(VESwapchain swapchain, UInt32 width, UInt32 height)
@@ -1212,6 +1249,75 @@ namespace VulkEase
         public static VkFormat GetSwapchainFormat(VESwapchain swapchain)
         {
             return VulkEaseDll.veGetSwapchainFormat(swapchain.native);
+        }
+
+        // Render Targets
+        public static VERenderTarget CreateRenderTarget(VEDevice device, VERenderTargetDesc desc)
+        {
+            var namePtr = StringToHGlobalAnsi(desc.DebugName);
+            try
+            {
+                var internalDesc = new VERenderTargetDescInternal
+                {
+                    width = desc.Width,
+                    height = desc.Height,
+                    colorFormat = desc.ColorFormat,
+                    depthFormat = desc.DepthFormat,
+                    sampleCount = desc.SampleCount,
+                    hasResolveTarget = desc.HasResolveTarget,
+                    debugName = namePtr
+                };
+                return new VERenderTarget { native = VulkEaseDll.veCreateRenderTarget(device.native, ref internalDesc) };
+            }
+            finally
+            {
+                if (namePtr != IntPtr.Zero) Marshal.FreeHGlobal(namePtr);
+            }
+        }
+
+        public static void DestroyRenderTarget(VERenderTarget renderTarget)
+        {
+            VulkEaseDll.veDestroyRenderTarget(renderTarget.native);
+        }
+
+        public static VEResult ResizeRenderTarget(VERenderTarget renderTarget, UInt32 width, UInt32 height)
+        {
+            return VulkEaseDll.veResizeRenderTarget(renderTarget.native, width, height);
+        }
+
+        public static VETextureIndex GetRenderTargetColorTexture(VERenderTarget renderTarget)
+        {
+            return new VETextureIndex { native = VulkEaseDll.veGetRenderTargetColorTexture(renderTarget.native) };
+        }
+
+        public static VETextureIndex GetRenderTargetDepthTexture(VERenderTarget renderTarget)
+        {
+            return new VETextureIndex { native = VulkEaseDll.veGetRenderTargetDepthTexture(renderTarget.native) };
+        }
+
+        public static VETextureIndex GetRenderTargetResolveTexture(VERenderTarget renderTarget)
+        {
+            return new VETextureIndex { native = VulkEaseDll.veGetRenderTargetResolveTexture(renderTarget.native) };
+        }
+
+        public static VEResult GetRenderTargetSize(VERenderTarget renderTarget, out UInt32 width, out UInt32 height)
+        {
+            return VulkEaseDll.veGetRenderTargetSize(renderTarget.native, out width, out height);
+        }
+
+        public static VkFormat GetRenderTargetColorFormat(VERenderTarget renderTarget)
+        {
+            return VulkEaseDll.veGetRenderTargetColorFormat(renderTarget.native);
+        }
+
+        public static VkFormat GetRenderTargetDepthFormat(VERenderTarget renderTarget)
+        {
+            return VulkEaseDll.veGetRenderTargetDepthFormat(renderTarget.native);
+        }
+
+        public static VEResult BlitToSwapchain(VECommandBuffer cmd, VERenderTarget renderTarget, VESwapchain swapchain, VkFilter filter)
+        {
+            return VulkEaseDll.veBlitToSwapchain(cmd.native, renderTarget.native, swapchain.native, filter);
         }
 
         // Debug and Profiling

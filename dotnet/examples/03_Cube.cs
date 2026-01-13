@@ -73,6 +73,8 @@ namespace VulkEaseExamples
         private VEContext _context;
         private VEDevice _device;
         private VESwapchain _swapchain;
+        private VERenderTarget _renderTarget;
+        private VERenderingInfo _renderingInfo;
 
         // Resources
         private VEBufferAddress _vertexBuffer;
@@ -160,7 +162,32 @@ namespace VulkEaseExamples
             if (_swapchain.native != IntPtr.Zero && e.Width > 0 && e.Height > 0)
             {
                 VE.ResizeSwapchain(_swapchain, (uint)e.Width, (uint)e.Height);
+                VE.ResizeRenderTarget(_renderTarget, (uint)e.Width, (uint)e.Height);
+                RebuildRenderingInfo();
             }
+        }
+
+        private void RebuildRenderingInfo()
+        {
+            VE.GetRenderTargetSize(_renderTarget, out uint width, out uint height);
+            
+            _renderingInfo = new VERenderingInfo(width, height);
+            _renderingInfo.ColorAttachments.Add(new VERenderingAttachment
+            {
+                texture = VE.GetRenderTargetColorTexture(_renderTarget),
+                loadOp = VkAttachmentLoadOp.VK_ATTACHMENT_LOAD_OP_CLEAR,
+                storeOp = VkAttachmentStoreOp.VK_ATTACHMENT_STORE_OP_STORE,
+                clearValue = new VEColor(0.1f, 0.2f, 0.3f, 1.0f),
+                resolveTexture = VEConstants.VE_INVALID_TEXTURE_INDEX
+            });
+            _renderingInfo.DepthAttachment = new VERenderingAttachment
+            {
+                texture = VE.GetRenderTargetDepthTexture(_renderTarget),
+                loadOp = VkAttachmentLoadOp.VK_ATTACHMENT_LOAD_OP_CLEAR,
+                storeOp = VkAttachmentStoreOp.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                clearValue = new VEColor(1.0f, 0.0f, 0.0f, 0.0f),
+                resolveTexture = VEConstants.VE_INVALID_TEXTURE_INDEX
+            };
         }
 
         protected override void OnRenderFrame(FrameEventArgs args)
@@ -195,24 +222,23 @@ namespace VulkEaseExamples
                 _context = VE.CreateContext("VulkEase Cube Demo");
                 Console.WriteLine("VulkEase initialized successfully");
 
-                // Create device
+                // Create device (auto-select best GPU)
                 _device = VE.CreateDevice(_context);
                 Console.WriteLine("VulkEase device created successfully");
                 Console.WriteLine($"Device: {VE.GetDeviceName(_device)}");
                 Console.WriteLine($"Driver: {VE.GetDriverVersion(_device)}");
 
-                // Get native window handle
-                IntPtr windowHandle = GetNativeWindowHandle();
-                if (windowHandle == IntPtr.Zero)
-                {
-                    Console.Error.WriteLine("Failed to get native window handle");
-                    return false;
-                }
-
                 // Create swapchain
                 Console.WriteLine($"Creating swapchain: {WindowWidth}x{WindowHeight}...");
-                _swapchain = VE.CreateSwapchain(_device, windowHandle,
-                    (uint)WindowWidth, (uint)WindowHeight, VkFormat.VK_FORMAT_B8G8R8A8_SRGB, EnableVSync);
+                var swapchainDesc = new VESwapchainDesc
+                {
+                    Surface = GetSurfaceDesc(),
+                    Width = (uint)WindowWidth,
+                    Height = (uint)WindowHeight,
+                    ColorFormat = VkFormat.VK_FORMAT_B8G8R8A8_SRGB,
+                    VSync = EnableVSync
+                };
+                _swapchain = VE.CreateSwapchain(_device, swapchainDesc);
 
                 if (_swapchain.native == IntPtr.Zero)
                 {
@@ -220,7 +246,23 @@ namespace VulkEaseExamples
                     return false;
                 }
 
-                Console.WriteLine($"Swapchain created successfully: {WindowWidth}x{WindowHeight}");
+                // Create render target with depth buffer
+                var renderTargetDesc = new VERenderTargetDesc
+                {
+                    Width = (uint)WindowWidth,
+                    Height = (uint)WindowHeight,
+                    ColorFormat = VkFormat.VK_FORMAT_B8G8R8A8_SRGB,
+                    DepthFormat = VkFormat.VK_FORMAT_D32_SFLOAT,
+                    SampleCount = VkSampleCountFlags.VK_SAMPLE_COUNT_1_BIT,
+                    HasResolveTarget = false,
+                    DebugName = "CubeRenderTarget"
+                };
+                _renderTarget = VE.CreateRenderTarget(_device, renderTargetDesc);
+
+                // Build rendering info
+                RebuildRenderingInfo();
+
+                Console.WriteLine($"Swapchain and render target created successfully: {WindowWidth}x{WindowHeight}");
                 return true;
             }
             catch (Exception ex)
@@ -235,30 +277,36 @@ namespace VulkEaseExamples
             }
         }
 
-        private unsafe IntPtr GetNativeWindowHandle()
+        private unsafe VESurfaceDesc GetSurfaceDesc()
         {
-            // OpenTK's WindowPtr contains the GLFW window handle
-            // Use OpenTK's GLFW bindings to get platform-specific handles
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                return GLFW.GetWin32Window(WindowPtr);
-            }
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
                 IntPtr display = (IntPtr)GLFW.GetX11Display();
                 IntPtr window = (IntPtr)GLFW.GetX11Window(WindowPtr);
-                
-                IntPtr[] handles = { display, window };
-                IntPtr handleArray = Marshal.AllocHGlobal(handles.Length * IntPtr.Size);
-                Marshal.Copy(handles.Select(h => h.ToInt64()).ToArray(), 0, handleArray, handles.Length);
-                return handleArray;
+                return new VESurfaceDesc
+                {
+                    Type = VESurfaceType.Xlib,
+                    Handle1 = display,
+                    Handle2 = window
+                };
+            }
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                return new VESurfaceDesc
+                {
+                    Type = VESurfaceType.Win32,
+                    Handle1 = GLFW.GetWin32Window(WindowPtr)
+                };
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
-                return GLFW.GetCocoaWindow(WindowPtr);
+                return new VESurfaceDesc
+                {
+                    Type = VESurfaceType.Cocoa,
+                    Handle1 = GLFW.GetCocoaWindow(WindowPtr)
+                };
             }
-
-            return IntPtr.Zero;
+            throw new PlatformNotSupportedException("Unsupported platform");
         }
 
         private bool LoadShaders()
@@ -502,22 +550,10 @@ namespace VulkEaseExamples
         {
             try
             {
-                // Acquire next image
-                VETextureIndex backbuffer = VE.AcquireNextImage(_swapchain);
-                if (backbuffer.native == VEConstants.VE_INVALID_TEXTURE_INDEX.native)
-                {
-                    return; // Swapchain out of date, will be recreated
-                }
-
                 // Begin command buffer
                 var cmd = VE.BeginCommandBuffer(_device);
 
-                VE.TransitionTextureForColorAttachment(cmd, backbuffer);
-
-                // Begin rendering to backbuffer
-                uint width = (uint)WindowWidth;
-                uint height = (uint)WindowHeight;
-                //VE.GetSwapchainSize(_swapchain, out uint width, out uint height);
+                VE.GetRenderTargetSize(_renderTarget, out uint width, out uint height);
 
                 // Build transformation matrices
                 float aspect = (float)width / (float)height;
@@ -546,26 +582,8 @@ namespace VulkEaseExamples
                     mvpHandle.Free();
                 }
 
-                var colorAttachment = new VERenderingAttachment
-                {
-                    texture = backbuffer,
-                    loadOp = VkAttachmentLoadOp.VK_ATTACHMENT_LOAD_OP_CLEAR,
-                    storeOp = VkAttachmentStoreOp.VK_ATTACHMENT_STORE_OP_STORE,
-                    clearValue = new VEColor(0.1f, 0.2f, 0.3f, 1.0f), // Dark blue background
-                    resolveTexture = VEConstants.VE_INVALID_TEXTURE_INDEX
-                };
-
-                // Create rendering info with C#-friendly API
-                var renderingInfo = new VERenderingInfo
-                {
-                    RenderAreaX = 0,
-                    RenderAreaY = 0,
-                    RenderAreaWidth = width,
-                    RenderAreaHeight = height
-                };
-                renderingInfo.ColorAttachments.Add(colorAttachment);
-
-                VE.BeginRendering(cmd, renderingInfo);
+                // Begin rendering to render target (transitions handled automatically)
+                VE.BeginRendering(cmd, _renderingInfo);
 
                 // Set viewport and scissor
                 VE.SetViewport(cmd, 0.0f, 0.0f, width, height, 0.0f, 1.0f);
@@ -593,7 +611,6 @@ namespace VulkEaseExamples
 
                 VE.PushConstants(cmd, pushConstants);
 
-
                 // Draw the cube
                 VE.BindIndexBuffer(cmd, _indexBuffer, 0, VkIndexType.VK_INDEX_TYPE_UINT16);
                 VE.DrawIndexed(cmd, (uint)CubeIndices.Length, 1, 0, 0, 0);
@@ -601,17 +618,32 @@ namespace VulkEaseExamples
                 // End rendering
                 VE.EndRendering(cmd);
 
-                // Present the frame
-                VE.TransitionTextureForPresent(cmd, backbuffer);
-                var result = VE.PresentImage(_swapchain, cmd);
+                // Blit render target to swapchain (acquires swapchain image internally)
+                var blitResult = VE.BlitToSwapchain(cmd, _renderTarget, _swapchain, VkFilter.VK_FILTER_LINEAR);
 
-                if (result == VEResult.VE_ERROR_SWAPCHAIN_OUT_OF_DATE)
+                if (blitResult == VEResult.VE_ERROR_SWAPCHAIN_OUT_OF_DATE)
                 {
-                    // Swapchain needs to be recreated (window resized)
                     VE.GetSwapchainSize(_swapchain, out uint newWidth, out uint newHeight);
                     if (newWidth > 0 && newHeight > 0)
                     {
                         VE.ResizeSwapchain(_swapchain, newWidth, newHeight);
+                        VE.ResizeRenderTarget(_renderTarget, newWidth, newHeight);
+                        RebuildRenderingInfo();
+                    }
+                    return;
+                }
+
+                // Present the frame (auto-releases command buffer)
+                var result = VE.PresentImage(_swapchain, cmd);
+
+                if (result == VEResult.VE_ERROR_SWAPCHAIN_OUT_OF_DATE)
+                {
+                    VE.GetSwapchainSize(_swapchain, out uint newWidth, out uint newHeight);
+                    if (newWidth > 0 && newHeight > 0)
+                    {
+                        VE.ResizeSwapchain(_swapchain, newWidth, newHeight);
+                        VE.ResizeRenderTarget(_renderTarget, newWidth, newHeight);
+                        RebuildRenderingInfo();
                     }
                 }
             }
@@ -674,6 +706,11 @@ namespace VulkEaseExamples
             }
 
             // Destroy VulkEase objects
+            if (_renderTarget.native != IntPtr.Zero)
+            {
+                VE.DestroyRenderTarget(_renderTarget);
+            }
+
             if (_swapchain.native != IntPtr.Zero)
             {
                 VE.DestroySwapchain(_swapchain);
