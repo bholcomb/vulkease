@@ -568,7 +568,9 @@ static bool findQueueFamilies(VkPhysicalDevice physicalDevice, VEQueueFamilies *
 
 uint32_t veGetVersion(void) { return VULKEASE_API_VERSION_2_0; }
 
-VEContext *veCreateContext(const char *applicationName)
+VEContext *veCreateContext(const char *applicationName,
+                           const char *const *additionalInstanceExtensions,
+                           uint32_t additionalInstanceExtensionCount)
 {
    if (!applicationName)
    {
@@ -599,6 +601,18 @@ VEContext *veCreateContext(const char *applicationName)
    for (uint32_t i = 0; i < platformCount && allExtensionCount < VE_MAX_EXTENSIONS; i++)
    {
       allExtensions[allExtensionCount++] = PLATFORM_SURFACE_EXTENSIONS[i];
+   }
+
+   // Add user-specified additional extensions
+   if (additionalInstanceExtensions && additionalInstanceExtensionCount > 0)
+   {
+      for (uint32_t i = 0; i < additionalInstanceExtensionCount && allExtensionCount < VE_MAX_EXTENSIONS; i++)
+      {
+         if (additionalInstanceExtensions[i])
+         {
+            allExtensions[allExtensionCount++] = additionalInstanceExtensions[i];
+         }
+      }
    }
 
    if (!checkInstanceExtensionSupport(allExtensions, allExtensionCount))
@@ -720,7 +734,10 @@ void veDestroyContext(VEContext *context)
 // Device Management Implementation
 // =============================================================================
 
-VEDevice *veCreateDevice(VEContext *context)
+VEDevice *veCreateDevice(VEContext *context,
+                         VkPhysicalDevice preferredDevice,
+                         const char *const *additionalDeviceExtensions,
+                         uint32_t additionalDeviceExtensionCount)
 {
    if (!context)
    {
@@ -739,20 +756,33 @@ VEDevice *veCreateDevice(VEContext *context)
 
    device->context = contextInternal;
 
-   // Select best physical device for Vulkan 1.4
-   uint32_t deviceCount = 0;
-   vkEnumeratePhysicalDevices(contextInternal->instance, &deviceCount, NULL);
-   if (deviceCount == 0)
+   // Select physical device
+   if (preferredDevice != VK_NULL_HANDLE)
    {
-      veSetError("No Vulkan-capable GPUs found");
+      // Use user-specified device
+      device->physicalDevice = preferredDevice;
+   }
+   else
+   {
+      // Auto-select best physical device for Vulkan 1.4
+      uint32_t deviceCount = 0;
+      vkEnumeratePhysicalDevices(contextInternal->instance, &deviceCount, NULL);
+      if (deviceCount == 0)
+      {
+         veSetError("No Vulkan-capable GPUs found");
+         delete device;
+         return NULL;
+      }
+
+      device->physicalDevice = selectBestPhysicalDevice(contextInternal);
+   }
+
+   if (device->physicalDevice == VK_NULL_HANDLE)
+   {
+      veSetError("No suitable Vulkan-capable GPU found");
       delete device;
       return NULL;
    }
-
-   std::vector<VkPhysicalDevice> devices(deviceCount);
-   vkEnumeratePhysicalDevices(contextInternal->instance, &deviceCount, devices.data());
-
-   device->physicalDevice = selectBestPhysicalDevice(contextInternal);
 
    vkGetPhysicalDeviceProperties(device->physicalDevice, &device->deviceProperties);
    vkGetPhysicalDeviceMemoryProperties(device->physicalDevice, &device->memoryProperties);
@@ -857,9 +887,39 @@ VEDevice *veCreateDevice(VEContext *context)
    deviceCreateInfo.queueCreateInfoCount = uniqueCount;
    deviceCreateInfo.pQueueCreateInfos = queueCreateInfos;
 
-   // Use updated extension list - many are now core in 1.4
-   deviceCreateInfo.enabledExtensionCount = sizeof(REQUIRED_DEVICE_EXTENSIONS) / sizeof(REQUIRED_DEVICE_EXTENSIONS[0]);
-   deviceCreateInfo.ppEnabledExtensionNames = REQUIRED_DEVICE_EXTENSIONS;
+   // Build device extension list
+   const char *allDeviceExtensions[VE_MAX_EXTENSIONS];
+   uint32_t allDeviceExtensionCount = 0;
+
+   // Add required extensions
+   uint32_t requiredCount = sizeof(REQUIRED_DEVICE_EXTENSIONS) / sizeof(REQUIRED_DEVICE_EXTENSIONS[0]);
+   for (uint32_t i = 0; i < requiredCount && allDeviceExtensionCount < VE_MAX_EXTENSIONS; i++)
+   {
+      allDeviceExtensions[allDeviceExtensionCount++] = REQUIRED_DEVICE_EXTENSIONS[i];
+   }
+
+   // Add user-specified additional extensions
+   if (additionalDeviceExtensions && additionalDeviceExtensionCount > 0)
+   {
+      for (uint32_t i = 0; i < additionalDeviceExtensionCount && allDeviceExtensionCount < VE_MAX_EXTENSIONS; i++)
+      {
+         if (additionalDeviceExtensions[i])
+         {
+            allDeviceExtensions[allDeviceExtensionCount++] = additionalDeviceExtensions[i];
+         }
+      }
+   }
+
+   // Verify all device extensions are supported
+   if (!checkDeviceExtensionSupport(device->physicalDevice, allDeviceExtensions, allDeviceExtensionCount))
+   {
+      veSetError("One or more requested device extensions are not supported");
+      delete device;
+      return NULL;
+   }
+
+   deviceCreateInfo.enabledExtensionCount = allDeviceExtensionCount;
+   deviceCreateInfo.ppEnabledExtensionNames = allDeviceExtensions;
 
    if (contextInternal->validationEnabled)
    {
@@ -1068,6 +1128,151 @@ VEResult veDeviceWaitIdle(VEDevice *device)
 // =============================================================================
 // Feature Detection Implementation
 // =============================================================================
+
+// =============================================================================
+// Physical Device Enumeration Implementation
+// =============================================================================
+
+VEResult veEnumeratePhysicalDevices(VEContext *context, uint32_t *count)
+{
+   if (!context || !count)
+   {
+      veSetError("Invalid parameters for veEnumeratePhysicalDevices");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VEContextInternal *contextInternal = (VEContextInternal *)context;
+
+   VkResult result = vkEnumeratePhysicalDevices(contextInternal->instance, count, NULL);
+   if (result != VK_SUCCESS)
+   {
+      veSetError("Failed to enumerate physical devices (VkResult: %d)", result);
+      return VE_ERROR_UNKNOWN;
+   }
+
+   return VE_SUCCESS;
+}
+
+VEResult veGetPhysicalDeviceInfo(VEContext *context, uint32_t deviceIndex,
+                                  VkPhysicalDevice *physicalDevice,
+                                  char *deviceName,
+                                  VkPhysicalDeviceType *deviceType)
+{
+   if (!context)
+   {
+      veSetError("Context cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VEContextInternal *contextInternal = (VEContextInternal *)context;
+
+   uint32_t deviceCount = 0;
+   vkEnumeratePhysicalDevices(contextInternal->instance, &deviceCount, NULL);
+
+   if (deviceIndex >= deviceCount)
+   {
+      veSetError("Device index %u out of range (only %u devices available)", deviceIndex, deviceCount);
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   std::vector<VkPhysicalDevice> devices(deviceCount);
+   vkEnumeratePhysicalDevices(contextInternal->instance, &deviceCount, devices.data());
+
+   VkPhysicalDevice device = devices[deviceIndex];
+
+   if (physicalDevice)
+   {
+      *physicalDevice = device;
+   }
+
+   if (deviceName || deviceType)
+   {
+      VkPhysicalDeviceProperties props;
+      vkGetPhysicalDeviceProperties(device, &props);
+
+      if (deviceName)
+      {
+         strncpy(deviceName, props.deviceName, 255);
+         deviceName[255] = '\0';
+      }
+
+      if (deviceType)
+      {
+         *deviceType = props.deviceType;
+      }
+   }
+
+   return VE_SUCCESS;
+}
+
+// =============================================================================
+// Extension Query Implementation
+// =============================================================================
+
+bool veIsInstanceExtensionAvailable(const char *extensionName)
+{
+   if (!extensionName)
+   {
+      return false;
+   }
+
+   uint32_t extensionCount;
+   vkEnumerateInstanceExtensionProperties(NULL, &extensionCount, NULL);
+
+   std::vector<VkExtensionProperties> extensions(extensionCount);
+   vkEnumerateInstanceExtensionProperties(NULL, &extensionCount, extensions.data());
+
+   for (uint32_t i = 0; i < extensionCount; i++)
+   {
+      if (strcmp(extensionName, extensions[i].extensionName) == 0)
+      {
+         return true;
+      }
+   }
+
+   return false;
+}
+
+bool veIsDeviceExtensionAvailable(VEContext *context, const char *extensionName)
+{
+   if (!context || !extensionName)
+   {
+      return false;
+   }
+
+   VEContextInternal *contextInternal = (VEContextInternal *)context;
+
+   // Query all physical devices and check if any support the extension
+   uint32_t deviceCount = 0;
+   vkEnumeratePhysicalDevices(contextInternal->instance, &deviceCount, NULL);
+   if (deviceCount == 0)
+   {
+      return false;
+   }
+
+   std::vector<VkPhysicalDevice> devices(deviceCount);
+   vkEnumeratePhysicalDevices(contextInternal->instance, &deviceCount, devices.data());
+
+   // Check each physical device for the extension
+   for (uint32_t d = 0; d < deviceCount; d++)
+   {
+      uint32_t extensionCount;
+      vkEnumerateDeviceExtensionProperties(devices[d], NULL, &extensionCount, NULL);
+
+      std::vector<VkExtensionProperties> extensions(extensionCount);
+      vkEnumerateDeviceExtensionProperties(devices[d], NULL, &extensionCount, extensions.data());
+
+      for (uint32_t i = 0; i < extensionCount; i++)
+      {
+         if (strcmp(extensionName, extensions[i].extensionName) == 0)
+         {
+            return true;
+         }
+      }
+   }
+
+   return false;
+}
 
 // =============================================================================
 // Device Information Implementation

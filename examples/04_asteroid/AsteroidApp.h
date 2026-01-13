@@ -52,7 +52,6 @@ private:
 
    bool createAssets();
    void destroyAssets();
-   bool recreateDepthBuffer(uint32_t width, uint32_t height);
 
    void mainLoop();
    void handleInput();
@@ -73,20 +72,19 @@ private:
    VEContext *context_{nullptr};
    VEDevice *device_{nullptr};
    VESwapchain *swapchain_{nullptr};
+   VERenderTarget *renderTarget_{nullptr};
    VkFormat swapchainFormat_{VK_FORMAT_UNDEFINED};
 
    VEShader *vertexShader_{nullptr};
    VEShader *fragmentShader_{nullptr};
    VEShaderConfig *shaderConfig_{nullptr};
    VERenderConfig *renderConfig_{nullptr};
+   VERenderingInfo renderingInfo_{};
 
    VEBufferAddress vertexBuffer_{VE_INVALID_ADDRESS};
    VEBufferAddress indexBuffer_{VE_INVALID_ADDRESS};
    VEBufferAddress instanceBuffer_{VE_INVALID_ADDRESS};
    VEBufferAddress cameraBuffer_{VE_INVALID_ADDRESS};
-   VETextureIndex depthTexture_{VE_INVALID_TEXTURE_INDEX};
-   uint32_t depthWidth_{0};
-   uint32_t depthHeight_{0};
 
    uint32_t indexCount_{0};
    uint32_t instanceCount_{0};

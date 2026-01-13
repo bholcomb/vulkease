@@ -61,12 +61,14 @@ typedef struct {
 static VEContext* g_context = NULL;
 static VEDevice* g_device = NULL;
 static VESwapchain* g_swapchain = NULL;
+static VERenderTarget* g_renderTarget = NULL;
 static VEShader* g_computeShader = NULL;
 static VEShader* g_vertexShader = NULL;
 static VEShader* g_fragmentShader = NULL;
 static VERenderConfig* g_renderConfig = NULL;
 static VEBufferAddress g_particleBuffer = VE_INVALID_ADDRESS;
 static VEBufferAddress g_vertexBuffer = VE_INVALID_ADDRESS;
+static VERenderingInfo g_renderingInfo;
 
 int win_width = 800;
 int win_height = 600;
@@ -89,8 +91,20 @@ static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
         return;
     }
     
-    if (g_swapchain && width > 0 && height > 0) {
-        veResizeSwapchain(g_swapchain, (uint32_t)width, (uint32_t)height);
+    if (width > 0 && height > 0) {
+        if (g_swapchain) {
+            veResizeSwapchain(g_swapchain, (uint32_t)width, (uint32_t)height);
+        }
+        if (g_renderTarget) {
+            veResizeRenderTarget(g_renderTarget, (uint32_t)width, (uint32_t)height);
+            
+            // Rebuild rendering info with new size and texture handle
+            g_renderingInfo = veCreateRenderingInfo((uint32_t)width, (uint32_t)height);
+            veRenderingAddColorAttachment(&g_renderingInfo, 
+                                           veGetRenderTargetColorTexture(g_renderTarget),
+                                           VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                           (VEColor){0.05f, 0.05f, 0.1f, 1.0f});
+        }
     }
 }
 
@@ -110,7 +124,7 @@ static bool initGLFW() {
 }
 
 static bool initVulkEase(GLFWwindow* window) {
-    g_context = veCreateContext("VulkEase Compute Particle System");
+    g_context = veCreateContext("VulkEase Compute Particle System", NULL, 0);
     if (!g_context) {
         fprintf(stderr, "Failed to create context: %s\n", veGetLastError());
         return false;
@@ -118,7 +132,8 @@ static bool initVulkEase(GLFWwindow* window) {
 
     printf("VulkEase initialized successfully\n");
     
-    g_device = veCreateDevice(g_context);
+    // Create device (VK_NULL_HANDLE = auto-select best GPU)
+    g_device = veCreateDevice(g_context, VK_NULL_HANDLE, NULL, 0);
     if (!g_device) {
         fprintf(stderr, "Failed to create device: %s\n", veGetLastError());
         return false;
@@ -129,47 +144,40 @@ static bool initVulkEase(GLFWwindow* window) {
     
     // Note: Compute capabilities check not implemented yet
     printf("Compute workgroup size: %d (assumed optimal)\n", WORKGROUP_SIZE);
-           
+    
+    // Set up swapchain descriptor with platform-specific surface
+    VESwapchainDesc swapchainDesc = {0};
+    swapchainDesc.width = (uint32_t)win_width;
+    swapchainDesc.height = (uint32_t)win_height;
+    swapchainDesc.colorFormat = VK_FORMAT_B8G8R8A8_SRGB;
+    swapchainDesc.vsync = vsync;
+    swapchainDesc.debugName = "ParticlesSwapchain";
+
 #if defined(_WIN32)
-    void* windowHandle = NULL;    
-    
-    windowHandle = glfwGetWin32Window(window);
-    if (!windowHandle) {
+    swapchainDesc.surface.type = VE_SURFACE_TYPE_WIN32;
+    swapchainDesc.surface.win32.hwnd = glfwGetWin32Window(window);
+    if (!swapchainDesc.surface.win32.hwnd) {
         fprintf(stderr, "Failed to get native window data\n");
         return false;
     }
-
-    g_swapchain = veCreateSwapchain(g_device, windowHandle, width, height, VE_FORMAT_BGRA8_SRGB);
 #elif defined(__linux__)
-    // Get native window handle for VulkEase's simple approach
-    void* displayHandle = NULL;
-    void* windowHandle = NULL;
-    
-    // For simplicity, assume X11 for now
-    // In production, you'd detect the platform properly
-    displayHandle = (void*)glfwGetX11Display();
-    windowHandle = (void*)glfwGetX11Window(window);
-    
-    if (!displayHandle || !windowHandle) {
+    swapchainDesc.surface.type = VE_SURFACE_TYPE_XLIB;
+    swapchainDesc.surface.xlib.display = (void*)glfwGetX11Display();
+    swapchainDesc.surface.xlib.window = glfwGetX11Window(window);
+    if (!swapchainDesc.surface.xlib.display || !swapchainDesc.surface.xlib.window) {
         fprintf(stderr, "Failed to get native window data\n");
         return false;
     }
-
-    void* windowData[] = {displayHandle, windowHandle};
-
-    // Create swapchain using VulkEase's simple window handle approach
-    g_swapchain = veCreateSwapchain(g_device, windowData, (uint32_t)win_width, (uint32_t)win_height, VK_FORMAT_B8G8R8A8_SRGB, vsync);
-
 #elif defined(__APPLE__)
-    void* windowHandle = NULL;    
-    
-    windowHandle = glfwGetCocoaWindow(window);
-    if (!windowHandle) {
+    swapchainDesc.surface.type = VE_SURFACE_TYPE_COCOA;
+    swapchainDesc.surface.cocoa.window = glfwGetCocoaWindow(window);
+    if (!swapchainDesc.surface.cocoa.window) {
         fprintf(stderr, "Failed to get native window data\n");
         return false;
     }
-    g_swapchain = veCreateSwapchain(g_device, windowHandle, width, height, VE_FORMAT_BGRA8_SRGB);
-#endif    
+#endif
+
+    g_swapchain = veCreateSwapchain(g_device, &swapchainDesc);    
     
     if (!g_swapchain) {
         fprintf(stderr, "Failed to create swapchain: %s\n", veGetLastError());
@@ -177,6 +185,31 @@ static bool initVulkEase(GLFWwindow* window) {
     }
 
     printf("Swapchain created: %dx%d\n", win_width, win_height);
+
+    // Create render target for offscreen rendering
+    VERenderTargetDesc rtDesc = {0};
+    rtDesc.width = (uint32_t)win_width;
+    rtDesc.height = (uint32_t)win_height;
+    rtDesc.colorFormat = veGetSwapchainFormat(g_swapchain);
+    rtDesc.depthFormat = VK_FORMAT_UNDEFINED;  // No depth buffer for particles
+    rtDesc.sampleCount = 1;
+    rtDesc.hasResolveTarget = false;
+    rtDesc.debugName = "ParticleRenderTarget";
+
+    g_renderTarget = veCreateRenderTarget(g_device, &rtDesc);
+    if (!g_renderTarget) {
+        fprintf(stderr, "Failed to create render target: %s\n", veGetLastError());
+        return false;
+    }
+    
+    // Build rendering info once (reused every frame)
+    g_renderingInfo = veCreateRenderingInfo((uint32_t)win_width, (uint32_t)win_height);
+    veRenderingAddColorAttachment(&g_renderingInfo, 
+                                   veGetRenderTargetColorTexture(g_renderTarget),
+                                   VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                   (VEColor){0.05f, 0.05f, 0.1f, 1.0f}); // Dark blue background
+
+    printf("Render target created: %dx%d\n", win_width, win_height);
 
     return true;
 }
@@ -332,47 +365,30 @@ static void runComputeShader(VECommandBuffer* cmd, float deltaTime, float time, 
     veEndDebugLabel(cmd);
 }
 
-static void renderParticles(VECommandBuffer* cmd, VETextureIndex backbuffer) {
+static void renderParticles(VECommandBuffer* cmd) {
+    // Get render target size for push constants
     uint32_t width, height;
-    veGetSwapchainSize(g_swapchain, &width, &height);
-    
-    // Set up rendering info
-    VERenderingAttachment colorAttachment = {
-        .texture = backbuffer,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .clearValue = {0.05f, 0.05f, 0.1f, 1.0f}, // Dark blue background
-        .resolveTexture = VE_INVALID_TEXTURE_INDEX
-    };
-    
-    VERenderingInfo renderingInfo = {
-        .renderAreaX = 0,
-        .renderAreaY = 0,
-        .renderAreaWidth = width,
-        .renderAreaHeight = height,
-        .colorAttachmentCount = 1,
-        .colorAttachments = &colorAttachment,
-        .depthAttachment = NULL,
-        .stencilAttachment = NULL
-    };
+    veGetRenderTargetSize(g_renderTarget, &width, &height);
     
     // Begin graphics debug region
     VEColor graphicsColor = {0.0f, 1.0f, 0.5f, 1.0f};
     veBeginDebugLabel(cmd, "Particle Rendering", graphicsColor);
     
-    // Begin rendering
-    veBeginRendering(cmd, &renderingInfo);
-    
-    //setup viewport and scissoring state
-    veSetViewport(cmd, 0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f);
-    veSetScissor(cmd, 0, 0, width, height);
-
-    // Apply render configuration (with alpha blending)
-    veApplyRenderConfig(cmd, g_renderConfig);
+    // Begin rendering (automatically handles texture transitions)
+    veBeginRendering(cmd, &g_renderingInfo);
     
     // Bind graphics shaders
     veBindShader(cmd, g_vertexShader);
     veBindShader(cmd, g_fragmentShader);
+    
+    // Apply render state (with alpha blending, full-screen viewport/scissor)
+    VERenderState renderState = {
+        .shaderConfig = NULL,
+        .renderConfig = g_renderConfig,
+        .viewport = NULL,  // Use full render area
+        .scissor = NULL    // Use full render area
+    };
+    veApplyRenderState(cmd, &renderState);
     
     // Set graphics push constants
     GraphicsPushConstants graphicsConstants = {
@@ -395,14 +411,8 @@ static void renderParticles(VECommandBuffer* cmd, VETextureIndex backbuffer) {
 
 static void render(float deltaTime, float time) {
     // Convert to normalized coordinates [-1, 1]
-    float normalizedMouseX = (float)sin(time); //(float)(mouseX / win_width) * 2.0f - 1.0f;
-    float normalizedMouseY = (float)cos(time); //1.0f - (float)(mouseY / win_height) * 2.0f;
-    
-    // Acquire next swapchain image
-    VETextureIndex backbuffer = veAcquireNextImage(g_swapchain);
-    if (backbuffer == VE_INVALID_TEXTURE_INDEX) {
-        return;
-    }
+    float normalizedMouseX = (float)sin(time);
+    float normalizedMouseY = (float)cos(time);
     
     // Begin command buffer
     VECommandBuffer* cmd = veBeginCommandBuffer(g_device);
@@ -410,24 +420,22 @@ static void render(float deltaTime, float time) {
         fprintf(stderr, "Failed to begin command buffer\n");
         return;
     }
-
-    veTransitionTextureForColorAttachment(cmd, backbuffer); //TODO:  Find a way to remove this from the user's workload
     
     // Run compute shader to simulate particles
     runComputeShader(cmd, deltaTime, time, normalizedMouseX, normalizedMouseY);
     
-    // Render particles
-    renderParticles(cmd, backbuffer);
+    // Render particles to offscreen render target
+    renderParticles(cmd);
+    
+    // Blit render target to swapchain (acquires swapchain image automatically)
+    VEResult result = veBlitToSwapchain(cmd, g_renderTarget, g_swapchain, VK_FILTER_LINEAR);
+    if (result == VE_ERROR_SWAPCHAIN_OUT_OF_DATE) {
+        // Resize callback handles this
+        return;
+    }
     
     // Present
-    veTransitionTextureForPresent(cmd, backbuffer);  //TODO:  Find a way to remove this from the user's work load
-
-    VEResult result = vePresentImage(g_swapchain, cmd);
-    if (result == VE_ERROR_SWAPCHAIN_OUT_OF_DATE) {
-        uint32_t swWidth, swHeight;
-        veGetSwapchainSize(g_swapchain, &swWidth, &swHeight);
-        veResizeSwapchain(g_swapchain, swWidth, swHeight);
-    }
+    vePresentImage(g_swapchain, cmd, true);
 }
 
 static void cleanup() {
@@ -459,6 +467,10 @@ static void cleanup() {
         veDestroyShader(g_fragmentShader);
     }
     
+    if (g_renderTarget) {
+        veDestroyRenderTarget(g_renderTarget);
+    }
+
     if (g_swapchain) {
         veDestroySwapchain(g_swapchain);
     }

@@ -77,6 +77,7 @@ extern "C"
    typedef struct VEDevice VEDevice;
    typedef struct VECommandBuffer VECommandBuffer;
    typedef struct VESwapchain VESwapchain;
+   typedef struct VERenderTarget VERenderTarget;
 
    // Resource handles
    typedef struct VEShader VEShader;
@@ -209,6 +210,74 @@ extern "C"
       float maxLod;
       const char *debugName; // Debug name (optional)
    } VESamplerDesc;
+
+   // =============================================================================
+   // Surface and Swapchain Types
+   // =============================================================================
+
+   // Platform surface types
+   typedef enum VESurfaceType
+   {
+      VE_SURFACE_TYPE_WIN32,   // Windows: HWND
+      VE_SURFACE_TYPE_XLIB,    // Linux X11: Display* + Window
+      VE_SURFACE_TYPE_WAYLAND, // Linux Wayland: wl_display* + wl_surface*
+      VE_SURFACE_TYPE_COCOA,   // macOS: NSWindow* (CAMetalLayer internally)
+      VE_SURFACE_TYPE_ANDROID  // Android: ANativeWindow*
+   } VESurfaceType;
+
+   // Platform-specific surface descriptor
+   typedef struct VESurfaceDesc
+   {
+      VESurfaceType type;
+      union
+      {
+         struct
+         {
+            void *hwnd; // HWND
+         } win32;
+         struct
+         {
+            void *display;       // Display*
+            unsigned long window; // Window (XID is unsigned long)
+         } xlib;
+         struct
+         {
+            void *display; // wl_display*
+            void *surface; // wl_surface*
+         } wayland;
+         struct
+         {
+            void *window; // NSWindow* or CAMetalLayer*
+         } cocoa;
+         struct
+         {
+            void *nativeWindow; // ANativeWindow*
+         } android;
+      };
+   } VESurfaceDesc;
+
+   // Swapchain creation descriptor
+   typedef struct VESwapchainDesc
+   {
+      VESurfaceDesc surface;
+      uint32_t width;
+      uint32_t height;
+      VkFormat colorFormat;
+      bool vsync;
+      const char *debugName; // Debug name (optional)
+   } VESwapchainDesc;
+
+   // Render target descriptor
+   typedef struct VERenderTargetDesc
+   {
+      uint32_t width;
+      uint32_t height;
+      VkFormat colorFormat;                // Color buffer format (required)
+      VkFormat depthFormat;                // Depth buffer format (VK_FORMAT_UNDEFINED = no depth)
+      VkSampleCountFlags sampleCount;      // MSAA sample count (0 or 1 = no MSAA)
+      bool hasResolveTarget;               // If true with MSAA, creates a resolve target
+      const char *debugName;               // Debug name (optional)
+   } VERenderTargetDesc;
 
    // =============================================================================
    // Render Configuration Structures
@@ -378,21 +447,35 @@ extern "C"
       VETextureIndex texture; // Texture to render to
       VkAttachmentLoadOp loadOp;
       VkAttachmentStoreOp storeOp;
-      VEColor clearValue;            // Used if loadOp == VE_LOAD_OP_CLEAR
+      VEColor clearValue;            // Used if loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR
       VETextureIndex resolveTexture; // For MSAA resolve (optional)
    } VERenderingAttachment;
 
+// Maximum color attachments supported
+#define VE_MAX_COLOR_ATTACHMENTS 8
+
+// Indices for depth and stencil in the attachments array
+#define VE_DEPTH_ATTACHMENT_INDEX VE_MAX_COLOR_ATTACHMENTS
+#define VE_STENCIL_ATTACHMENT_INDEX (VE_MAX_COLOR_ATTACHMENTS + 1)
+#define VE_TOTAL_ATTACHMENT_SLOTS (VE_MAX_COLOR_ATTACHMENTS + 2)
+
    // Dynamic rendering info (replaces render passes)
+   // Trivially copyable struct with inline storage for all attachments.
+   // Layout of attachments array:
+   //   [0..colorAttachmentCount-1] = color attachments
+   //   [VE_DEPTH_ATTACHMENT_INDEX] = depth attachment (if hasDepthAttachment)
+   //   [VE_STENCIL_ATTACHMENT_INDEX] = stencil attachment (if hasStencilAttachment)
    typedef struct VERenderingInfo
    {
       int32_t renderAreaX, renderAreaY;
       uint32_t renderAreaWidth, renderAreaHeight;
 
       uint32_t colorAttachmentCount;
-      const VERenderingAttachment *colorAttachments;
+      bool hasDepthAttachment;
+      bool hasStencilAttachment;
 
-      const VERenderingAttachment *depthAttachment;   // Optional
-      const VERenderingAttachment *stencilAttachment; // Optional
+      // All attachments stored inline - trivially copyable
+      VERenderingAttachment attachments[VE_TOTAL_ATTACHMENT_SLOTS];
    } VERenderingInfo;
 
    // =============================================================================
@@ -449,7 +532,7 @@ extern "C"
    VULKEASE_API uint32_t veGetVersion(void);
 
    /**
-    * Create VulkEase context - initializes Vulkan 1.3 instance
+    * Create VulkEase context - initializes Vulkan 1.4 instance
     * Automatically enables all required extensions:
     * - VK_KHR_buffer_device_address (core 1.2)
     * - VK_EXT_descriptor_indexing (core 1.2)
@@ -457,15 +540,65 @@ extern "C"
     * - VK_EXT_shader_object
     * - VK_EXT_extended_dynamic_state3
     * - VK_EXT_vertex_input_dynamic_state (if available)
+    *
+    * @param applicationName Name of the application (shown in debug tools)
+    * @param additionalInstanceExtensions Array of additional instance extension names to enable (can be NULL)
+    * @param additionalInstanceExtensionCount Number of additional extensions in the array
+    * @return Context handle, or NULL on failure (call veGetLastError for details)
     */
-   VULKEASE_API VEContext *veCreateContext(const char *applicationName);
+   VULKEASE_API VEContext *veCreateContext(const char *applicationName,
+                                            const char *const *additionalInstanceExtensions,
+                                            uint32_t additionalInstanceExtensionCount);
    VULKEASE_API void veDestroyContext(VEContext *context);
 
    /**
-    * Create device - automatically selects best GPU and enables all features
+    * Enumerate available physical devices (GPUs).
+    *
+    * @param context VulkEase context
+    * @param count Pointer to receive the number of physical devices
+    * @return VE_SUCCESS on success
     */
-   VULKEASE_API VEDevice *veCreateDevice(VEContext *context);
+   VULKEASE_API VEResult veEnumeratePhysicalDevices(VEContext *context, uint32_t *count);
+
+   /**
+    * Get information about a physical device.
+    *
+    * @param context VulkEase context
+    * @param deviceIndex Index of the device (0 to count-1)
+    * @param physicalDevice Pointer to receive the VkPhysicalDevice handle
+    * @param deviceName Optional buffer to receive device name (at least 256 chars, can be NULL)
+    * @param deviceType Optional pointer to receive device type (can be NULL)
+    * @return VE_SUCCESS on success, VE_ERROR_INVALID_PARAMETER if index out of range
+    */
+   VULKEASE_API VEResult veGetPhysicalDeviceInfo(VEContext *context, uint32_t deviceIndex,
+                                                  VkPhysicalDevice *physicalDevice,
+                                                  char *deviceName,
+                                                  VkPhysicalDeviceType *deviceType);
+
+   /**
+    * Create device - selects specified GPU or auto-selects best if NULL
+    *
+    * @param context VulkEase context
+    * @param preferredDevice Physical device to use, or VK_NULL_HANDLE to auto-select best
+    * @param additionalDeviceExtensions Array of additional device extension names to enable (can be NULL)
+    * @param additionalDeviceExtensionCount Number of additional extensions in the array
+    * @return Device handle, or NULL on failure (call veGetLastError for details)
+    */
+   VULKEASE_API VEDevice *veCreateDevice(VEContext *context,
+                                          VkPhysicalDevice preferredDevice,
+                                          const char *const *additionalDeviceExtensions,
+                                          uint32_t additionalDeviceExtensionCount);
    VULKEASE_API void veDestroyDevice(VEDevice *device);
+
+   /**
+    * Query extension availability.
+    * Call these before veCreateContext/veCreateDevice to check if extensions are supported.
+    *
+    * @param extensionName Name of the extension to check (e.g., "VK_KHR_ray_tracing_pipeline")
+    * @return true if the extension is available, false otherwise
+    */
+   VULKEASE_API bool veIsInstanceExtensionAvailable(const char *extensionName);
+   VULKEASE_API bool veIsDeviceExtensionAvailable(VEContext *context, const char *extensionName);
 
    /**
     * Device wait operations
@@ -821,6 +954,10 @@ extern "C"
       bool occlusionQueryEnable;                   // Enable occlusion queries for this secondary
       VkQueryControlFlags occlusionQueryFlags;     // VkQueryControlFlags (e.g., VK_QUERY_CONTROL_PRECISE_BIT)
       bool beginRecording;                         // Begin recording automatically when true
+      int32_t renderAreaX;                         // Render area X offset (for veApplyRenderState defaults)
+      int32_t renderAreaY;                         // Render area Y offset (for veApplyRenderState defaults)
+      uint32_t renderAreaWidth;                    // Render area width (for veApplyRenderState defaults)
+      uint32_t renderAreaHeight;                   // Render area height (for veApplyRenderState defaults)
    } VESecondaryCommandBufferDesc;
 
    /**
@@ -834,8 +971,80 @@ extern "C"
                                                                const VESecondaryCommandBufferDesc *desc);
    VULKEASE_API VEResult veBeginSecondaryRecording(VECommandBuffer *cmd,
                                                    const VESecondaryCommandBufferDesc *desc);
+   /**
+    * Execute secondary command buffers within a primary command buffer
+    * @param primaryCmd Primary command buffer (must be recording and inside a render pass)
+    * @param count Number of secondary command buffers to execute
+    * @param secondaryCmds Array of secondary command buffers to execute
+    * @param releaseCommandBuffers If true, automatically release the secondary command buffers after execution
+    */
    VULKEASE_API VEResult veExecuteSecondaryCommandBuffers(VECommandBuffer *primaryCmd, uint32_t count,
-                                                          VECommandBuffer *const *secondaryCmds);
+                                                          VECommandBuffer *const *secondaryCmds,
+                                                          bool releaseCommandBuffers);
+
+   // =============================================================================
+   // Rendering Info Builder Functions
+   // =============================================================================
+
+   /**
+    * Create a VERenderingInfo with the specified render area
+    * @param width Render area width
+    * @param height Render area height
+    * @return Initialized VERenderingInfo ready for adding attachments
+    */
+   VULKEASE_API VERenderingInfo veCreateRenderingInfo(uint32_t width, uint32_t height);
+
+   /**
+    * Create a VERenderingInfo with offset and dimensions
+    * @param x Render area X offset
+    * @param y Render area Y offset
+    * @param width Render area width
+    * @param height Render area height
+    * @return Initialized VERenderingInfo ready for adding attachments
+    */
+   VULKEASE_API VERenderingInfo veCreateRenderingInfoWithOffset(int32_t x, int32_t y, uint32_t width, uint32_t height);
+
+   /**
+    * Add a color attachment to the rendering info
+    * @param info Rendering info to modify
+    * @param texture Texture to render to
+    * @param loadOp Load operation (VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_LOAD_OP_DONT_CARE)
+    * @param clearValue Clear color (used only when loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR)
+    */
+   VULKEASE_API void veRenderingAddColorAttachment(VERenderingInfo *info, VETextureIndex texture,
+                                                    VkAttachmentLoadOp loadOp, VEColor clearValue);
+
+   /**
+    * Add a color attachment with MSAA resolve target
+    * @param info Rendering info to modify
+    * @param texture MSAA texture to render to
+    * @param resolveTexture Non-MSAA texture to resolve to
+    * @param loadOp Load operation
+    * @param clearValue Clear color (used only when loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR)
+    */
+   VULKEASE_API void veRenderingAddColorAttachmentResolve(VERenderingInfo *info, VETextureIndex texture,
+                                                           VETextureIndex resolveTexture, VkAttachmentLoadOp loadOp,
+                                                           VEColor clearValue);
+
+   /**
+    * Set the depth attachment for rendering
+    * @param info Rendering info to modify
+    * @param texture Depth texture
+    * @param loadOp Load operation
+    * @param clearDepth Clear depth value (used only when loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR)
+    */
+   VULKEASE_API void veRenderingSetDepthAttachment(VERenderingInfo *info, VETextureIndex texture,
+                                                    VkAttachmentLoadOp loadOp, float clearDepth);
+
+   /**
+    * Set the stencil attachment for rendering
+    * @param info Rendering info to modify
+    * @param texture Stencil texture
+    * @param loadOp Load operation
+    * @param clearStencil Clear stencil value (used only when loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR)
+    */
+   VULKEASE_API void veRenderingSetStencilAttachment(VERenderingInfo *info, VETextureIndex texture,
+                                                      VkAttachmentLoadOp loadOp, uint32_t clearStencil);
 
    /**
     * Begin/end dynamic rendering (replaces render passes)
@@ -862,6 +1071,33 @@ extern "C"
    VULKEASE_API void veSetViewport(VECommandBuffer *cmd, float x, float y, float width, float height, float minDepth,
                                    float maxDepth);
    VULKEASE_API void veSetScissor(VECommandBuffer *cmd, int32_t x, int32_t y, uint32_t width, uint32_t height);
+
+   // =============================================================================
+   // Combined Render State
+   // =============================================================================
+
+   /**
+    * Combined render state for convenience.
+    * Bundles shader config, render config, viewport, and scissor into a single call.
+    * NULL viewport/scissor will default to the current render area (must be called inside veBeginRendering).
+    */
+   typedef struct VERenderState
+   {
+      VEShaderConfig *shaderConfig; // Shader configuration (NULL = don't bind)
+      VERenderConfig *renderConfig; // Render state configuration (NULL = don't apply)
+      const VEViewport *viewport;   // Viewport (NULL = use full render area)
+      const VERect2D *scissor;      // Scissor rectangle (NULL = use full render area)
+   } VERenderState;
+
+   /**
+    * Apply combined render state in a single call.
+    * Must be called inside a rendering pass (after veBeginRendering).
+    * If viewport or scissor are NULL, they default to the full render area.
+    *
+    * @param cmd Command buffer (must be inside a rendering pass)
+    * @param state Render state to apply
+    */
+   VULKEASE_API void veApplyRenderState(VECommandBuffer *cmd, const VERenderState *state);
 
    /**
     * Runtime state overrides (maximum flexibility)
@@ -969,20 +1205,23 @@ extern "C"
 
    /**
     * Create swapchain for window
+    * @param device Device handle
+    * @param desc Swapchain descriptor containing surface info, dimensions, format, and vsync setting
+    * @return Swapchain handle, or NULL on failure (call veGetLastError for details)
     */
-   VULKEASE_API VESwapchain *veCreateSwapchain(VEDevice *device, void *windowHandle, uint32_t width, uint32_t height,
-                                               VkFormat forma, bool vsync);
+   VULKEASE_API VESwapchain *veCreateSwapchain(VEDevice *device, const VESwapchainDesc *desc);
    VULKEASE_API void veDestroySwapchain(VESwapchain *swapchain);
 
    /**
-    * Acquire next swapchain image for rendering
+    * Present rendered image to screen.
+    * Call this after veBlitToSwapchain to present the frame.
+    *
+    * @param swapchain Swapchain to present to
+    * @param cmd Command buffer that rendered the frame
+    * @param releaseCommandBuffer If true, automatically release the command buffer after submission
+    * @return VE_SUCCESS on success, VE_ERROR_SWAPCHAIN_OUT_OF_DATE if resize needed
     */
-   VULKEASE_API VETextureIndex veAcquireNextImage(VESwapchain *swapchain);
-
-   /**
-    * Present rendered image to screen
-    */
-   VULKEASE_API VEResult vePresentImage(VESwapchain *swapchain, VECommandBuffer *cmd);
+   VULKEASE_API VEResult vePresentImage(VESwapchain *swapchain, VECommandBuffer *cmd, bool releaseCommandBuffer);
 
    /**
     * Handle window resize
@@ -994,6 +1233,62 @@ extern "C"
     */
    VULKEASE_API VEResult veGetSwapchainSize(VESwapchain *swapchain, uint32_t *width, uint32_t *height);
    VULKEASE_API VkFormat veGetSwapchainFormat(VESwapchain *swapchain);
+
+   // =============================================================================
+   // Render Targets (Offscreen Rendering)
+   // =============================================================================
+
+   /**
+    * Create an offscreen render target for rendering.
+    * All rendering should target a VERenderTarget, then blit to swapchain for presentation.
+    *
+    * @param device Device handle
+    * @param desc Render target descriptor
+    * @return Render target handle, or NULL on failure
+    */
+   VULKEASE_API VERenderTarget *veCreateRenderTarget(VEDevice *device, const VERenderTargetDesc *desc);
+
+   /**
+    * Destroy a render target and its associated resources
+    */
+   VULKEASE_API void veDestroyRenderTarget(VERenderTarget *renderTarget);
+
+   /**
+    * Resize a render target (recreates internal textures)
+    */
+   VULKEASE_API VEResult veResizeRenderTarget(VERenderTarget *renderTarget, uint32_t width, uint32_t height);
+
+   /**
+    * Get render target textures for use in VERenderingInfo
+    */
+   VULKEASE_API VETextureIndex veGetRenderTargetColorTexture(VERenderTarget *renderTarget);
+   VULKEASE_API VETextureIndex veGetRenderTargetDepthTexture(VERenderTarget *renderTarget);
+   VULKEASE_API VETextureIndex veGetRenderTargetResolveTexture(VERenderTarget *renderTarget);
+
+   /**
+    * Get render target dimensions
+    */
+   VULKEASE_API VEResult veGetRenderTargetSize(VERenderTarget *renderTarget, uint32_t *width, uint32_t *height);
+
+   /**
+    * Get render target format
+    */
+   VULKEASE_API VkFormat veGetRenderTargetColorFormat(VERenderTarget *renderTarget);
+   VULKEASE_API VkFormat veGetRenderTargetDepthFormat(VERenderTarget *renderTarget);
+
+   /**
+    * Blit render target to swapchain for presentation.
+    * Acquires the next swapchain image, handles layout transitions, and blits.
+    * Call this after veEndRendering, then call vePresentImage.
+    *
+    * @param cmd Command buffer to record blit commands
+    * @param renderTarget Source render target
+    * @param swapchain Destination swapchain
+    * @param filter Filtering mode for scaling (VK_FILTER_NEAREST or VK_FILTER_LINEAR)
+    * @return VE_SUCCESS on success, VE_ERROR_SWAPCHAIN_OUT_OF_DATE if resize needed
+    */
+   VULKEASE_API VEResult veBlitToSwapchain(VECommandBuffer *cmd, VERenderTarget *renderTarget,
+                                            VESwapchain *swapchain, VkFilter filter);
 
    // =============================================================================
    // Debug and Profiling

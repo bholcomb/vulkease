@@ -44,6 +44,61 @@ void veSetScissor(VECommandBuffer *cmd, int32_t x, int32_t y, uint32_t width, ui
 }
 
 // =============================================================================
+// Combined Render State
+// =============================================================================
+
+void veApplyRenderState(VECommandBuffer *cmd, const VERenderState *state)
+{
+   if (!cmd || !state)
+      return;
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+
+   // Validate we're inside a render pass (required for default viewport/scissor)
+   if (!internal->inRenderPass && (state->viewport == NULL || state->scissor == NULL))
+   {
+      veSetError("veApplyRenderState: must be called inside veBeginRendering when viewport or scissor is NULL");
+      return;
+   }
+
+   // Bind shader config if provided
+   if (state->shaderConfig)
+   {
+      veBindShaderConfig(cmd, state->shaderConfig);
+   }
+
+   // Apply render config if provided
+   if (state->renderConfig)
+   {
+      veApplyRenderConfig(cmd, state->renderConfig);
+   }
+
+   // Set viewport (use render area if NULL)
+   if (state->viewport)
+   {
+      veSetViewport(cmd, state->viewport->x, state->viewport->y, state->viewport->width, state->viewport->height,
+                    state->viewport->minDepth, state->viewport->maxDepth);
+   }
+   else
+   {
+      veSetViewport(cmd, static_cast<float>(internal->renderAreaX), static_cast<float>(internal->renderAreaY),
+                    static_cast<float>(internal->renderAreaWidth), static_cast<float>(internal->renderAreaHeight), 0.0f,
+                    1.0f);
+   }
+
+   // Set scissor (use render area if NULL)
+   if (state->scissor)
+   {
+      veSetScissor(cmd, state->scissor->x, state->scissor->y, state->scissor->width, state->scissor->height);
+   }
+   else
+   {
+      veSetScissor(cmd, static_cast<int32_t>(internal->renderAreaX), static_cast<int32_t>(internal->renderAreaY),
+                   internal->renderAreaWidth, internal->renderAreaHeight);
+   }
+}
+
+// =============================================================================
 // Runtime State Overrides
 // =============================================================================
 
