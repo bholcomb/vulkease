@@ -497,19 +497,25 @@ static VkShaderStageFlags getPossibleNextStages(VkShaderStageFlags stage)
    }
 }
 
-VEShader *veLoadShaderFromBuffer(VEDevice *device, VkShaderStageFlags stage, const void *code, size_t codeSize,
-                                 const char *entryPoint, const char *debugName)
+VEResult veLoadShaderFromBuffer(VEDevice *device, VkShaderStageFlags stage, const void *code, size_t codeSize,
+                                const char *entryPoint, const char *debugName, VEShader **outShader)
 {
+   if (!outShader)
+   {
+      veSetError("outShader cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    if (!device || !code || codeSize == 0 || !entryPoint)
    {
       veSetError("Invalid parameters for shader creation");
-      return NULL;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    if ((codeSize % sizeof(uint32_t)) != 0)
    {
       veSetError("SPIR-V code size must be a multiple of 4 bytes");
-      return NULL;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
@@ -517,7 +523,7 @@ VEShader *veLoadShaderFromBuffer(VEDevice *device, VkShaderStageFlags stage, con
    if (deviceInternal->shaderCount >= deviceInternal->maxShaders)
    {
       veSetError("Maximum number of shaders reached");
-      return NULL;
+      return VE_ERROR_OUT_OF_MEMORY;
    }
 
    // Allocate shader object
@@ -525,7 +531,7 @@ VEShader *veLoadShaderFromBuffer(VEDevice *device, VkShaderStageFlags stage, con
    if (!shader)
    {
       veSetError("Failed to allocate shader memory");
-      return NULL;
+      return VE_ERROR_OUT_OF_MEMORY;
    }
 
    shader->stage = stage;
@@ -547,7 +553,7 @@ VEShader *veLoadShaderFromBuffer(VEDevice *device, VkShaderStageFlags stage, con
    if (shader->shaderObject == VK_NULL_HANDLE)
    {
       delete shader;
-      return NULL;
+      return VE_ERROR_UNKNOWN;
    }
 
    shader->device = deviceInternal;
@@ -559,20 +565,28 @@ VEShader *veLoadShaderFromBuffer(VEDevice *device, VkShaderStageFlags stage, con
 
    deviceInternal->shaderCount += 1;
 
-   return (VEShader *)shader;
+   *outShader = (VEShader *)shader;
+   return VE_SUCCESS;
 }
 
-VEShader *veLoadShaderFromFile(VEDevice *device, const char *filename, VkShaderStageFlags stage, const char *entryPoint,
-                              const char *debugName)
+VEResult veLoadShaderFromFile(VEDevice *device, const char *filename, VkShaderStageFlags stage,
+                              const char *entryPoint, const char *debugName, VEShader **outShader)
 {
+   if (!outShader)
+   {
+      veSetError("outShader cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    if (!device || !filename || !entryPoint)
    {
       veSetError("Invalid parameters for shader loading");
-      return NULL;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    bool isSpirv = hasExtension(filename, "spv") || hasExtension(filename, "spirv");
    VEShader *shader = NULL;
+   VEResult loadResult = VE_ERROR_UNKNOWN;
 
    if (isSpirv)
    {
@@ -581,34 +595,35 @@ VEShader *veLoadShaderFromFile(VEDevice *device, const char *filename, VkShaderS
 
       if (!loadSpirvFromFile(filename, code, codeSize))
       {
-         return NULL;
+         return VE_ERROR_UNKNOWN;
       }
 
-      shader = veLoadShaderFromBuffer(device, stage, code.data(), static_cast<size_t>(codeSize), entryPoint, debugName);
+      loadResult =
+          veLoadShaderFromBuffer(device, stage, code.data(), static_cast<size_t>(codeSize), entryPoint, debugName, &shader);
    }
    else
    {
       std::vector<char> textSource;
       if (!loadTextFile(filename, textSource))
       {
-         return NULL;
+         return VE_ERROR_UNKNOWN;
       }
 
       uint32_t *compiledCode = NULL;
       uint64_t compiledSize = 0;
       if (!compileGLSLToSPIRV(textSource.data(), stage, &compiledCode, &compiledSize))
       {
-         return NULL;
+         return VE_ERROR_UNKNOWN;
       }
 
-      shader =
-          veLoadShaderFromBuffer(device, stage, compiledCode, static_cast<size_t>(compiledSize), entryPoint, debugName);
+      loadResult =
+          veLoadShaderFromBuffer(device, stage, compiledCode, static_cast<size_t>(compiledSize), entryPoint, debugName, &shader);
       free(compiledCode);
    }
 
-   if (!shader)
+   if (loadResult != VE_SUCCESS || !shader)
    {
-      return NULL;
+      return loadResult;
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
@@ -617,7 +632,8 @@ VEShader *veLoadShaderFromFile(VEDevice *device, const char *filename, VkShaderS
    uint64_t timestamp = queryFileTimestamp(filename);
    registerFileShader(deviceInternal, internal, filename, timestamp);
 
-   return shader;
+   *outShader = shader;
+   return VE_SUCCESS;
 }
 
 void veDestroyShaderImmediate(VEShader *shader)
@@ -645,35 +661,50 @@ void veDestroyShaderImmediate(VEShader *shader)
    delete internal;
 }
 
-void veDestroyShader(VEShader *shader)
+VEResult veDestroyShader(VEShader *shader)
 {
    if (!shader)
-      return;
+   {
+      veSetError("Shader cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VEShaderInternal *internal = (VEShaderInternal *)shader;
    VEDeviceInternal *deviceInternal = internal->device;
    if (!deviceInternal)
-      return;
+   {
+      veSetError("Shader has no device");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   if (!deviceInternal->deferredDeletionQueue)
+   {
+      veSetError("Deferred deletion queue not initialized");
+      return VE_ERROR_NOT_INITIALIZED;
+   }
 
    deviceInternal->deferredDeletionQueue->enqueueShader(shader);
+   return VE_SUCCESS;
 }
 
 // =============================================================================
 // Shader Hot-Reload Support
 // =============================================================================
 
-void veSetShaderHotReloadEnabled(VEDevice *device, bool enable)
+VEResult veSetShaderHotReloadEnabled(VEDevice *device, bool enable)
 {
    if (!device)
    {
-      return;
+      veSetError("Device cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
    VEShaderHotReloadState *state = ensureHotReloadState(deviceInternal);
    if (!state)
    {
-      return;
+      veSetError("Failed to initialize hot reload state");
+      return VE_ERROR_OUT_OF_MEMORY;
    }
 
    if (enable)
@@ -681,7 +712,7 @@ void veSetShaderHotReloadEnabled(VEDevice *device, bool enable)
       std::unique_lock<std::mutex> lock(state->mutex);
       if (state->enabled)
       {
-         return;
+         return VE_SUCCESS;
       }
 
       state->enabled = true;
@@ -700,7 +731,7 @@ void veSetShaderHotReloadEnabled(VEDevice *device, bool enable)
       std::unique_lock<std::mutex> lock(state->mutex);
       if (!state->enabled && !state->threadRunning)
       {
-         return;
+         return VE_SUCCESS;
       }
 
       state->enabled = false;
@@ -720,14 +751,14 @@ void veSetShaderHotReloadEnabled(VEDevice *device, bool enable)
          state->watcherThread = std::thread();
       }
    }
+
+   return VE_SUCCESS;
 }
 
 bool veShaderNeedsReload(VEShader *shader)
 {
    if (!shader)
-   {
       return false;
-   }
 
    VEShaderInternal *internal = (VEShaderInternal *)shader;
    return internal->pendingReload.load(std::memory_order_relaxed);
@@ -823,12 +854,18 @@ VEResult veReloadShader(VEShader *shader)
 // Shader Configuration Management
 // =============================================================================
 
-VEShaderConfig *veCreateShaderConfig(VEDevice *device, const VEShaderConfigDesc *desc)
+VEResult veCreateShaderConfig(VEDevice *device, const VEShaderConfigDesc *desc, VEShaderConfig **outConfig)
 {
+   if (!outConfig)
+   {
+      veSetError("outConfig cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    if (!device || !desc)
    {
       veSetError("Invalid parameters for shader config creation");
-      return NULL;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
@@ -847,7 +884,7 @@ VEShaderConfig *veCreateShaderConfig(VEDevice *device, const VEShaderConfigDesc 
    if (index == UINT32_MAX)
    {
       veSetError("No free shader config slots available");
-      return NULL;
+      return VE_ERROR_OUT_OF_MEMORY;
    }
 
    VEShaderConfigInternal *config = &deviceInternal->shaderConfigs[index];
@@ -873,19 +910,29 @@ VEShaderConfig *veCreateShaderConfig(VEDevice *device, const VEShaderConfigDesc 
    config->isValid = true;
    deviceInternal->shaderConfigCount++;
 
-   return (VEShaderConfig *)config;
+   *outConfig = (VEShaderConfig *)config;
+   return VE_SUCCESS;
 }
 
-void veDestroyShaderConfig(VEShaderConfig *config)
+VEResult veDestroyShaderConfig(VEShaderConfig *config)
 {
    if (!config)
-      return;
+   {
+      veSetError("ShaderConfig cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VEShaderConfigInternal *internal = (VEShaderConfigInternal *)config;
+   if (!internal->device)
+   {
+      veSetError("ShaderConfig has no device");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    internal->device->shaderConfigCount--;
    // Note: We don't destroy the individual shaders here as they might be used
    // elsewhere The user is responsible for managing shader lifetimes
 
    memset(internal, 0, sizeof(VEShaderConfigInternal));
+   return VE_SUCCESS;
 }

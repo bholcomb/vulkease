@@ -20,6 +20,7 @@ DOTNET_RUNTIME_DIR = dotnet/src/runtimes/linux-x64/native
 
 # Output library and examples
 LIBRARY = libvulkease.so
+EXAMPLE_SMOKE = 00_smoke
 EXAMPLE_TRIANGLE = 01_triangle
 EXAMPLE_PARTICLES = 02_compute_particles
 EXAMPLE_CUBE = 03_cube
@@ -83,7 +84,7 @@ all: library examples
 library: $(BIN_DIR)/$(LIBRARY)
 
 # Build examples
-examples: shaders assets $(BIN_DIR)/$(EXAMPLE_TRIANGLE) $(BIN_DIR)/$(EXAMPLE_PARTICLES) $(BIN_DIR)/$(EXAMPLE_CUBE) \
+examples: shaders assets $(BIN_DIR)/$(EXAMPLE_SMOKE) $(BIN_DIR)/$(EXAMPLE_TRIANGLE) $(BIN_DIR)/$(EXAMPLE_PARTICLES) $(BIN_DIR)/$(EXAMPLE_CUBE) \
 	$(BIN_DIR)/$(EXAMPLE_ASTEROID)
 
 # Build shaders
@@ -150,6 +151,11 @@ $(BIN_DIR)/%.comp.spv: %.comp | $(BIN_DIR)
 $(DATA_BIN): $(DATA_SRC_DIR)/$(TEXTURE_FILE) | $(DATA_BIN_DIR)
 	@echo "Copying data: $< -> $@"
 	@cp $< $@
+
+# Build smoke example
+$(BIN_DIR)/$(EXAMPLE_SMOKE): $(EXAMPLES_DIR)/$(EXAMPLE_SMOKE).c $(BIN_DIR)/$(LIBRARY) | $(BIN_DIR)
+	@echo "Building example: $(EXAMPLE_SMOKE)"
+	$(CC) $(EXAMPLE_CFLAGS) $(INCLUDES) -Wl,-rpath,'$$ORIGIN' $< $(EXAMPLE_LIBS) -o $@
 
 # Build triangle example
 $(BIN_DIR)/$(EXAMPLE_TRIANGLE): $(EXAMPLES_DIR)/$(EXAMPLE_TRIANGLE).c $(BIN_DIR)/$(LIBRARY) | $(BIN_DIR)

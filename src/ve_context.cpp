@@ -6,6 +6,7 @@
 #include "ve_internal.h"
 
 #include <new>
+#include <atomic>
 #include <vector>
 
 #ifdef _WIN32
@@ -65,25 +66,55 @@ VEFuncs veFuncs;
 // Error Handling
 // =============================================================================
 
-static char g_lastError[512] = {0};
-static std::mutex g_errorMutex;
+// Best-effort routing target for internal diagnostics (single-context-friendly).
+static std::atomic<VEContextInternal *> g_messageContext{nullptr};
+
+static void veEmitMessage(VEContextInternal *context, VEMessageSeverity severity, const char *message) noexcept
+{
+   if (!message)
+      return;
+
+   // Apply severity filtering (if context exists; otherwise treat as error and print).
+   if (context && severity < context->messageCallbackMinSeverity)
+   {
+      return;
+   }
+
+   // Prefer user callback if installed and severity passes the filter.
+   if (context && context->messageCallback)
+   {
+      context->messageCallback(severity, message, context->messageCallbackUserData);
+      return;
+   }
+
+   // Fallback to stderr if no callback is installed.
+   const char *sev = "INFO";
+   switch (severity)
+   {
+   case VE_MESSAGE_SEVERITY_VERBOSE:
+      sev = "VERBOSE";
+      break;
+   case VE_MESSAGE_SEVERITY_INFO:
+      sev = "INFO";
+      break;
+   case VE_MESSAGE_SEVERITY_WARNING:
+      sev = "WARNING";
+      break;
+   case VE_MESSAGE_SEVERITY_ERROR:
+      sev = "ERROR";
+      break;
+   }
+   fprintf(stderr, "[VulkEase %s] %s\n", sev, message);
+}
 
 void veSetError(const char *format, ...)
 {
-   std::lock_guard<std::mutex> lock(g_errorMutex);
-   
+   char buffer[2048]{};
    va_list args;
    va_start(args, format);
-   vsnprintf(g_lastError, sizeof(g_lastError), format, args);
+   vsnprintf(buffer, sizeof(buffer), format, args);
    va_end(args);
-
-   printf("VULKEASE ERROR: %s\n", g_lastError);
-}
-
-const char *veGetLastError(void) 
-{ 
-   std::lock_guard<std::mutex> lock(g_errorMutex);
-   return g_lastError[0] ? g_lastError : "No error"; 
+   veEmitMessage(g_messageContext.load(), VE_MESSAGE_SEVERITY_ERROR, buffer);
 }
 
 const char *getMessageTypeString(VkDebugUtilsMessageTypeFlagsEXT messageType)
@@ -109,23 +140,27 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityF
                                                     const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
                                                     void *pUserData)
 {
-   (void)pUserData; // suppresses unused parameter warning
+   (void)messageType;
 
-   const char *severity = "INFO";
+   VEContextInternal *context = (VEContextInternal *)pUserData;
+   VEMessageSeverity sev = VE_MESSAGE_SEVERITY_INFO;
    if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
-   {
-      severity = "ERROR";
-   }
+      sev = VE_MESSAGE_SEVERITY_ERROR;
    else if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
-   {
-      severity = "WARNING";
-   }
+      sev = VE_MESSAGE_SEVERITY_WARNING;
+   else if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)
+      sev = VE_MESSAGE_SEVERITY_INFO;
+   else
+      sev = VE_MESSAGE_SEVERITY_VERBOSE;
 
-   printf("[VulkEase %s]-%s: %s\n", severity, getMessageTypeString(messageType), pCallbackData->pMessage);
+   if (pCallbackData && pCallbackData->pMessage)
+   {
+      veEmitMessage(context, sev, pCallbackData->pMessage);
+   }
    return VK_FALSE;
 }
 
-const char *veResultToString(VkResult result)
+const char *veVkResultToString(VkResult result)
 {
    switch (result)
    {
@@ -154,7 +189,40 @@ void vePrintVkResult(const char *operation, VkResult result)
 {
    if (result != VK_SUCCESS)
    {
-      printf("VulkEase: %s failed with %s (%d)\n", operation, veResultToString(result), result);
+      printf("VulkEase: %s failed with %s (%d)\n", operation, veVkResultToString(result), result);
+   }
+}
+
+const char *veResultToString(VEResult result)
+{
+   switch (result)
+   {
+   case VE_SUCCESS:
+      return "VE_SUCCESS";
+   case VE_ERROR_OUT_OF_MEMORY:
+      return "VE_ERROR_OUT_OF_MEMORY";
+   case VE_ERROR_DEVICE_LOST:
+      return "VE_ERROR_DEVICE_LOST";
+   case VE_ERROR_INVALID_PARAMETER:
+      return "VE_ERROR_INVALID_PARAMETER";
+   case VE_ERROR_FEATURE_NOT_SUPPORTED:
+      return "VE_ERROR_FEATURE_NOT_SUPPORTED";
+   case VE_ERROR_UNSUPPORTED:
+      return "VE_ERROR_UNSUPPORTED";
+   case VE_ERROR_SHADER_COMPILATION_FAILED:
+      return "VE_ERROR_SHADER_COMPILATION_FAILED";
+   case VE_ERROR_SWAPCHAIN_OUT_OF_DATE:
+      return "VE_ERROR_SWAPCHAIN_OUT_OF_DATE";
+   case VE_ERROR_TRANSFER_FAILED:
+      return "VE_ERROR_TRANSFER_FAILED";
+   case VE_ERROR_NOT_FOUND:
+      return "VE_ERROR_NOT_FOUND";
+   case VE_ERROR_NOT_INITIALIZED:
+      return "VE_ERROR_NOT_INITIALIZED";
+   case VE_ERROR_UNKNOWN:
+      return "VE_ERROR_UNKNOWN";
+   default:
+      return "VE_ERROR_<unknown>";
    }
 }
 
@@ -568,21 +636,28 @@ static bool findQueueFamilies(VkPhysicalDevice physicalDevice, VEQueueFamilies *
 
 uint32_t veGetVersion(void) { return VULKEASE_API_VERSION_2_0; }
 
-VEContext *veCreateContext(const char *applicationName,
-                           const char *const *additionalInstanceExtensions,
-                           uint32_t additionalInstanceExtensionCount)
+VEResult veCreateContext(const char *applicationName,
+                         const char *const *additionalInstanceExtensions,
+                         uint32_t additionalInstanceExtensionCount,
+                         VEContext **outContext)
 {
+   if (!outContext)
+   {
+      veSetError("outContext cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    if (!applicationName)
    {
       veSetError("Application name cannot be NULL");
-      return NULL;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEContextInternal *context = static_cast<VEContextInternal *>(calloc(1, sizeof(VEContextInternal)));
    if (!context)
    {
       veSetError("Failed to allocate context memory");
-      return NULL;
+      return VE_ERROR_OUT_OF_MEMORY;
    }
 
    // Build extension list for Vulkan 1.4
@@ -620,7 +695,7 @@ VEContext *veCreateContext(const char *applicationName,
       veSetError("Missing required Vulkan instance extensions. Ensure your GPU drivers "
                  "support Vulkan 1.4+ and platform surface extensions are available.");
       free(context);
-      return NULL;
+      return VE_ERROR_FEATURE_NOT_SUPPORTED;
    }
 
    bool validationEnabled = false;
@@ -661,7 +736,7 @@ VEContext *veCreateContext(const char *applicationName,
    {
       veSetError("Failed to create Vulkan instance (VkResult: %d)", result);
       free(context);
-      return NULL;
+      return VE_ERROR_UNKNOWN;
    }
 
    // Validate that the instance actually supports Vulkan 1.4+ - no fallbacks
@@ -674,7 +749,7 @@ VEContext *veCreateContext(const char *applicationName,
                     VK_VERSION_MINOR(apiVersion), VK_VERSION_PATCH(apiVersion));
          vkDestroyInstance(context->instance, NULL);
          free(context);
-         return NULL;
+         return VE_ERROR_FEATURE_NOT_SUPPORTED;
       }
    }
 
@@ -686,7 +761,7 @@ VEContext *veCreateContext(const char *applicationName,
                  "Ensure your GPU drivers support Vulkan 1.4.");
       vkDestroyInstance(context->instance, NULL);
       free(context);
-      return NULL;
+      return VE_ERROR_FEATURE_NOT_SUPPORTED;
    }
 
    initializeInstanceFunctions(context->instance);
@@ -701,21 +776,33 @@ VEContext *veCreateContext(const char *applicationName,
                                     VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
                                     VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
       debugCreateInfo.pfnUserCallback = debugCallback;
+      debugCreateInfo.pUserData = context;
 
       veFuncs.vkCreateDebugUtilsMessengerEXT(context->instance, &debugCreateInfo, NULL, &context->debugMessenger);
 
       context->validationEnabled = true;
    }
 
-   return (VEContext *)context;
+   // Best-effort message routing target for internal diagnostics.
+   g_messageContext.store(context);
+
+   *outContext = (VEContext *)context;
+   return VE_SUCCESS;
 }
 
-void veDestroyContext(VEContext *context)
+VEResult veDestroyContext(VEContext *context)
 {
    if (!context)
-      return;
+   {
+      veSetError("Context cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VEContextInternal *internal = (VEContextInternal *)context;
+
+   // Clear message routing if this was the active context.
+   VEContextInternal *expected = internal;
+   (void)g_messageContext.compare_exchange_strong(expected, nullptr);
 
    if (internal->debugMessenger)
    {
@@ -728,21 +815,69 @@ void veDestroyContext(VEContext *context)
    }
 
    free(internal);
+   return VE_SUCCESS;
+}
+
+VEResult veSetMessageCallback(VEContext *context, const VEMessageCallbackDesc *desc)
+{
+   if (!context)
+   {
+      veSetError("Context cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VEContextInternal *internal = (VEContextInternal *)context;
+   if (!desc || !desc->callback)
+   {
+      internal->messageCallback = nullptr;
+      internal->messageCallbackUserData = nullptr;
+      return VE_SUCCESS;
+   }
+
+   internal->messageCallback = desc->callback;
+   internal->messageCallbackUserData = desc->userData;
+   return VE_SUCCESS;
+}
+
+VEResult veSetMinMessageSeverity(VEContext *context, VEMessageSeverity minSeverity)
+{
+   if (!context)
+   {
+      veSetError("Context cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   if (minSeverity < VE_MESSAGE_SEVERITY_VERBOSE || minSeverity > VE_MESSAGE_SEVERITY_ERROR)
+   {
+      veSetError("Invalid message severity");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VEContextInternal *internal = (VEContextInternal *)context;
+   internal->messageCallbackMinSeverity = minSeverity;
+   return VE_SUCCESS;
 }
 
 // =============================================================================
 // Device Management Implementation
 // =============================================================================
 
-VEDevice *veCreateDevice(VEContext *context,
-                         VkPhysicalDevice preferredDevice,
-                         const char *const *additionalDeviceExtensions,
-                         uint32_t additionalDeviceExtensionCount)
+VEResult veCreateDevice(VEContext *context,
+                        VkPhysicalDevice preferredDevice,
+                        const char *const *additionalDeviceExtensions,
+                        uint32_t additionalDeviceExtensionCount,
+                        VEDevice **outDevice)
 {
+   if (!outDevice)
+   {
+      veSetError("outDevice cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    if (!context)
    {
       veSetError("Context cannot be NULL");
-      return NULL;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEContextInternal *contextInternal = (VEContextInternal *)context;
@@ -751,7 +886,7 @@ VEDevice *veCreateDevice(VEContext *context,
    if (!device)
    {
       veSetError("Failed to allocate device memory");
-      return NULL;
+      return VE_ERROR_OUT_OF_MEMORY;
    }
 
    device->context = contextInternal;
@@ -771,7 +906,7 @@ VEDevice *veCreateDevice(VEContext *context,
       {
          veSetError("No Vulkan-capable GPUs found");
          delete device;
-         return NULL;
+         return VE_ERROR_FEATURE_NOT_SUPPORTED;
       }
 
       device->physicalDevice = selectBestPhysicalDevice(contextInternal);
@@ -781,7 +916,7 @@ VEDevice *veCreateDevice(VEContext *context,
    {
       veSetError("No suitable Vulkan-capable GPU found");
       delete device;
-      return NULL;
+      return VE_ERROR_FEATURE_NOT_SUPPORTED;
    }
 
    vkGetPhysicalDeviceProperties(device->physicalDevice, &device->deviceProperties);
@@ -792,7 +927,7 @@ VEDevice *veCreateDevice(VEContext *context,
    {
       veSetError("Failed to find suitable queue families");
       delete device;
-      return NULL;
+      return VE_ERROR_UNKNOWN;
    }
 
    // Create queue create infos
@@ -915,7 +1050,7 @@ VEDevice *veCreateDevice(VEContext *context,
    {
       veSetError("One or more requested device extensions are not supported");
       delete device;
-      return NULL;
+      return VE_ERROR_FEATURE_NOT_SUPPORTED;
    }
 
    deviceCreateInfo.enabledExtensionCount = allDeviceExtensionCount;
@@ -932,7 +1067,7 @@ VEDevice *veCreateDevice(VEContext *context,
    {
       veSetError("Failed to create Vulkan 1.4 logical device (VkResult: %d)", result);
       delete device;
-      return NULL;
+      return VE_ERROR_DEVICE_LOST;
    }
 
    initializeDeviceFunctions(device->device);
@@ -948,7 +1083,7 @@ VEDevice *veCreateDevice(VEContext *context,
    {
       vkDestroyDevice(device->device, NULL);
       delete device;
-      return NULL;
+      return vmaResult;
    }
 
    veInitializeQueueLocks(device);
@@ -957,7 +1092,7 @@ VEDevice *veCreateDevice(VEContext *context,
       veSetError("Failed to initialize device queue locks");
       vkDestroyDevice(device->device, NULL);
       delete device;
-      return NULL;
+      return VE_ERROR_UNKNOWN;
    }
 
    // Initialize bindless descriptors
@@ -967,7 +1102,7 @@ VEDevice *veCreateDevice(VEContext *context,
       device->cleanupVma();
       vkDestroyDevice(device->device, NULL);
       delete device;
-      return NULL;
+      return bindlessResult;
    }
    if (device->textureDescriptorSetLayout == VK_NULL_HANDLE || device->samplerDescriptorSetLayout == VK_NULL_HANDLE ||
        device->textureDescriptorSet == VK_NULL_HANDLE || device->samplerDescriptorSet == VK_NULL_HANDLE)
@@ -976,7 +1111,7 @@ VEDevice *veCreateDevice(VEContext *context,
       device->cleanupVma();
       vkDestroyDevice(device->device, NULL);
       delete device;
-      return NULL;
+      return VE_ERROR_UNKNOWN;
    }
 
    // Initialize config arrays
@@ -1024,7 +1159,7 @@ VEDevice *veCreateDevice(VEContext *context,
    {
       veSetError("Failed to create graphics pipeline layout (VkResult: %d)", result);
       delete device;
-      return NULL;
+      return VE_ERROR_UNKNOWN;
    }
 
    // Compute pipeline layout with 256-byte push constants
@@ -1045,7 +1180,7 @@ VEDevice *veCreateDevice(VEContext *context,
    {
       veSetError("Failed to create compute pipeline layout (VkResult: %d)", result);
       delete device;
-      return NULL;
+      return VE_ERROR_UNKNOWN;
    }
 
    // Initialize deferred deletion queue
@@ -1054,16 +1189,20 @@ VEDevice *veCreateDevice(VEContext *context,
    {
       veSetError("Failed to allocate deferred deletion queue");
       delete device;
-      return NULL;
+      return VE_ERROR_OUT_OF_MEMORY;
    }
 
-   return (VEDevice *)device;
+   *outDevice = (VEDevice *)device;
+   return VE_SUCCESS;
 }
 
-void veDestroyDevice(VEDevice *device)
+VEResult veDestroyDevice(VEDevice *device)
 {
    if (!device)
-      return;
+   {
+      veSetError("Device cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VEDeviceInternal *internal = (VEDeviceInternal *)device;
 
@@ -1103,6 +1242,7 @@ void veDestroyDevice(VEDevice *device)
    veShutdownShaderHotReload(internal);
 
    delete internal;
+   return VE_SUCCESS;
 }
 
 VEResult veDeviceWaitIdle(VEDevice *device)
@@ -1213,14 +1353,17 @@ bool veIsInstanceExtensionAvailable(const char *extensionName)
 {
    if (!extensionName)
    {
+      veSetError("veIsInstanceExtensionAvailable: extensionName cannot be NULL");
       return false;
    }
 
-   uint32_t extensionCount;
-   vkEnumerateInstanceExtensionProperties(NULL, &extensionCount, NULL);
+   uint32_t extensionCount = 0;
+   if (vkEnumerateInstanceExtensionProperties(NULL, &extensionCount, NULL) != VK_SUCCESS)
+      return false;
 
    std::vector<VkExtensionProperties> extensions(extensionCount);
-   vkEnumerateInstanceExtensionProperties(NULL, &extensionCount, extensions.data());
+   if (vkEnumerateInstanceExtensionProperties(NULL, &extensionCount, extensions.data()) != VK_SUCCESS)
+      return false;
 
    for (uint32_t i = 0; i < extensionCount; i++)
    {
@@ -1237,6 +1380,7 @@ bool veIsDeviceExtensionAvailable(VEContext *context, const char *extensionName)
 {
    if (!context || !extensionName)
    {
+      veSetError("veIsDeviceExtensionAvailable: context and extensionName cannot be NULL");
       return false;
    }
 
@@ -1244,23 +1388,27 @@ bool veIsDeviceExtensionAvailable(VEContext *context, const char *extensionName)
 
    // Query all physical devices and check if any support the extension
    uint32_t deviceCount = 0;
-   vkEnumeratePhysicalDevices(contextInternal->instance, &deviceCount, NULL);
+   if (vkEnumeratePhysicalDevices(contextInternal->instance, &deviceCount, NULL) != VK_SUCCESS)
+      return false;
    if (deviceCount == 0)
    {
       return false;
    }
 
    std::vector<VkPhysicalDevice> devices(deviceCount);
-   vkEnumeratePhysicalDevices(contextInternal->instance, &deviceCount, devices.data());
+   if (vkEnumeratePhysicalDevices(contextInternal->instance, &deviceCount, devices.data()) != VK_SUCCESS)
+      return false;
 
    // Check each physical device for the extension
    for (uint32_t d = 0; d < deviceCount; d++)
    {
-      uint32_t extensionCount;
-      vkEnumerateDeviceExtensionProperties(devices[d], NULL, &extensionCount, NULL);
+      uint32_t extensionCount = 0;
+      if (vkEnumerateDeviceExtensionProperties(devices[d], NULL, &extensionCount, NULL) != VK_SUCCESS)
+         continue;
 
       std::vector<VkExtensionProperties> extensions(extensionCount);
-      vkEnumerateDeviceExtensionProperties(devices[d], NULL, &extensionCount, extensions.data());
+      if (vkEnumerateDeviceExtensionProperties(devices[d], NULL, &extensionCount, extensions.data()) != VK_SUCCESS)
+         continue;
 
       for (uint32_t i = 0; i < extensionCount; i++)
       {
@@ -1281,7 +1429,10 @@ bool veIsDeviceExtensionAvailable(VEContext *context, const char *extensionName)
 const char *veGetDeviceName(VEDevice *device)
 {
    if (!device)
+   {
+      veSetError("veGetDeviceName: device cannot be NULL");
       return "Unknown";
+   }
    VEDeviceInternal *internal = (VEDeviceInternal *)device;
    return internal->deviceProperties.deviceName;
 }
@@ -1289,10 +1440,13 @@ const char *veGetDeviceName(VEDevice *device)
 const char *veGetDriverVersion(VEDevice *device)
 {
    if (!device)
+   {
+      veSetError("veGetDriverVersion: device cannot be NULL");
       return "Unknown";
+   }
    VEDeviceInternal *internal = (VEDeviceInternal *)device;
 
-   static char versionString[64];
+   static thread_local char versionString[64];
    snprintf(versionString, sizeof(versionString), "%u.%u.%u",
             VK_VERSION_MAJOR(internal->deviceProperties.driverVersion),
             VK_VERSION_MINOR(internal->deviceProperties.driverVersion),
@@ -1304,7 +1458,10 @@ const char *veGetDriverVersion(VEDevice *device)
 uint32_t veGetVulkanVersion(VEDevice *device)
 {
    if (!device)
+   {
+      veSetError("veGetVulkanVersion: device cannot be NULL");
       return 0;
+   }
    VEDeviceInternal *internal = (VEDeviceInternal *)device;
    return internal->deviceProperties.apiVersion;
 }
@@ -1312,7 +1469,10 @@ uint32_t veGetVulkanVersion(VEDevice *device)
 VkInstance veGetVkInstance(VEContext *context)
 {
    if (!context)
+   {
+      veSetError("veGetVkInstance: context cannot be NULL");
       return VK_NULL_HANDLE;
+   }
    VEContextInternal *internal = (VEContextInternal *)context;
    return internal->instance;
 }
@@ -1320,7 +1480,10 @@ VkInstance veGetVkInstance(VEContext *context)
 VkPhysicalDevice veGetVkPhysicalDevice(VEDevice *device)
 {
    if (!device)
+   {
+      veSetError("veGetVkPhysicalDevice: device cannot be NULL");
       return VK_NULL_HANDLE;
+   }
    VEDeviceInternal *internal = (VEDeviceInternal *)device;
    return internal->physicalDevice;
 }
@@ -1328,7 +1491,10 @@ VkPhysicalDevice veGetVkPhysicalDevice(VEDevice *device)
 VkDevice veGetVkDevice(VEDevice *device)
 {
    if (!device)
+   {
+      veSetError("veGetVkDevice: device cannot be NULL");
       return VK_NULL_HANDLE;
+   }
    VEDeviceInternal *internal = (VEDeviceInternal *)device;
    return internal->device;
 }
@@ -1336,7 +1502,10 @@ VkDevice veGetVkDevice(VEDevice *device)
 VkQueue veGetVkGraphicsQueue(VEDevice *device)
 {
    if (!device)
+   {
+      veSetError("veGetVkGraphicsQueue: device cannot be NULL");
       return VK_NULL_HANDLE;
+   }
    VEDeviceInternal *internal = (VEDeviceInternal *)device;
    return internal->graphicsQueue;
 }
@@ -1344,7 +1513,10 @@ VkQueue veGetVkGraphicsQueue(VEDevice *device)
 VkQueue veGetVkComputeQueue(VEDevice *device)
 {
    if (!device)
+   {
+      veSetError("veGetVkComputeQueue: device cannot be NULL");
       return VK_NULL_HANDLE;
+   }
    VEDeviceInternal *internal = (VEDeviceInternal *)device;
    return internal->computeQueue;
 }
@@ -1352,7 +1524,10 @@ VkQueue veGetVkComputeQueue(VEDevice *device)
 VkQueue veGetVkTransferQueue(VEDevice *device)
 {
    if (!device)
+   {
+      veSetError("veGetVkTransferQueue: device cannot be NULL");
       return VK_NULL_HANDLE;
+   }
    VEDeviceInternal *internal = (VEDeviceInternal *)device;
    return internal->transferQueue;
 }
@@ -1360,9 +1535,112 @@ VkQueue veGetVkTransferQueue(VEDevice *device)
 VkFence veGetVkCommandBufferFence(VECommandBuffer *cmd)
 {
    if (!cmd)
+   {
+      veSetError("veGetVkCommandBufferFence: cmd cannot be NULL");
       return VK_NULL_HANDLE;
+   }
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
    return internal->currentFence();
+}
+
+VkBuffer veGetVkBufferFromAddress(VEDevice *device, VEBufferAddress address)
+{
+   if (address == VE_INVALID_ADDRESS)
+   {
+      veSetError("veGetVkBufferFromAddress: address is invalid");
+      return VK_NULL_HANDLE;
+   }
+
+   if (!device)
+   {
+      veSetError("veGetVkBufferFromAddress: device cannot be NULL");
+      return VK_NULL_HANDLE;
+   }
+
+   VEDeviceInternal *internal = (VEDeviceInternal *)device;
+   VkBuffer buffer = internal->getVkBufferFromAddress(address);
+   if (buffer == VK_NULL_HANDLE)
+   {
+      veSetError("veGetVkBufferFromAddress: no VkBuffer found for address=%llu", (unsigned long long)address);
+      return VK_NULL_HANDLE;
+   }
+
+   return buffer;
+}
+
+VkImage veGetVkImageFromTexture(VEDevice *device, VETextureIndex texture)
+{
+   if (texture == VE_INVALID_TEXTURE_INDEX)
+   {
+      veSetError("veGetVkImageFromTexture: texture index is invalid");
+      return VK_NULL_HANDLE;
+   }
+
+   if (!device)
+   {
+      veSetError("veGetVkImageFromTexture: device cannot be NULL");
+      return VK_NULL_HANDLE;
+   }
+
+   VEDeviceInternal *internal = (VEDeviceInternal *)device;
+   VETextureInternal *tex = internal->getTexture(texture);
+   if (!tex || !tex->isValid || tex->image == VK_NULL_HANDLE)
+   {
+      veSetError("veGetVkImageFromTexture: no VkImage found for texture index=%u", texture);
+      return VK_NULL_HANDLE;
+   }
+
+   return tex->image;
+}
+
+VkImageView veGetVkImageViewFromTexture(VEDevice *device, VETextureIndex texture)
+{
+   if (texture == VE_INVALID_TEXTURE_INDEX)
+   {
+      veSetError("veGetVkImageViewFromTexture: texture index is invalid");
+      return VK_NULL_HANDLE;
+   }
+
+   if (!device)
+   {
+      veSetError("veGetVkImageViewFromTexture: device cannot be NULL");
+      return VK_NULL_HANDLE;
+   }
+
+   VEDeviceInternal *internal = (VEDeviceInternal *)device;
+   VETextureInternal *tex = internal->getTexture(texture);
+   if (!tex || !tex->isValid || tex->imageView == VK_NULL_HANDLE)
+   {
+      veSetError("veGetVkImageViewFromTexture: no VkImageView found for texture index=%u", texture);
+      return VK_NULL_HANDLE;
+   }
+
+   return tex->imageView;
+}
+
+VkSampler veGetVkSamplerFromIndex(VEDevice *device, VESamplerIndex sampler)
+{
+   if (sampler == VE_INVALID_SAMPLER_INDEX)
+   {
+      veSetError("veGetVkSamplerFromIndex: sampler index is invalid");
+      return VK_NULL_HANDLE;
+   }
+
+   if (!device)
+   {
+      veSetError("veGetVkSamplerFromIndex: device cannot be NULL");
+      return VK_NULL_HANDLE;
+   }
+
+   VEDeviceInternal *internal = (VEDeviceInternal *)device;
+   VESamplerInternal *s = internal->getSampler(sampler);
+   if (!s || !s->isValid || s->sampler == VK_NULL_HANDLE)
+   {
+      veSetError("veGetVkSamplerFromIndex: no VkSampler found for sampler index=%u", sampler);
+      return VK_NULL_HANDLE;
+   }
+
+   return s->sampler;
 }
 
 #define GET_INSTANCE_FUNC(extName)                                                                                     \

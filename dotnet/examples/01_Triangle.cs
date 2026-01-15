@@ -122,7 +122,9 @@ namespace VulkEaseExamples
 
         private void RebuildRenderingInfo()
         {
-            VulkEase.VulkEase.GetRenderTargetSize(_renderTarget, out uint width, out uint height);
+            var extent = VulkEase.VulkEase.GetRenderTargetSize(_renderTarget);
+            uint width = extent.width;
+            uint height = extent.height;
             
             _renderingInfo = new VERenderingInfo(width, height);
             _renderingInfo.ColorAttachments.Add(new VERenderingAttachment
@@ -199,11 +201,6 @@ namespace VulkEaseExamples
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to initialize VulkEase: {ex.Message}");
-                string? lastError = VulkEase.VulkEase.GetLastError();
-                if (lastError != null)
-                {
-                    Console.Error.WriteLine($"VulkEase Error: {lastError}");
-                }
                 return false;
             }
         }
@@ -261,11 +258,6 @@ namespace VulkEaseExamples
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to create shaders: {ex.Message}");
-                string? lastError = VulkEase.VulkEase.GetLastError();
-                if (lastError != null)
-                {
-                    Console.Error.WriteLine($"VulkEase Error: {lastError}");
-                }
                 return false;
             }
         }
@@ -311,11 +303,6 @@ namespace VulkEaseExamples
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to create buffers: {ex.Message}");
-                string? lastError = VulkEase.VulkEase.GetLastError();
-                if (lastError != null)
-                {
-                    Console.Error.WriteLine($"VulkEase Error: {lastError}");
-                }
                 return false;
             }
         }
@@ -334,7 +321,9 @@ namespace VulkEaseExamples
                 // Create rotation matrix for spinning animation
                 var rotationMatrix = CreateRotationMatrix(rotationAngle);
 
-                VulkEase.VulkEase.GetRenderTargetSize(_renderTarget, out uint width, out uint height);
+                var extent = VulkEase.VulkEase.GetRenderTargetSize(_renderTarget);
+                uint width = extent.width;
+                uint height = extent.height;
 
                 // Begin rendering to render target (transitions handled automatically)
                 VulkEase.VulkEase.BeginRendering(cmd, _renderingInfo);
@@ -370,7 +359,9 @@ namespace VulkEaseExamples
 
                 if (blitResult == VEResult.VE_ERROR_SWAPCHAIN_OUT_OF_DATE)
                 {
-                    VulkEase.VulkEase.GetSwapchainSize(_swapchain, out uint swWidth, out uint swHeight);
+                    var swapExtent = VulkEase.VulkEase.GetSwapchainSize(_swapchain);
+                    uint swWidth = swapExtent.width;
+                    uint swHeight = swapExtent.height;
                     VulkEase.VulkEase.ResizeSwapchain(_swapchain, swWidth, swHeight);
                     VulkEase.VulkEase.ResizeRenderTarget(_renderTarget, swWidth, swHeight);
                     RebuildRenderingInfo();
@@ -382,7 +373,9 @@ namespace VulkEaseExamples
 
                 if (result == VEResult.VE_ERROR_SWAPCHAIN_OUT_OF_DATE)
                 {
-                    VulkEase.VulkEase.GetSwapchainSize(_swapchain, out uint swWidth, out uint swHeight);
+                    var swapExtent = VulkEase.VulkEase.GetSwapchainSize(_swapchain);
+                    uint swWidth = swapExtent.width;
+                    uint swHeight = swapExtent.height;
                     VulkEase.VulkEase.ResizeSwapchain(_swapchain, swWidth, swHeight);
                     VulkEase.VulkEase.ResizeRenderTarget(_renderTarget, swWidth, swHeight);
                     RebuildRenderingInfo();

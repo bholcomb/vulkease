@@ -228,12 +228,18 @@ static void destroyVertexInputConfigData(VEVertexInputConfig &config)
    config.patchControlPoints = 0;
 }
 
-VERenderConfig *veCreateRenderConfig(VEDevice *device, const VERenderConfigDesc *desc)
+VEResult veCreateRenderConfig(VEDevice *device, const VERenderConfigDesc *desc, VERenderConfig **outConfig)
 {
+   if (!outConfig)
+   {
+      veSetError("outConfig cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    if (!device || !desc)
    {
       veSetError("Invalid parameters for render config creation");
-      return NULL;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
@@ -252,7 +258,7 @@ VERenderConfig *veCreateRenderConfig(VEDevice *device, const VERenderConfigDesc 
    if (index == UINT32_MAX)
    {
       veSetError("No free render config slots available");
-      return NULL;
+      return VE_ERROR_OUT_OF_MEMORY;
    }
 
    // reset the render config
@@ -260,12 +266,50 @@ VERenderConfig *veCreateRenderConfig(VEDevice *device, const VERenderConfigDesc 
    config->configTypes = desc->configTypes;
 
    // Copy configurations or use defaults
-   config->rasterConfig = desc->rasterConfig ? *desc->rasterConfig : veDefaultRasterConfig();
-   config->depthConfig = desc->depthConfig ? *desc->depthConfig : veDefaultDepthConfig();
-   config->blendConfig = desc->blendConfig ? *desc->blendConfig : veDefaultOpaqueBlendConfig();
-   config->multisampleConfig = desc->multisampleConfig ? *desc->multisampleConfig : veDefaultMultisampleConfig();
-   config->vertexInputConfig =
-       desc->vertexInputConfig ? copyVertexInputConfig(desc->vertexInputConfig) : veDefaultVertexInputConfig();
+   if (desc->rasterConfig)
+   {
+      config->rasterConfig = *desc->rasterConfig;
+   }
+   else
+   {
+      config->rasterConfig = veDefaultRasterConfig();
+   }
+
+   if (desc->depthConfig)
+   {
+      config->depthConfig = *desc->depthConfig;
+   }
+   else
+   {
+      config->depthConfig = veDefaultDepthConfig();
+   }
+
+   if (desc->blendConfig)
+   {
+      config->blendConfig = *desc->blendConfig;
+   }
+   else
+   {
+      config->blendConfig = veDefaultOpaqueBlendConfig();
+   }
+
+   if (desc->multisampleConfig)
+   {
+      config->multisampleConfig = *desc->multisampleConfig;
+   }
+   else
+   {
+      config->multisampleConfig = veDefaultMultisampleConfig();
+   }
+
+   if (desc->vertexInputConfig)
+   {
+      config->vertexInputConfig = copyVertexInputConfig(desc->vertexInputConfig);
+   }
+   else
+   {
+      config->vertexInputConfig = veDefaultVertexInputConfig();
+   }
    config->viewport = desc->viewportConfig ? *desc->viewportConfig : veDefaultViewportConfig();
    config->scissor = desc->scissorConfig ? *desc->scissorConfig : veDefaultScissorConfig();
 
@@ -289,38 +333,54 @@ VERenderConfig *veCreateRenderConfig(VEDevice *device, const VERenderConfigDesc 
    config->isValid = true;
    deviceInternal->renderConfigCount++;
 
-   return (VERenderConfig *)config;
+   *outConfig = (VERenderConfig *)config;
+   return VE_SUCCESS;
 }
 
-void veDestroyRenderConfig(VERenderConfig *config)
+VEResult veDestroyRenderConfig(VERenderConfig *config)
 {
    if (!config)
-      return;
+   {
+      veSetError("RenderConfig cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VERenderConfigInternal *internal = (VERenderConfigInternal *)config;
    destroyVertexInputConfigData(internal->vertexInputConfig);
+   if (!internal->device)
+   {
+      veSetError("RenderConfig has no device");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
    internal->device->renderConfigCount--;
 
    memset(internal, 0, sizeof(VERenderConfigInternal));
+   return VE_SUCCESS;
 }
 
 // =============================================================================
 // Vertex Configuration Management
 // =============================================================================
 
-VEVertexConfig *veCreateVertexConfig(VEDevice *device, uint32_t bindingCount, const VEVertexBinding *bindings,
-                                     uint32_t attributeCount, const VEVertexAttribute *attributes)
+VEResult veCreateVertexConfig(VEDevice *device, uint32_t bindingCount, const VEVertexBinding *bindings,
+                              uint32_t attributeCount, const VEVertexAttribute *attributes, VEVertexConfig **outConfig)
 {
+   if (!outConfig)
+   {
+      veSetError("outConfig cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    if (!device)
    {
       veSetError("Device cannot be NULL");
-      return NULL;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    if (bindingCount > 16 || attributeCount > 32)
    {
       veSetError("Too many vertex bindings or attributes");
-      return NULL;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
@@ -339,7 +399,7 @@ VEVertexConfig *veCreateVertexConfig(VEDevice *device, uint32_t bindingCount, co
    if (index == UINT32_MAX)
    {
       veSetError("No free vertex config slots available");
-      return NULL;
+      return VE_ERROR_OUT_OF_MEMORY;
    }
 
    VEVertexConfigInternal *config = &deviceInternal->vertexConfigs[index];
@@ -368,29 +428,49 @@ VEVertexConfig *veCreateVertexConfig(VEDevice *device, uint32_t bindingCount, co
    config->isValid = true;
    deviceInternal->vertexConfigCount++;
 
-   return (VEVertexConfig *)config;
+   *outConfig = (VEVertexConfig *)config;
+   return VE_SUCCESS;
 }
 
-void veDestroyVertexConfig(VEVertexConfig *config)
+VEResult veDestroyVertexConfig(VEVertexConfig *config)
 {
    if (!config)
-      return;
+   {
+      veSetError("VertexConfig cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VEVertexConfigInternal *internal = (VEVertexConfigInternal *)config;
+   if (!internal->device)
+   {
+      veSetError("VertexConfig has no device");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
    internal->device->vertexConfigCount--;
    memset(internal, 0, sizeof(VEVertexConfigInternal));
+   return VE_SUCCESS;
 }
 
 // =============================================================================
 // Common Render Configuration Creators
 // =============================================================================
 
-VERenderConfig *veCreateOpaqueRenderConfig(VEDevice *device, const char *debugName)
+VEResult veCreateOpaqueRenderConfig(VEDevice *device, const char *debugName, VERenderConfig **outConfig)
 {
-   VERasterConfig raster = veDefaultRasterConfig();
-   VEDepthConfig depth = veDefaultDepthConfig();
-   VEBlendConfig blend = veDefaultOpaqueBlendConfig();
-   VEMultisampleConfig multisample = veDefaultMultisampleConfig();
+   if (!outConfig)
+   {
+      veSetError("outConfig cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VERasterConfig raster{};
+   VEDepthConfig depth{};
+   VEBlendConfig blend{};
+   VEMultisampleConfig multisample{};
+   raster = veDefaultRasterConfig();
+   depth = veDefaultDepthConfig();
+   blend = veDefaultOpaqueBlendConfig();
+   multisample = veDefaultMultisampleConfig();
 
    VERenderConfigDesc desc{};
    desc.configTypes = VE_CONFIG_TYPE_RASTERIZATION | VE_CONFIG_TYPE_DEPTH_STENCIL | VE_CONFIG_TYPE_COLOR_BLEND |
@@ -404,16 +484,26 @@ VERenderConfig *veCreateOpaqueRenderConfig(VEDevice *device, const char *debugNa
    desc.shaders = NULL;
    desc.debugName = debugName ? debugName : "OpaqueRenderConfig";
 
-   return veCreateRenderConfig(device, &desc);
+   return veCreateRenderConfig(device, &desc, outConfig);
 }
 
-VERenderConfig *veCreateTransparentRenderConfig(VEDevice *device, const char *debugName)
+VEResult veCreateTransparentRenderConfig(VEDevice *device, const char *debugName, VERenderConfig **outConfig)
 {
-   VERasterConfig raster = veDefaultRasterConfig();
-   VEDepthConfig depth = veDefaultDepthConfig();
+   if (!outConfig)
+   {
+      veSetError("outConfig cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VERasterConfig raster{};
+   VEDepthConfig depth{};
+   VEBlendConfig blend{};
+   VEMultisampleConfig multisample{};
+   raster = veDefaultRasterConfig();
+   depth = veDefaultDepthConfig();
    depth.depthWriteEnable = false; // Don't write depth for transparent objects
-   VEBlendConfig blend = veDefaultAlphaBlendConfig();
-   VEMultisampleConfig multisample = veDefaultMultisampleConfig();
+   blend = veDefaultAlphaBlendConfig();
+   multisample = veDefaultMultisampleConfig();
 
    VERenderConfigDesc desc{};
    desc.configTypes = VE_CONFIG_TYPE_RASTERIZATION | VE_CONFIG_TYPE_DEPTH_STENCIL | VE_CONFIG_TYPE_COLOR_BLEND |
@@ -427,17 +517,27 @@ VERenderConfig *veCreateTransparentRenderConfig(VEDevice *device, const char *de
    desc.shaders = NULL;
    desc.debugName = debugName ? debugName : "TransparentRenderConfig";
 
-   return veCreateRenderConfig(device, &desc);
+   return veCreateRenderConfig(device, &desc, outConfig);
 }
 
-VERenderConfig *veCreateWireframeRenderConfig(VEDevice *device, const char *debugName)
+VEResult veCreateWireframeRenderConfig(VEDevice *device, const char *debugName, VERenderConfig **outConfig)
 {
-   VERasterConfig raster = veDefaultRasterConfig();
+   if (!outConfig)
+   {
+      veSetError("outConfig cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VERasterConfig raster{};
+   VEDepthConfig depth{};
+   VEBlendConfig blend{};
+   VEMultisampleConfig multisample{};
+   raster = veDefaultRasterConfig();
    raster.polygonMode = VK_POLYGON_MODE_LINE;
    raster.lineWidth = 1.0f;
-   VEDepthConfig depth = veDefaultDepthConfig();
-   VEBlendConfig blend = veDefaultOpaqueBlendConfig();
-   VEMultisampleConfig multisample = veDefaultMultisampleConfig();
+   depth = veDefaultDepthConfig();
+   blend = veDefaultOpaqueBlendConfig();
+   multisample = veDefaultMultisampleConfig();
 
    VERenderConfigDesc desc{};
    desc.configTypes = VE_CONFIG_TYPE_RASTERIZATION | VE_CONFIG_TYPE_DEPTH_STENCIL | VE_CONFIG_TYPE_COLOR_BLEND |
@@ -451,24 +551,34 @@ VERenderConfig *veCreateWireframeRenderConfig(VEDevice *device, const char *debu
    desc.shaders = NULL;
    desc.debugName = debugName ? debugName : "WireframeRenderConfig";
 
-   return veCreateRenderConfig(device, &desc);
+   return veCreateRenderConfig(device, &desc, outConfig);
 }
 
-VERenderConfig *veCreateShadowRenderConfig(VEDevice *device, const char *debugName)
+VEResult veCreateShadowRenderConfig(VEDevice *device, const char *debugName, VERenderConfig **outConfig)
 {
-   VERasterConfig raster = veDefaultRasterConfig();
+   if (!outConfig)
+   {
+      veSetError("outConfig cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VERasterConfig raster{};
+   VEDepthConfig depth{};
+   VEBlendConfig blend{};
+   VEMultisampleConfig multisample{};
+   raster = veDefaultRasterConfig();
    raster.cullMode = VK_CULL_MODE_FRONT_BIT; // Reduce peter-panning
    raster.depthBiasEnable = true;
    raster.depthBiasConstantFactor = 2.0f;
    raster.depthBiasSlopeFactor = 1.5f;
 
-   VEDepthConfig depth = veDefaultDepthConfig();
+   depth = veDefaultDepthConfig();
 
-   VEBlendConfig blend = veDefaultOpaqueBlendConfig();
+   blend = veDefaultOpaqueBlendConfig();
    // Shadow maps typically don't need color output
    blend.attachments[0].colorWriteMask = 0;
 
-   VEMultisampleConfig multisample = veDefaultMultisampleConfig();
+   multisample = veDefaultMultisampleConfig();
 
    VERenderConfigDesc desc{};
    desc.configTypes = VE_CONFIG_TYPE_RASTERIZATION | VE_CONFIG_TYPE_DEPTH_STENCIL | VE_CONFIG_TYPE_COLOR_BLEND |
@@ -482,20 +592,30 @@ VERenderConfig *veCreateShadowRenderConfig(VEDevice *device, const char *debugNa
    desc.shaders = NULL;
    desc.debugName = debugName ? debugName : "ShadowRenderConfig";
 
-   return veCreateRenderConfig(device, &desc);
+   return veCreateRenderConfig(device, &desc, outConfig);
 }
 
-VERenderConfig *veCreateUIRenderConfig(VEDevice *device, const char *debugName)
+VEResult veCreateUIRenderConfig(VEDevice *device, const char *debugName, VERenderConfig **outConfig)
 {
-   VERasterConfig raster = veDefaultRasterConfig();
+   if (!outConfig)
+   {
+      veSetError("outConfig cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VERasterConfig raster{};
+   VEDepthConfig depth{};
+   VEBlendConfig blend{};
+   VEMultisampleConfig multisample{};
+   raster = veDefaultRasterConfig();
    raster.cullMode = VK_CULL_MODE_NONE; // UI elements might be double-sided
 
-   VEDepthConfig depth = veDefaultDepthConfig();
+   depth = veDefaultDepthConfig();
    depth.depthTestEnable = false; // UI always on top
    depth.depthWriteEnable = false;
 
-   VEBlendConfig blend = veDefaultAlphaBlendConfig();
-   VEMultisampleConfig multisample = veDefaultMultisampleConfig();
+   blend = veDefaultAlphaBlendConfig();
+   multisample = veDefaultMultisampleConfig();
 
    VERenderConfigDesc desc{};
    desc.configTypes = VE_CONFIG_TYPE_RASTERIZATION | VE_CONFIG_TYPE_DEPTH_STENCIL | VE_CONFIG_TYPE_COLOR_BLEND |
@@ -509,19 +629,25 @@ VERenderConfig *veCreateUIRenderConfig(VEDevice *device, const char *debugName)
    desc.shaders = NULL;
    desc.debugName = debugName ? debugName : "UIRenderConfig";
 
-   return veCreateRenderConfig(device, &desc);
+   return veCreateRenderConfig(device, &desc, outConfig);
 }
 
 // =============================================================================
 // Configuration Composition
 // =============================================================================
 
-VERenderConfig *veCreateConfigVariant(VERenderConfig *baseConfig, const VERenderConfigDesc *overrides)
+VEResult veCreateConfigVariant(VERenderConfig *baseConfig, const VERenderConfigDesc *overrides,
+                               VERenderConfig **outConfig)
 {
+   if (!outConfig)
+   {
+      veSetError("outConfig cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
    if (!baseConfig || !overrides)
    {
       veSetError("Invalid parameters for config variant creation");
-      return NULL;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VERenderConfigInternal *base = (VERenderConfigInternal *)baseConfig;
@@ -538,18 +664,21 @@ VERenderConfig *veCreateConfigVariant(VERenderConfig *baseConfig, const VERender
    desc.shaders = overrides->shaders ? overrides->shaders : base->shaders;
    desc.debugName = overrides->debugName ? overrides->debugName : "ConfigVariant";
 
-   VERenderConfig *ret = veCreateRenderConfig((VEDevice *)base->device, &desc);
-
-   return ret;
+   return veCreateRenderConfig((VEDevice *)base->device, &desc, outConfig);
 }
 
-VERenderConfig *veMergeRenderConfigs(VEDevice *device, uint32_t configCount, VERenderConfig *const *configs,
-                                     const char *debugName)
+VEResult veMergeRenderConfigs(VEDevice *device, uint32_t configCount, VERenderConfig *const *configs,
+                              const char *debugName, VERenderConfig **outConfig)
 {
+   if (!outConfig)
+   {
+      veSetError("outConfig cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
    if (!device || configCount == 0 || !configs)
    {
       veSetError("Invalid parameters for config merging");
-      return NULL;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
@@ -582,13 +711,13 @@ VERenderConfig *veMergeRenderConfigs(VEDevice *device, uint32_t configCount, VER
       if (!internal || !internal->isValid)
       {
          veSetError("Render config %u is invalid", i);
-         return NULL;
+         return VE_ERROR_INVALID_PARAMETER;
       }
 
       if (internal->device != deviceInternal)
       {
          veSetError("Render config device mismatch during merge");
-         return NULL;
+         return VE_ERROR_INVALID_PARAMETER;
       }
 
       if (internal->configTypes & VE_CONFIG_TYPE_VIEWPORT)
@@ -664,22 +793,27 @@ VERenderConfig *veMergeRenderConfigs(VEDevice *device, uint32_t configCount, VER
 
    desc.debugName = debugName ? debugName : "MergedRenderConfig";
 
-   return veCreateRenderConfig(device, &desc);
+   return veCreateRenderConfig(device, &desc, outConfig);
 }
 
-VERenderConfig *veCloneRenderConfig(VERenderConfig *config, const char *debugName)
+VEResult veCloneRenderConfig(VERenderConfig *config, const char *debugName, VERenderConfig **outConfig)
 {
+   if (!outConfig)
+   {
+      veSetError("outConfig cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
    if (!config)
    {
       veSetError("Config cannot be NULL");
-      return NULL;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VERenderConfigInternal *internal = (VERenderConfigInternal *)config;
    if (!internal->isValid || !internal->device)
    {
       veSetError("Cannot clone invalid render config");
-      return NULL;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VERenderConfigDesc desc{};
@@ -700,5 +834,5 @@ VERenderConfig *veCloneRenderConfig(VERenderConfig *config, const char *debugNam
 
    desc.debugName = debugName ? debugName : internal->debugName;
 
-   return veCreateRenderConfig((VEDevice *)internal->device, &desc);
+   return veCreateRenderConfig((VEDevice *)internal->device, &desc, outConfig);
 }

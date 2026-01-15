@@ -74,8 +74,9 @@ static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
             
             // Rebuild rendering info with new size and texture handle
             g_renderingInfo = veCreateRenderingInfo((uint32_t)width, (uint32_t)height);
-            veRenderingAddColorAttachment(&g_renderingInfo, 
-                                           veGetRenderTargetColorTexture(g_renderTarget),
+            VETextureIndex rtColor = veGetRenderTargetColorTexture(g_renderTarget);
+            (void)veRenderingAddColorAttachment(&g_renderingInfo, 
+                                           rtColor,
                                            VK_ATTACHMENT_LOAD_OP_CLEAR,
                                            (VEColor){0.1f, 0.1f, 0.1f, 1.0f});
         }
@@ -99,18 +100,16 @@ static bool initGLFW() {
 
 static bool initVulkEase(GLFWwindow* window) {
     // Create context
-    g_context = veCreateContext("VulkEase Spinning Triangle", NULL, 0);
-    if (!g_context) {
-        fprintf(stderr, "Failed to create VulkEase context: %s\n", veGetLastError());
+    if (veCreateContext("VulkEase Spinning Triangle", NULL, 0, &g_context) != VE_SUCCESS || !g_context) {
+        fprintf(stderr, "Failed to create VulkEase context\n");
         return false;
     }
     
     printf("VulkEase initialized successfully\n");
     
     // Create device (VK_NULL_HANDLE = auto-select best GPU)
-    g_device = veCreateDevice(g_context, VK_NULL_HANDLE, NULL, 0);
-    if (!g_device) {
-        fprintf(stderr, "Failed to create VulkEase device: %s\n", veGetLastError());
+    if (veCreateDevice(g_context, VK_NULL_HANDLE, NULL, 0, &g_device) != VE_SUCCESS || !g_device) {
+        fprintf(stderr, "Failed to create VulkEase device\n");
         return false;
     }
     
@@ -149,10 +148,8 @@ static bool initVulkEase(GLFWwindow* window) {
     }
 #endif
 
-    g_swapchain = veCreateSwapchain(g_device, &swapchainDesc);    
-    
-    if (!g_swapchain) {
-        fprintf(stderr, "Failed to create swapchain: %s\n", veGetLastError());
+    if (veCreateSwapchain(g_device, &swapchainDesc, &g_swapchain) != VE_SUCCESS || !g_swapchain) {
+        fprintf(stderr, "Failed to create swapchain\n");
         return false;
     }
     
@@ -168,16 +165,16 @@ static bool initVulkEase(GLFWwindow* window) {
     rtDesc.hasResolveTarget = false;
     rtDesc.debugName = "TriangleRenderTarget";
 
-    g_renderTarget = veCreateRenderTarget(g_device, &rtDesc);
-    if (!g_renderTarget) {
-        fprintf(stderr, "Failed to create render target: %s\n", veGetLastError());
+    if (veCreateRenderTarget(g_device, &rtDesc, &g_renderTarget) != VE_SUCCESS || !g_renderTarget) {
+        fprintf(stderr, "Failed to create render target\n");
         return false;
     }
     
     // Build rendering info once (reused every frame)
     g_renderingInfo = veCreateRenderingInfo((uint32_t)win_width, (uint32_t)win_height);
-    veRenderingAddColorAttachment(&g_renderingInfo, 
-                                   veGetRenderTargetColorTexture(g_renderTarget),
+    VETextureIndex rtColor = veGetRenderTargetColorTexture(g_renderTarget);
+    (void)veRenderingAddColorAttachment(&g_renderingInfo, 
+                                   rtColor,
                                    VK_ATTACHMENT_LOAD_OP_CLEAR,
                                    (VEColor){0.1f, 0.1f, 0.1f, 1.0f}); // Dark gray background
 
@@ -191,23 +188,26 @@ static bool initVulkEase(GLFWwindow* window) {
 
 static bool createShaders() {
     // Load vertex shader from compiled SPIR-V file
-    g_vertexShader = veLoadShaderFromFile(g_device, VERTEX_SHADER_PATH, VK_SHADER_STAGE_VERTEX_BIT,
-                                         "main", "SpinningTriangleVertex");
-    if (!g_vertexShader) {
-        fprintf(stderr, "Failed to load vertex shader: %s\n", veGetLastError());
+    if (veLoadShaderFromFile(g_device, VERTEX_SHADER_PATH, VK_SHADER_STAGE_VERTEX_BIT, "main",
+                             "SpinningTriangleVertex", &g_vertexShader) != VE_SUCCESS ||
+        !g_vertexShader) {
+        fprintf(stderr, "Failed to load vertex shader\n");
         return false;
     }
     
     // Load fragment shader from compiled SPIR-V file
-    g_fragmentShader = veLoadShaderFromFile(g_device, FRAGMENT_SHADER_PATH, VK_SHADER_STAGE_FRAGMENT_BIT,
-                                           "main", "SpinningTriangleFragment");
-    if (!g_fragmentShader) {
-        fprintf(stderr, "Failed to load fragment shader: %s\n", veGetLastError());
+    if (veLoadShaderFromFile(g_device, FRAGMENT_SHADER_PATH, VK_SHADER_STAGE_FRAGMENT_BIT, "main",
+                             "SpinningTriangleFragment", &g_fragmentShader) != VE_SUCCESS ||
+        !g_fragmentShader) {
+        fprintf(stderr, "Failed to load fragment shader\n");
         return false;
     }
 
     //create a default render config
-    g_renderConfig = veCreateOpaqueRenderConfig(g_device, "opaque render config");
+    if (veCreateOpaqueRenderConfig(g_device, "opaque render config", &g_renderConfig) != VE_SUCCESS || !g_renderConfig) {
+        fprintf(stderr, "Failed to create render config\n");
+        return false;
+    }
     
     printf("Shaders loaded successfully\n");
     return true;
@@ -224,9 +224,8 @@ static bool createBuffers() {
         .debugName = "TriangleVertexBuffer"
     };
     
-    g_vertexBuffer = veCreateBuffer(g_device, &bufferDesc);
-    if (g_vertexBuffer == VE_INVALID_ADDRESS) {
-        fprintf(stderr, "Failed to create vertex buffer: %s\n", veGetLastError());
+    if (veCreateBuffer(g_device, &bufferDesc, &g_vertexBuffer) != VE_SUCCESS || g_vertexBuffer == VE_INVALID_ADDRESS) {
+        fprintf(stderr, "Failed to create vertex buffer\n");
         return false;
     }
     
@@ -256,7 +255,11 @@ static void createRotationMatrix(float matrix[16], float angleRadians) {
 
 static void render() {
     // Begin command buffer
-    VECommandBuffer* cmd = veBeginCommandBuffer(g_device);
+    VECommandBuffer* cmd = NULL;
+    if (veBeginCommandBuffer(g_device, &cmd) != VE_SUCCESS || !cmd) {
+        fprintf(stderr, "Failed to begin command buffer\n");
+        return;
+    }
     if (!cmd) {
         fprintf(stderr, "Failed to begin command buffer\n");
         return;
@@ -324,31 +327,31 @@ static void cleanup() {
     }
     
     if (g_vertexBuffer != VE_INVALID_ADDRESS) {
-        veDestroyBuffer(g_device, g_vertexBuffer);
+        (void)veDestroyBuffer(g_device, g_vertexBuffer);
     }
     
     if (g_vertexShader) {
-        veDestroyShader(g_vertexShader);
+        (void)veDestroyShader(g_vertexShader);
     }
     
     if (g_fragmentShader) {
-        veDestroyShader(g_fragmentShader);
+        (void)veDestroyShader(g_fragmentShader);
     }
     
     if (g_renderTarget) {
-        veDestroyRenderTarget(g_renderTarget);
+        (void)veDestroyRenderTarget(g_renderTarget);
     }
 
     if (g_swapchain) {
-        veDestroySwapchain(g_swapchain);
+        (void)veDestroySwapchain(g_swapchain);
     }
     
     if (g_device) {
-        veDestroyDevice(g_device);
+        (void)veDestroyDevice(g_device);
     }
     
     if (g_context) {
-        veDestroyContext(g_context);
+        (void)veDestroyContext(g_context);
     }
 }
 

@@ -71,12 +71,18 @@ const VESamplerInternal *VEDeviceInternal::getSampler(VESamplerIndex index) cons
 // Sampler Creation
 // =============================================================================
 
-VESamplerIndex veCreateSampler(VEDevice *device, const VESamplerDesc *desc)
+VEResult veCreateSampler(VEDevice *device, const VESamplerDesc *desc, VESamplerIndex *outIndex)
 {
+   if (!outIndex)
+   {
+      veSetError("outIndex cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    if (!device || !desc)
    {
       veSetError("Invalid parameters for sampler creation");
-      return VE_INVALID_SAMPLER_INDEX;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
@@ -84,7 +90,7 @@ VESamplerIndex veCreateSampler(VEDevice *device, const VESamplerDesc *desc)
    uint32_t index = deviceInternal->allocateSamplerIndex();
    if (index == VE_INVALID_SAMPLER_INDEX)
    {
-      return VE_INVALID_SAMPLER_INDEX;
+      return VE_ERROR_OUT_OF_MEMORY;
    }
 
    VESamplerInternal *sampler = &deviceInternal->samplers[index];
@@ -125,7 +131,7 @@ VESamplerIndex veCreateSampler(VEDevice *device, const VESamplerDesc *desc)
    {
       veSetError("Failed to create sampler (VkResult: %d)", result);
       deviceInternal->freeSamplerIndex(index);
-      return VE_INVALID_SAMPLER_INDEX;
+      return VE_ERROR_UNKNOWN;
    }
 
    if (deviceInternal->context->validationEnabled)
@@ -138,7 +144,8 @@ VESamplerIndex veCreateSampler(VEDevice *device, const VESamplerDesc *desc)
    // Update bindless descriptor
    deviceInternal->updateSamplerDescriptor(index);
 
-   return index;
+   *outIndex = index;
+   return VE_SUCCESS;
 }
 
 void veDestroySamplerImmediate(VEDeviceInternal *deviceInternal, VESamplerIndex index)
@@ -164,22 +171,29 @@ void veDestroySamplerImmediate(VEDeviceInternal *deviceInternal, VESamplerIndex 
    memset(sampler, 0, sizeof(VESamplerInternal));
 }
 
-void veDestroySampler(VEDevice *device, VESamplerIndex index)
+VEResult veDestroySampler(VEDevice *device, VESamplerIndex index)
 {
    if (!device || index == VE_INVALID_SAMPLER_INDEX)
    {
-      return;
+      veSetError("Invalid parameters for sampler destruction");
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+   if (!deviceInternal->deferredDeletionQueue)
+   {
+      veSetError("Deferred deletion queue not initialized");
+      return VE_ERROR_NOT_INITIALIZED;
+   }
    deviceInternal->deferredDeletionQueue->enqueueSampler(index);
+   return VE_SUCCESS;
 }
 
 // =============================================================================
 // Convenience Sampler Creation Functions
 // =============================================================================
 
-VESamplerIndex veCreateLinearSampler(VEDevice *device)
+VEResult veCreateLinearSampler(VEDevice *device, VESamplerIndex *outIndex)
 {
    VESamplerDesc desc{};
    desc.minFilter = VK_FILTER_LINEAR;
@@ -195,10 +209,10 @@ VESamplerIndex veCreateLinearSampler(VEDevice *device)
    desc.maxLod = 1000.0f;
    desc.debugName = "LinearSampler";
 
-   return veCreateSampler(device, &desc);
+   return veCreateSampler(device, &desc, outIndex);
 }
 
-VESamplerIndex veCreateNearestSampler(VEDevice *device)
+VEResult veCreateNearestSampler(VEDevice *device, VESamplerIndex *outIndex)
 {
    VESamplerDesc desc{};
    desc.minFilter = VK_FILTER_NEAREST;
@@ -214,10 +228,10 @@ VESamplerIndex veCreateNearestSampler(VEDevice *device)
    desc.maxLod = 1000.0f;
    desc.debugName = "NearestSampler";
 
-   return veCreateSampler(device, &desc);
+   return veCreateSampler(device, &desc, outIndex);
 }
 
-VESamplerIndex veCreateAnisotropicSampler(VEDevice *device, float maxAnisotropy)
+VEResult veCreateAnisotropicSampler(VEDevice *device, float maxAnisotropy, VESamplerIndex *outIndex)
 {
    VESamplerDesc desc{};
    desc.minFilter = VK_FILTER_LINEAR;
@@ -233,10 +247,10 @@ VESamplerIndex veCreateAnisotropicSampler(VEDevice *device, float maxAnisotropy)
    desc.maxLod = 1000.0f;
    desc.debugName = "AnisotropicSampler";
 
-   return veCreateSampler(device, &desc);
+   return veCreateSampler(device, &desc, outIndex);
 }
 
-VESamplerIndex veCreateShadowSampler(VEDevice *device)
+VEResult veCreateShadowSampler(VEDevice *device, VESamplerIndex *outIndex)
 {
    VESamplerDesc desc{};
    desc.minFilter = VK_FILTER_LINEAR;
@@ -252,7 +266,7 @@ VESamplerIndex veCreateShadowSampler(VEDevice *device)
    desc.maxLod = 1000.0f;
    desc.debugName = "ShadowSampler";
 
-   return veCreateSampler(device, &desc);
+   return veCreateSampler(device, &desc, outIndex);
 }
 
 // =============================================================================

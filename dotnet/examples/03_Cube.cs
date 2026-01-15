@@ -169,7 +169,9 @@ namespace VulkEaseExamples
 
         private void RebuildRenderingInfo()
         {
-            VE.GetRenderTargetSize(_renderTarget, out uint width, out uint height);
+            var extent = VE.GetRenderTargetSize(_renderTarget);
+            uint width = extent.width;
+            uint height = extent.height;
             
             _renderingInfo = new VERenderingInfo(width, height);
             _renderingInfo.ColorAttachments.Add(new VERenderingAttachment
@@ -268,11 +270,6 @@ namespace VulkEaseExamples
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to initialize VulkEase: {ex.Message}");
-                string? lastError = VE.GetLastError();
-                if (lastError != null)
-                {
-                    Console.Error.WriteLine($"VulkEase Error: {lastError}");
-                }
                 return false;
             }
         }
@@ -327,11 +324,6 @@ namespace VulkEaseExamples
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to load shaders: {ex.Message}");
-                string? lastError = VE.GetLastError();
-                if (lastError != null)
-                {
-                    Console.Error.WriteLine($"VulkEase Error: {lastError}");
-                }
                 return false;
             }
         }
@@ -396,11 +388,6 @@ namespace VulkEaseExamples
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to create geometry: {ex.Message}");
-                string? lastError = VE.GetLastError();
-                if (lastError != null)
-                {
-                    Console.Error.WriteLine($"VulkEase Error: {lastError}");
-                }
                 return false;
             }
         }
@@ -443,11 +430,6 @@ namespace VulkEaseExamples
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to load texture: {ex.Message}");
-                string? lastError = VE.GetLastError();
-                if (lastError != null)
-                {
-                    Console.Error.WriteLine($"VulkEase Error: {lastError}");
-                }
                 return false;
             }
         }
@@ -465,11 +447,6 @@ namespace VulkEaseExamples
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to create render config: {ex.Message}");
-                string? lastError = VE.GetLastError();
-                if (lastError != null)
-                {
-                    Console.Error.WriteLine($"VulkEase Error: {lastError}");
-                }
                 return false;
             }
         }
@@ -553,7 +530,9 @@ namespace VulkEaseExamples
                 // Begin command buffer
                 var cmd = VE.BeginCommandBuffer(_device);
 
-                VE.GetRenderTargetSize(_renderTarget, out uint width, out uint height);
+                var extent = VE.GetRenderTargetSize(_renderTarget);
+                uint width = extent.width;
+                uint height = extent.height;
 
                 // Build transformation matrices
                 float aspect = (float)width / (float)height;
@@ -623,7 +602,9 @@ namespace VulkEaseExamples
 
                 if (blitResult == VEResult.VE_ERROR_SWAPCHAIN_OUT_OF_DATE)
                 {
-                    VE.GetSwapchainSize(_swapchain, out uint newWidth, out uint newHeight);
+                    var swapExtent = VE.GetSwapchainSize(_swapchain);
+                    uint newWidth = swapExtent.width;
+                    uint newHeight = swapExtent.height;
                     if (newWidth > 0 && newHeight > 0)
                     {
                         VE.ResizeSwapchain(_swapchain, newWidth, newHeight);
@@ -638,7 +619,9 @@ namespace VulkEaseExamples
 
                 if (result == VEResult.VE_ERROR_SWAPCHAIN_OUT_OF_DATE)
                 {
-                    VE.GetSwapchainSize(_swapchain, out uint newWidth, out uint newHeight);
+                    var swapExtent = VE.GetSwapchainSize(_swapchain);
+                    uint newWidth = swapExtent.width;
+                    uint newHeight = swapExtent.height;
                     if (newWidth > 0 && newHeight > 0)
                     {
                         VE.ResizeSwapchain(_swapchain, newWidth, newHeight);

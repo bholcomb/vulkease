@@ -335,12 +335,18 @@ VEResult VEDeviceInternal::submitTransferCommandBuffer(VECommandBufferInternal *
 // Buffer Creation
 // =============================================================================
 
-extern "C" VEBufferAddress veCreateBuffer(VEDevice *device, const VEBufferDesc *desc)
+extern "C" VEResult veCreateBuffer(VEDevice *device, const VEBufferDesc *desc, VEBufferAddress *outAddress)
 {
+   if (!outAddress)
+   {
+      veSetError("outAddress cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    if (!device || !desc || desc->size == 0)
    {
       veSetError("Invalid parameters for buffer creation");
-      return VE_INVALID_ADDRESS;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
@@ -349,14 +355,14 @@ extern "C" VEBufferAddress veCreateBuffer(VEDevice *device, const VEBufferDesc *
    if (!deviceInternal->features.bufferDeviceAddress)
    {
       veSetError("Buffer device address support is required");
-      return VE_INVALID_ADDRESS;
+      return VE_ERROR_FEATURE_NOT_SUPPORTED;
    }
 
    BufferMap *bufferMap = getBufferMap(deviceInternal);
    if (!bufferMap || !deviceInternal->bufferMapMutex)
    {
       veSetError("Buffer map not initialized");
-      return VE_INVALID_ADDRESS;
+      return VE_ERROR_NOT_INITIALIZED;
    }
 
    // Create buffer object using smart pointer for automatic cleanup
@@ -401,7 +407,7 @@ extern "C" VEBufferAddress veCreateBuffer(VEDevice *device, const VEBufferDesc *
    if (result != VK_SUCCESS)
    {
       veSetError("Failed to create buffer (VkResult: %d)", result);
-      return VE_INVALID_ADDRESS;
+      return VE_ERROR_OUT_OF_MEMORY;
    }
 
    // Get the device address (guaranteed to work since we require buffer device
@@ -445,11 +451,12 @@ extern "C" VEBufferAddress veCreateBuffer(VEDevice *device, const VEBufferDesc *
             bufferMap->erase(deviceAddress);
          }
          vmaDestroyBuffer(deviceInternal->allocator, bufferPtr->buffer, bufferPtr->allocation);
-         return VE_INVALID_ADDRESS;
+         return uploadResult;
       }
    }
 
-   return deviceAddress;
+   *outAddress = deviceAddress;
+   return VE_SUCCESS;
 }
 
 void veDestroyBufferImmediate(VEDeviceInternal *deviceInternal, VEBufferAddress address)
@@ -499,15 +506,94 @@ void veDestroyBufferImmediate(VEDeviceInternal *deviceInternal, VEBufferAddress 
    }
 }
 
-extern "C" void veDestroyBuffer(VEDevice *device, VEBufferAddress address)
+extern "C" VEResult veDestroyBuffer(VEDevice *device, VEBufferAddress address)
 {
    if (!device || address == VE_INVALID_ADDRESS)
    {
-      return;
+      veSetError("Invalid parameters for buffer destruction");
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
+   if (!deviceInternal->deferredDeletionQueue)
+   {
+      veSetError("Deferred deletion queue not initialized");
+      return VE_ERROR_NOT_INITIALIZED;
+   }
    deviceInternal->deferredDeletionQueue->enqueueBuffer(address);
+   return VE_SUCCESS;
+}
+
+extern "C" VEResult veMapBuffer(VEDevice *device, VEBufferAddress address, void **mappedData)
+{
+   if (!mappedData)
+   {
+      veSetError("mappedData cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+   if (!device || address == VE_INVALID_ADDRESS)
+   {
+      veSetError("Invalid parameters for buffer mapping");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
+   VEBufferInternal *buffer = deviceInternal->getBufferFromAddress(address);
+   if (!buffer || !buffer->isValid)
+   {
+      veSetError("Buffer not found");
+      return VE_ERROR_NOT_FOUND;
+   }
+
+   // If persistently mapped, return the existing pointer (if available).
+   if (buffer->persistentlyMapped && buffer->mappedData)
+   {
+      *mappedData = buffer->mappedData;
+      return VE_SUCCESS;
+   }
+
+   void *data = nullptr;
+   VkResult result = vmaMapMemory(deviceInternal->allocator, buffer->allocation, &data);
+   if (result != VK_SUCCESS || !data)
+   {
+      veSetError("Failed to map buffer memory (VkResult: %d)", result);
+      return VE_ERROR_TRANSFER_FAILED;
+   }
+
+   buffer->mappedData = data;
+   *mappedData = data;
+   return VE_SUCCESS;
+}
+
+extern "C" VEResult veUnmapBuffer(VEDevice *device, VEBufferAddress address)
+{
+   if (!device || address == VE_INVALID_ADDRESS)
+   {
+      veSetError("Invalid parameters for buffer unmapping");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
+   VEBufferInternal *buffer = deviceInternal->getBufferFromAddress(address);
+   if (!buffer || !buffer->isValid)
+   {
+      veSetError("Buffer not found");
+      return VE_ERROR_NOT_FOUND;
+   }
+
+   // Persistently mapped buffers remain mapped for their lifetime.
+   if (buffer->persistentlyMapped)
+   {
+      return VE_SUCCESS;
+   }
+
+   if (buffer->mappedData)
+   {
+      vmaUnmapMemory(deviceInternal->allocator, buffer->allocation);
+      buffer->mappedData = nullptr;
+   }
+
+   return VE_SUCCESS;
 }
 
 // =============================================================================
@@ -653,31 +739,49 @@ extern "C" VEResult veUpdateBuffer(VEDevice *device, VEBufferAddress address, co
 extern "C" uint64_t veGetBufferSize(VEDevice *device, VEBufferAddress address)
 {
    if (!device || address == VE_INVALID_ADDRESS)
+   {
+      veSetError("veGetBufferSize: invalid device or address");
       return 0;
+   }
 
    VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
    VEBufferInternal *buffer = deviceInternal->getBufferFromAddress(address);
 
-   return (buffer && buffer->isValid) ? buffer->size : 0;
+   if (!buffer || !buffer->isValid)
+   {
+      veSetError("veGetBufferSize: buffer not found for address=%llu", (unsigned long long)address);
+      return 0;
+   }
+
+   return buffer->size;
 }
 
 extern "C" VkBufferUsageFlags veGetBufferUsage(VEDevice *device, VEBufferAddress address)
 {
    if (!device || address == VE_INVALID_ADDRESS)
-      return static_cast<VkBufferUsageFlags>(0);
+   {
+      veSetError("veGetBufferUsage: invalid device or address");
+      return 0;
+   }
 
    VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
    VEBufferInternal *buffer = deviceInternal->getBufferFromAddress(address);
 
-   return (buffer && buffer->isValid) ? buffer->usage : static_cast<VkBufferUsageFlags>(0);
+   if (!buffer || !buffer->isValid)
+   {
+      veSetError("veGetBufferUsage: buffer not found for address=%llu", (unsigned long long)address);
+      return 0;
+   }
+
+   return buffer->usage;
 }
 
 // =============================================================================
 // Convenience Buffer Creation Functions
 // =============================================================================
 
-extern "C" VEBufferAddress veCreateVertexBuffer(VEDevice *device, const void *vertices, uint64_t size,
-                                                const char *debugName)
+extern "C" VEResult veCreateVertexBuffer(VEDevice *device, const void *vertices, uint64_t size,
+                                         const char *debugName, VEBufferAddress *outAddress)
 {
    VEBufferDesc desc = {.size = size,
                         .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
@@ -686,11 +790,11 @@ extern "C" VEBufferAddress veCreateVertexBuffer(VEDevice *device, const void *ve
                         .persistentlyMapped = false,
                         .debugName = debugName ? debugName : "VertexBuffer"};
 
-   return veCreateBuffer(device, &desc);
+   return veCreateBuffer(device, &desc, outAddress);
 }
 
-extern "C" VEBufferAddress veCreateIndexBuffer(VEDevice *device, const void *indices, uint64_t size,
-                                               const char *debugName)
+extern "C" VEResult veCreateIndexBuffer(VEDevice *device, const void *indices, uint64_t size,
+                                        const char *debugName, VEBufferAddress *outAddress)
 {
    VEBufferDesc desc = {.size = size,
                         .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
@@ -699,11 +803,11 @@ extern "C" VEBufferAddress veCreateIndexBuffer(VEDevice *device, const void *ind
                         .persistentlyMapped = false,
                         .debugName = debugName ? debugName : "IndexBuffer"};
 
-   return veCreateBuffer(device, &desc);
+   return veCreateBuffer(device, &desc, outAddress);
 }
 
-extern "C" VEBufferAddress veCreateUniformBuffer(VEDevice *device, uint64_t size, bool persistentlyMapped,
-                                                 const char *debugName)
+extern "C" VEResult veCreateUniformBuffer(VEDevice *device, uint64_t size, bool persistentlyMapped,
+                                         const char *debugName, VEBufferAddress *outAddress)
 {
    VEBufferDesc desc = {.size = size,
                         .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -712,10 +816,11 @@ extern "C" VEBufferAddress veCreateUniformBuffer(VEDevice *device, uint64_t size
                         .persistentlyMapped = persistentlyMapped,
                         .debugName = debugName ? debugName : "UniformBuffer"};
 
-   return veCreateBuffer(device, &desc);
+   return veCreateBuffer(device, &desc, outAddress);
 }
 
-extern "C" VEBufferAddress veCreateStorageBuffer(VEDevice *device, uint64_t size, const char *debugName)
+extern "C" VEResult veCreateStorageBuffer(VEDevice *device, uint64_t size, const char *debugName,
+                                         VEBufferAddress *outAddress)
 {
    VEBufferDesc desc = {.size = size,
                         .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -724,10 +829,11 @@ extern "C" VEBufferAddress veCreateStorageBuffer(VEDevice *device, uint64_t size
                         .persistentlyMapped = false,
                         .debugName = debugName ? debugName : "StorageBuffer"};
 
-   return veCreateBuffer(device, &desc);
+   return veCreateBuffer(device, &desc, outAddress);
 }
 
-extern "C" VEBufferAddress veCreateIndirectBuffer(VEDevice *device, uint64_t size, const char *debugName)
+extern "C" VEResult veCreateIndirectBuffer(VEDevice *device, uint64_t size, const char *debugName,
+                                          VEBufferAddress *outAddress)
 {
    VEBufferDesc desc = {.size = size,
                         .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -736,5 +842,5 @@ extern "C" VEBufferAddress veCreateIndirectBuffer(VEDevice *device, uint64_t siz
                         .persistentlyMapped = false,
                         .debugName = debugName ? debugName : "IndirectBuffer"};
 
-   return veCreateBuffer(device, &desc);
+   return veCreateBuffer(device, &desc, outAddress);
 }

@@ -324,8 +324,8 @@ static VEResult readTextureLevel0(VEDeviceInternal *deviceInternal, VETextureInt
       return VE_ERROR_OUT_OF_MEMORY;
    }
 
-   VECommandBuffer *cmdHandle = veBeginCommandBuffer((VEDevice *)deviceInternal);
-   if (!cmdHandle)
+   VECommandBuffer *cmdHandle = nullptr;
+   if (veBeginCommandBuffer((VEDevice *)deviceInternal, &cmdHandle) != VE_SUCCESS || !cmdHandle)
    {
       vmaDestroyBuffer(deviceInternal->allocator, stagingBuffer, stagingAllocation);
       return VE_ERROR_OUT_OF_MEMORY;
@@ -393,7 +393,9 @@ static VEResult readTextureLevel0(VEDeviceInternal *deviceInternal, VETextureInt
                            NULL, 1, &barrier);
    }
 
-   VEResult submitResult = veSubmitCommandBuffer(cmdHandle, true);
+   VESubmitInfo submitInfo{};
+   submitInfo.waitForCompletion = true;
+   VEResult submitResult = veSubmitCommandBuffer(cmdHandle, &submitInfo);
    if (submitResult != VE_SUCCESS)
    {
       vmaDestroyBuffer(deviceInternal->allocator, stagingBuffer, stagingAllocation);
@@ -879,8 +881,8 @@ static VEResult veUploadTextureData(VEDeviceInternal *device, VETextureInternal 
    vmaFlushAllocation(device->allocator, stagingAllocation, 0, dataSize);
 
    // Use the public API to get a command buffer
-   VECommandBuffer *cmdPublic = veBeginCommandBuffer((VEDevice *)device);
-   if (!cmdPublic)
+   VECommandBuffer *cmdPublic = nullptr;
+   if (veBeginCommandBuffer((VEDevice *)device, &cmdPublic) != VE_SUCCESS || !cmdPublic)
    {
       vmaDestroyBuffer(device->allocator, stagingBuffer, stagingAllocation);
       return VE_ERROR_OUT_OF_MEMORY;
@@ -932,7 +934,9 @@ static VEResult veUploadTextureData(VEDeviceInternal *device, VETextureInternal 
                         NULL, 0, NULL, 1, &barrier);
 
    // Submit command buffer and wait for completion
-   VEResult submitResult = veSubmitCommandBuffer(cmdPublic, true);
+   VESubmitInfo submitInfo{};
+   submitInfo.waitForCompletion = true;
+   VEResult submitResult = veSubmitCommandBuffer(cmdPublic, &submitInfo);
 
    // Update tracked layout if command submission succeeded
    if (submitResult == VE_SUCCESS)
@@ -955,12 +959,18 @@ static VEResult veUploadTextureData(VEDeviceInternal *device, VETextureInternal 
 // Texture Creation
 // =============================================================================
 
-VETextureIndex veCreateTexture(VEDevice *device, const VETextureDesc *desc)
+VEResult veCreateTexture(VEDevice *device, const VETextureDesc *desc, VETextureIndex *outIndex)
 {
+   if (!outIndex)
+   {
+      veSetError("outIndex cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    if (!device || !desc)
    {
       veSetError("Invalid parameters for texture creation");
-      return VE_INVALID_TEXTURE_INDEX;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
@@ -968,7 +978,7 @@ VETextureIndex veCreateTexture(VEDevice *device, const VETextureDesc *desc)
    uint32_t index = deviceInternal->allocateTextureIndex();
    if (index == VE_INVALID_TEXTURE_INDEX)
    {
-      return VE_INVALID_TEXTURE_INDEX;
+      return VE_ERROR_OUT_OF_MEMORY;
    }
 
    VETextureInternal *texture = &deviceInternal->textures[index];
@@ -1027,7 +1037,7 @@ VETextureIndex veCreateTexture(VEDevice *device, const VETextureDesc *desc)
    {
       veSetError("Failed to create texture (VkResult: %d)", result);
       deviceInternal->freeTextureIndex(index);
-      return VE_INVALID_TEXTURE_INDEX;
+      return VE_ERROR_OUT_OF_MEMORY;
    }
 
    // Create image view
@@ -1063,7 +1073,7 @@ VETextureIndex veCreateTexture(VEDevice *device, const VETextureDesc *desc)
       veSetError("Failed to create image view (VkResult: %d)", result);
       vmaDestroyImage(deviceInternal->allocator, texture->image, texture->allocation);
       deviceInternal->freeTextureIndex(index);
-      return VE_INVALID_TEXTURE_INDEX;
+      return VE_ERROR_UNKNOWN;
    }
 
    // Upload initial data if provided
@@ -1075,7 +1085,7 @@ VETextureIndex veCreateTexture(VEDevice *device, const VETextureDesc *desc)
          vkDestroyImageView(deviceInternal->device, texture->imageView, NULL);
          vmaDestroyImage(deviceInternal->allocator, texture->image, texture->allocation);
          deviceInternal->freeTextureIndex(index);
-         return VE_INVALID_TEXTURE_INDEX;
+         return uploadResult;
       }
    }
 
@@ -1092,7 +1102,8 @@ VETextureIndex veCreateTexture(VEDevice *device, const VETextureDesc *desc)
    // Update bindless descriptor
    deviceInternal->updateTextureDescriptor(index);
 
-   return index;
+   *outIndex = index;
+   return VE_SUCCESS;
 }
 
 void veDestroyTextureImmediate(VEDeviceInternal *deviceInternal, VETextureIndex index)
@@ -1123,67 +1134,72 @@ void veDestroyTextureImmediate(VEDeviceInternal *deviceInternal, VETextureIndex 
    memset(texture, 0, sizeof(VETextureInternal));
 }
 
-void veDestroyTexture(VEDevice *device, VETextureIndex index)
+VEResult veDestroyTexture(VEDevice *device, VETextureIndex index)
 {
    if (!device || index == VE_INVALID_TEXTURE_INDEX)
    {
-      return;
+      veSetError("Invalid parameters for texture destruction");
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+   if (!deviceInternal->deferredDeletionQueue)
+   {
+      veSetError("Deferred deletion queue not initialized");
+      return VE_ERROR_NOT_INITIALIZED;
+   }
    deviceInternal->deferredDeletionQueue->enqueueTexture(index);
+   return VE_SUCCESS;
 }
 
 // =============================================================================
 // Texture Property Queries
 // =============================================================================
 
-VEResult veGetTextureSize(VEDevice *device, VETextureIndex index, uint32_t *width, uint32_t *height, uint32_t *depth)
+VkExtent3D veGetTextureSize(VEDevice *device, VETextureIndex index)
 {
    if (!device || index == VE_INVALID_TEXTURE_INDEX)
    {
-      veSetError("Invalid parameters for texture size query");
-      return VE_ERROR_INVALID_PARAMETER;
+      veSetError("veGetTextureSize: invalid device or texture index");
+      return VkExtent3D{0, 0, 0};
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
    VETextureInternal *texture = deviceInternal->getTexture(index);
-
-   if (!texture)
+   if (!texture || !texture->isValid)
    {
-      veSetError("Invalid texture index");
-      return VE_ERROR_INVALID_PARAMETER;
+      veSetError("veGetTextureSize: texture not found for index=%u", index);
+      return VkExtent3D{0, 0, 0};
    }
 
-   if (width)
-      *width = texture->width;
-   if (height)
-      *height = texture->height;
-   if (depth)
-      *depth = texture->depth;
-
-   return VE_SUCCESS;
+   return VkExtent3D{texture->width, texture->height, texture->depth};
 }
 
 VkFormat veGetTextureFormat(VEDevice *device, VETextureIndex index)
 {
    if (!device || index == VE_INVALID_TEXTURE_INDEX)
    {
-      return VK_FORMAT_R8G8B8A8_UNORM;
+      veSetError("veGetTextureFormat: invalid device or texture index");
+      return VK_FORMAT_UNDEFINED;
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
    VETextureInternal *texture = deviceInternal->getTexture(index);
+   if (!texture || !texture->isValid)
+   {
+      veSetError("veGetTextureFormat: texture not found for index=%u", index);
+      return VK_FORMAT_UNDEFINED;
+   }
 
-   return texture ? texture->format : VK_FORMAT_R8G8B8A8_UNORM;
+   return texture->format;
 }
 
 // =============================================================================
 // Convenience Texture Creation Functions
 // =============================================================================
 
-VETextureIndex veCreateTexture1D(VEDevice *device, uint32_t width, VkFormat format, VkImageUsageFlags usage,
-                                 const char *debugName)
+VEResult veCreateTexture1D(VEDevice *device, uint32_t width, VkFormat format, VkImageUsageFlags usage,
+                           const char *debugName, VETextureIndex *outIndex)
 {
    VETextureDesc desc{};
    desc.width = width;
@@ -1198,11 +1214,11 @@ VETextureIndex veCreateTexture1D(VEDevice *device, uint32_t width, VkFormat form
    desc.initialDataSize = 0;
    desc.debugName = debugName;
 
-   return veCreateTexture(device, &desc);
+   return veCreateTexture(device, &desc, outIndex);
 }
 
-VETextureIndex veCreateTexture2D(VEDevice *device, uint32_t width, uint32_t height, VkFormat format,
-                                 VkImageUsageFlags usage, const char *debugName)
+VEResult veCreateTexture2D(VEDevice *device, uint32_t width, uint32_t height, VkFormat format,
+                           VkImageUsageFlags usage, const char *debugName, VETextureIndex *outIndex)
 {
    VETextureDesc desc{};
    desc.width = width;
@@ -1217,11 +1233,11 @@ VETextureIndex veCreateTexture2D(VEDevice *device, uint32_t width, uint32_t heig
    desc.initialDataSize = 0;
    desc.debugName = debugName;
 
-   return veCreateTexture(device, &desc);
+   return veCreateTexture(device, &desc, outIndex);
 }
 
-VETextureIndex veCreateTexture3D(VEDevice *device, uint32_t width, uint32_t height, uint32_t depth, VkFormat format,
-                                 VkImageUsageFlags usage, const char *debugName)
+VEResult veCreateTexture3D(VEDevice *device, uint32_t width, uint32_t height, uint32_t depth, VkFormat format,
+                           VkImageUsageFlags usage, const char *debugName, VETextureIndex *outIndex)
 {
    VETextureDesc desc{};
    desc.width = width;
@@ -1236,11 +1252,12 @@ VETextureIndex veCreateTexture3D(VEDevice *device, uint32_t width, uint32_t heig
    desc.initialDataSize = 0;
    desc.debugName = debugName;
 
-   return veCreateTexture(device, &desc);
+   return veCreateTexture(device, &desc, outIndex);
 }
 
-VETextureIndex veCreateTexture2DArray(VEDevice *device, uint32_t width, uint32_t height, uint32_t layers,
-                                      VkFormat format, VkImageUsageFlags usage, const char *debugName)
+VEResult veCreateTexture2DArray(VEDevice *device, uint32_t width, uint32_t height, uint32_t layers,
+                                VkFormat format, VkImageUsageFlags usage, const char *debugName,
+                                VETextureIndex *outIndex)
 {
    VETextureDesc desc{};
    desc.width = width;
@@ -1255,11 +1272,11 @@ VETextureIndex veCreateTexture2DArray(VEDevice *device, uint32_t width, uint32_t
    desc.initialDataSize = 0;
    desc.debugName = debugName;
 
-   return veCreateTexture(device, &desc);
+   return veCreateTexture(device, &desc, outIndex);
 }
 
-VETextureIndex veCreateTextureCube(VEDevice *device, uint32_t size, VkFormat format, VkImageUsageFlags usage,
-                                   const char *debugName)
+VEResult veCreateTextureCube(VEDevice *device, uint32_t size, VkFormat format, VkImageUsageFlags usage,
+                             const char *debugName, VETextureIndex *outIndex)
 {
    VETextureDesc desc{};
    desc.width = size;
@@ -1274,12 +1291,12 @@ VETextureIndex veCreateTextureCube(VEDevice *device, uint32_t size, VkFormat for
    desc.initialDataSize = 0;
    desc.debugName = debugName;
 
-   return veCreateTexture(device, &desc);
+   return veCreateTexture(device, &desc, outIndex);
 }
 
-VETextureIndex veCreateTexture2DMultisample(VEDevice *device, uint32_t width, uint32_t height, VkFormat format,
-                                            VkSampleCountFlags sampleCount, VkImageUsageFlags usage,
-                                            const char *debugName)
+VEResult veCreateTexture2DMultisample(VEDevice *device, uint32_t width, uint32_t height, VkFormat format,
+                                      VkSampleCountFlags sampleCount, VkImageUsageFlags usage,
+                                      const char *debugName, VETextureIndex *outIndex)
 {
    VETextureDesc desc{};
    desc.width = width;
@@ -1294,19 +1311,26 @@ VETextureIndex veCreateTexture2DMultisample(VEDevice *device, uint32_t width, ui
    desc.initialDataSize = 0;
    desc.debugName = debugName;
 
-   return veCreateTexture(device, &desc);
+   return veCreateTexture(device, &desc, outIndex);
 }
 
 // =============================================================================
 // STB Image Integration
 // =============================================================================
 
-VETextureIndex veLoadTexture(VEDevice *device, const char *filename, VkImageUsageFlags usage, bool generateMips)
+VEResult veLoadTexture(VEDevice *device, const char *filename, VkImageUsageFlags usage, bool generateMips,
+                       VETextureIndex *outIndex)
 {
+   if (!outIndex)
+   {
+      veSetError("outIndex cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    if (!device || !filename)
    {
       veSetError("Invalid parameters for texture loading");
-      return VE_INVALID_TEXTURE_INDEX;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    // flip images for loading into texture memory
@@ -1318,7 +1342,7 @@ VETextureIndex veLoadTexture(VEDevice *device, const char *filename, VkImageUsag
    if (!pixels)
    {
       veSetError("Failed to load image: %s", stbi_failure_reason());
-      return VE_INVALID_TEXTURE_INDEX;
+      return VE_ERROR_UNKNOWN;
    }
 
    uint32_t mipLevels = 0;
@@ -1343,31 +1367,43 @@ VETextureIndex veLoadTexture(VEDevice *device, const char *filename, VkImageUsag
    desc.initialDataSize = static_cast<uint64_t>(width * height * 4);
    desc.debugName = filename;
 
-   VETextureIndex result = veCreateTexture(device, &desc);
+   VETextureIndex created = VE_INVALID_TEXTURE_INDEX;
+   VEResult createResult = veCreateTexture(device, &desc, &created);
 
    // Generate mipmaps if requested and texture creation succeeded
-   if (result != VE_INVALID_TEXTURE_INDEX && generateMips && desc.mipLevels > 1)
+   if (createResult == VE_SUCCESS && created != VE_INVALID_TEXTURE_INDEX && generateMips && desc.mipLevels > 1)
    {
-      VEResult mipmapResult = veGenerateMipmapsImmediate(device, result);
+      VEResult mipmapResult = veGenerateMipmapsImmediate(device, created);
       if (mipmapResult != VE_SUCCESS)
       {
          veSetError("Failed to generate mipmaps for loaded texture: %s", filename);
-         veDestroyTexture(device, result);
+         (void)veDestroyTexture(device, created);
          stbi_image_free(pixels);
-         return VE_INVALID_TEXTURE_INDEX;
+         return mipmapResult;
       }
    }
 
    stbi_image_free(pixels);
-   return result;
+   if (createResult == VE_SUCCESS)
+   {
+      *outIndex = created;
+   }
+   return createResult;
 }
 
-VETextureIndex veLoadHDRTexture(VEDevice *device, const char *filename, VkImageUsageFlags usage, bool generateMips)
+VEResult veLoadHDRTexture(VEDevice *device, const char *filename, VkImageUsageFlags usage, bool generateMips,
+                          VETextureIndex *outIndex)
 {
+   if (!outIndex)
+   {
+      veSetError("outIndex cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    if (!device || !filename)
    {
       veSetError("Invalid parameters for HDR texture loading");
-      return VE_INVALID_TEXTURE_INDEX;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    int width, height, channels;
@@ -1376,7 +1412,7 @@ VETextureIndex veLoadHDRTexture(VEDevice *device, const char *filename, VkImageU
    if (!pixels)
    {
       veSetError("Failed to load HDR image: %s", stbi_failure_reason());
-      return VE_INVALID_TEXTURE_INDEX;
+      return VE_ERROR_UNKNOWN;
    }
 
    VETextureDesc desc{};
@@ -1392,31 +1428,43 @@ VETextureIndex veLoadHDRTexture(VEDevice *device, const char *filename, VkImageU
    desc.initialDataSize = static_cast<uint64_t>(width * height * 4 * sizeof(float));
    desc.debugName = filename;
 
-   VETextureIndex result = veCreateTexture(device, &desc);
+   VETextureIndex created = VE_INVALID_TEXTURE_INDEX;
+   VEResult createResult = veCreateTexture(device, &desc, &created);
 
    // Generate mipmaps if requested and texture creation succeeded
-   if (result != VE_INVALID_TEXTURE_INDEX && generateMips && desc.mipLevels > 1)
+   if (createResult == VE_SUCCESS && created != VE_INVALID_TEXTURE_INDEX && generateMips && desc.mipLevels > 1)
    {
-      VEResult mipmapResult = veGenerateMipmapsImmediate(device, result);
+      VEResult mipmapResult = veGenerateMipmapsImmediate(device, created);
       if (mipmapResult != VE_SUCCESS)
       {
          veSetError("Failed to generate mipmaps for loaded HDR texture: %s", filename);
-         veDestroyTexture(device, result);
+         (void)veDestroyTexture(device, created);
          stbi_image_free(pixels);
-         return VE_INVALID_TEXTURE_INDEX;
+         return mipmapResult;
       }
    }
 
    stbi_image_free(pixels);
-   return result;
+   if (createResult == VE_SUCCESS)
+   {
+      *outIndex = created;
+   }
+   return createResult;
 }
 
-VETextureIndex veLoadCubeTexture(VEDevice *device, const char *filenames[6], VkImageUsageFlags usage, bool generateMips)
+VEResult veLoadCubeTexture(VEDevice *device, const char *filenames[6], VkImageUsageFlags usage, bool generateMips,
+                           VETextureIndex *outIndex)
 {
+   if (!outIndex)
+   {
+      veSetError("outIndex cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    if (!device || !filenames)
    {
       veSetError("Invalid parameters for cube texture loading");
-      return VE_INVALID_TEXTURE_INDEX;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    int width = 0;
@@ -1431,7 +1479,7 @@ VETextureIndex veLoadCubeTexture(VEDevice *device, const char *filenames[6], VkI
       if (!path)
       {
          veSetError("Cube texture face %d filename is NULL", face);
-         return VE_INVALID_TEXTURE_INDEX;
+         return VE_ERROR_INVALID_PARAMETER;
       }
 
       int faceWidth = 0;
@@ -1442,7 +1490,7 @@ VETextureIndex veLoadCubeTexture(VEDevice *device, const char *filenames[6], VkI
       if (!pixels)
       {
          veSetError("Failed to load cube texture face %d: %s", face, stbi_failure_reason());
-         return VE_INVALID_TEXTURE_INDEX;
+         return VE_ERROR_UNKNOWN;
       }
 
       if (face == 0)
@@ -1458,7 +1506,7 @@ VETextureIndex veLoadCubeTexture(VEDevice *device, const char *filenames[6], VkI
          {
             veSetError("Cube texture faces must share identical dimensions");
             stbi_image_free(pixels);
-            return VE_INVALID_TEXTURE_INDEX;
+            return VE_ERROR_INVALID_PARAMETER;
          }
       }
 
@@ -1469,7 +1517,7 @@ VETextureIndex veLoadCubeTexture(VEDevice *device, const char *filenames[6], VkI
    if (width == 0 || height == 0)
    {
       veSetError("Cube texture faces have zero size");
-      return VE_INVALID_TEXTURE_INDEX;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VkImageUsageFlags finalUsage = usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -1494,23 +1542,25 @@ VETextureIndex veLoadCubeTexture(VEDevice *device, const char *filenames[6], VkI
    desc.initialDataSize = combinedData.size();
    desc.debugName = filenames[0];
 
-   VETextureIndex result = veCreateTexture(device, &desc);
-   if (result == VE_INVALID_TEXTURE_INDEX)
+   VETextureIndex created = VE_INVALID_TEXTURE_INDEX;
+   VEResult createResult = veCreateTexture(device, &desc, &created);
+   if (createResult != VE_SUCCESS)
    {
-      return VE_INVALID_TEXTURE_INDEX;
+      return createResult;
    }
 
    if (generateMips && mipLevels > 1)
    {
-      VEResult mipResult = veGenerateMipmapsImmediate(device, result);
+      VEResult mipResult = veGenerateMipmapsImmediate(device, created);
       if (mipResult != VE_SUCCESS)
       {
-         veDestroyTexture(device, result);
-         return VE_INVALID_TEXTURE_INDEX;
+         (void)veDestroyTexture(device, created);
+         return mipResult;
       }
    }
 
-   return result;
+   *outIndex = created;
+   return VE_SUCCESS;
 }
 
 VEResult veGenerateMipmaps(VEDevice *device, VECommandBuffer *cmd, VETextureIndex texture)
@@ -1717,8 +1767,8 @@ VEResult veGenerateMipmapsImmediate(VEDevice *device, VETextureIndex texture)
    }
 
    // Create a temporary command buffer for mipmap generation
-   VECommandBuffer *cmd = veBeginCommandBuffer(device);
-   if (!cmd)
+   VECommandBuffer *cmd = nullptr;
+   if (veBeginCommandBuffer(device, &cmd) != VE_SUCCESS || !cmd)
    {
       veSetError("Failed to create command buffer for mipmap generation");
       return VE_ERROR_OUT_OF_MEMORY;
@@ -1734,7 +1784,9 @@ VEResult veGenerateMipmapsImmediate(VEDevice *device, VETextureIndex texture)
    }
 
    // Submit and wait for completion
-   result = veSubmitCommandBuffer(cmd, true);
+   VESubmitInfo submitInfo{};
+   submitInfo.waitForCompletion = true;
+   result = veSubmitCommandBuffer(cmd, &submitInfo);
    if (result != VE_SUCCESS)
    {
       veSetError("Failed to submit mipmap generation command buffer");

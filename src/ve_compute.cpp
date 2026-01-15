@@ -9,11 +9,12 @@
 // Compute Dispatch Functions
 // =============================================================================
 
-void veDispatch(VECommandBuffer *cmd, uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ)
+VEResult veDispatch(VECommandBuffer *cmd, uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ)
 {
    if (!cmd || groupCountX == 0 || groupCountY == 0 || groupCountZ == 0)
    {
-      return;
+      veSetError("Invalid parameters for veDispatch");
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
@@ -22,13 +23,15 @@ void veDispatch(VECommandBuffer *cmd, uint32_t groupCountX, uint32_t groupCountY
       internal->device->frameStats.computeDispatches += 1;
    }
    vkCmdDispatch(internal->commandBuffer, groupCountX, groupCountY, groupCountZ);
+   return VE_SUCCESS;
 }
 
-void veDispatchIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t offset)
+VEResult veDispatchIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t offset)
 {
    if (!cmd || indirectBuffer == VE_INVALID_ADDRESS)
    {
-      return;
+      veSetError("Invalid parameters for veDispatchIndirect");
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
@@ -37,7 +40,7 @@ void veDispatchIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, ui
    if (buffer == VK_NULL_HANDLE)
    {
       veSetError("Invalid indirect buffer address for compute dispatch");
-      return;
+      return VE_ERROR_NOT_FOUND;
    }
 
    vkCmdDispatchIndirect(internal->commandBuffer, buffer, offset);
@@ -45,6 +48,7 @@ void veDispatchIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, ui
    {
       internal->device->frameStats.computeDispatches += 1;
    }
+   return VE_SUCCESS;
 }
 
 // =============================================================================

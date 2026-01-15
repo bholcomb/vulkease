@@ -135,10 +135,13 @@ void veInsertDebugLabelLegacy(VECommandBuffer *cmd, const char *labelName, float
 }
 
 // Modern debug label functions with VEColor support
-void veBeginDebugLabel(VECommandBuffer *cmd, const char *label, VEColor color)
+VEResult veBeginDebugLabel(VECommandBuffer *cmd, const char *label, VEColor color)
 {
    if (!cmd || !label)
-      return;
+   {
+      veSetError("Invalid parameters for veBeginDebugLabel");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
@@ -151,21 +154,29 @@ void veBeginDebugLabel(VECommandBuffer *cmd, const char *label, VEColor color)
    labelInfo.color[3] = color.a;
 
    veFuncs.vkCmdBeginDebugUtilsLabelEXT(internal->commandBuffer, &labelInfo);
+   return VE_SUCCESS;
 }
 
-void veEndDebugLabel(VECommandBuffer *cmd)
+VEResult veEndDebugLabel(VECommandBuffer *cmd)
 {
    if (!cmd)
-      return;
+   {
+      veSetError("CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
    veFuncs.vkCmdEndDebugUtilsLabelEXT(internal->commandBuffer);
+   return VE_SUCCESS;
 }
 
-void veInsertDebugLabel(VECommandBuffer *cmd, const char *label, VEColor color)
+VEResult veInsertDebugLabel(VECommandBuffer *cmd, const char *label, VEColor color)
 {
    if (!cmd || !label)
-      return;
+   {
+      veSetError("Invalid parameters for veInsertDebugLabel");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
@@ -178,6 +189,7 @@ void veInsertDebugLabel(VECommandBuffer *cmd, const char *label, VEColor color)
    labelInfo.color[3] = color.a;
 
    veFuncs.vkCmdInsertDebugUtilsLabelEXT(internal->commandBuffer, &labelInfo);
+   return VE_SUCCESS;
 }
 
 void veBeginDebugRegion(VECommandBuffer *cmd, const char *regionName, float color[4])
@@ -612,12 +624,12 @@ bool veValidateSampler(VEDevice *device, VESamplerIndex index)
 // Debug Information Functions
 // =============================================================================
 
-void vePrintDebugInfo(VEDevice *device)
+VEResult vePrintDebugInfo(VEDevice *device)
 {
    if (!device)
    {
       printf("VulkEase Debug Info: Device is NULL\n");
-      return;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
@@ -655,14 +667,15 @@ void vePrintDebugInfo(VEDevice *device)
    printf("  Vertex Input Dynamic State: %s\n", deviceInternal->supportsVertexInputDynamicState() ? "Yes" : "No");
 
    printf("================================\n");
+   return VE_SUCCESS;
 }
 
-void vePrintProfileInfo(VEDevice *device)
+VEResult vePrintProfileInfo(VEDevice *device)
 {
    if (!device)
    {
       printf("VulkEase Profile Info: Device is NULL\n");
-      return;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
@@ -700,14 +713,15 @@ void vePrintProfileInfo(VEDevice *device)
    }
 
    printf("================================\n");
+   return VE_SUCCESS;
 }
 
-void vePrintRenderConfig(VERenderConfig *config)
+VEResult vePrintRenderConfig(VERenderConfig *config)
 {
    if (!config)
    {
       printf("VulkEase Render Config: Config is NULL\n");
-      return;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VERenderConfigInternal *configInternal = (VERenderConfigInternal *)config;
@@ -747,6 +761,7 @@ void vePrintRenderConfig(VERenderConfig *config)
    }
 
    printf("====================================\n");
+   return VE_SUCCESS;
 }
 
 VEResult veValidateRenderConfig(VERenderConfig *config)

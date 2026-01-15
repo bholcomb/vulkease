@@ -309,18 +309,16 @@ bool AsteroidApp::initVulkEase()
    bool vsync = false;
 #endif
 
-   context_ = veCreateContext("VulkEase Asteroid Demo", nullptr, 0);
-   if (!context_)
+   if (veCreateContext("VulkEase Asteroid Demo", nullptr, 0, &context_) != VE_SUCCESS || !context_)
    {
-      std::fprintf(stderr, "Failed to create VulkEase context: %s\n", veGetLastError());
+      std::fprintf(stderr, "Failed to create VulkEase context\n");
       return false;
    }
 
    // Create device (VK_NULL_HANDLE = auto-select best GPU)
-   device_ = veCreateDevice(context_, VK_NULL_HANDLE, nullptr, 0);
-   if (!device_)
+   if (veCreateDevice(context_, VK_NULL_HANDLE, nullptr, 0, &device_) != VE_SUCCESS || !device_)
    {
-      std::fprintf(stderr, "Failed to create VulkEase device: %s\n", veGetLastError());
+      std::fprintf(stderr, "Failed to create VulkEase device\n");
       return false;
    }
 
@@ -350,11 +348,9 @@ bool AsteroidApp::initVulkEase()
 #error "Unsupported platform"
 #endif
 
-   swapchain_ = veCreateSwapchain(device_, &swapchainDesc);
-
-   if (!swapchain_)
+   if (veCreateSwapchain(device_, &swapchainDesc, &swapchain_) != VE_SUCCESS || !swapchain_)
    {
-      std::fprintf(stderr, "Failed to create VulkEase swapchain: %s\n", veGetLastError());
+      std::fprintf(stderr, "Failed to create VulkEase swapchain\n");
       return false;
    }
 
@@ -373,21 +369,22 @@ bool AsteroidApp::initVulkEase()
    rtDesc.hasResolveTarget = false;
    rtDesc.debugName = "AsteroidRenderTarget";
 
-   renderTarget_ = veCreateRenderTarget(device_, &rtDesc);
-   if (!renderTarget_)
+   if (veCreateRenderTarget(device_, &rtDesc, &renderTarget_) != VE_SUCCESS || !renderTarget_)
    {
-      std::fprintf(stderr, "Failed to create render target: %s\n", veGetLastError());
+      std::fprintf(stderr, "Failed to create render target\n");
       return false;
    }
 
    // Build rendering info once (reused every frame)
    renderingInfo_ = veCreateRenderingInfo(static_cast<uint32_t>(rtWidth), static_cast<uint32_t>(rtHeight));
-   veRenderingAddColorAttachment(&renderingInfo_,
-                                  veGetRenderTargetColorTexture(renderTarget_),
+   VETextureIndex rtColor = veGetRenderTargetColorTexture(renderTarget_);
+   (void)veRenderingAddColorAttachment(&renderingInfo_,
+                                 rtColor,
                                   VK_ATTACHMENT_LOAD_OP_CLEAR,
                                   VEColor{0.01f, 0.01f, 0.015f, 1.0f}); // Dark space background
-   veRenderingSetDepthAttachment(&renderingInfo_,
-                                  veGetRenderTargetDepthTexture(renderTarget_),
+   VETextureIndex rtDepth = veGetRenderTargetDepthTexture(renderTarget_);
+   (void)veRenderingSetDepthAttachment(&renderingInfo_,
+                                 rtDepth,
                                   VK_ATTACHMENT_LOAD_OP_CLEAR, 1.0f);
 
    return true;
@@ -404,25 +401,25 @@ void AsteroidApp::shutdownVulkEase()
 
    if (renderTarget_)
    {
-      veDestroyRenderTarget(renderTarget_);
+      (void)veDestroyRenderTarget(renderTarget_);
       renderTarget_ = nullptr;
    }
 
    if (swapchain_)
    {
-      veDestroySwapchain(swapchain_);
+      (void)veDestroySwapchain(swapchain_);
       swapchain_ = nullptr;
    }
 
    if (device_)
    {
-      veDestroyDevice(device_);
+      (void)veDestroyDevice(device_);
       device_ = nullptr;
    }
 
    if (context_)
    {
-      veDestroyContext(context_);
+      (void)veDestroyContext(context_);
       context_ = nullptr;
    }
 }
@@ -439,19 +436,19 @@ void AsteroidApp::destroyWindow()
 
 bool AsteroidApp::createAssets()
 {
-   vertexShader_ =
-       veLoadShaderFromFile(device_, kVertexShaderPath, VK_SHADER_STAGE_VERTEX_BIT, "main", "AsteroidVertexShader");
-   if (!vertexShader_)
+   if (veLoadShaderFromFile(device_, kVertexShaderPath, VK_SHADER_STAGE_VERTEX_BIT, "main", "AsteroidVertexShader",
+                            &vertexShader_) != VE_SUCCESS ||
+       !vertexShader_)
    {
-      std::fprintf(stderr, "Failed to load vertex shader: %s\n", veGetLastError());
+      std::fprintf(stderr, "Failed to load vertex shader\n");
       return false;
    }
 
-   fragmentShader_ = veLoadShaderFromFile(device_, kFragmentShaderPath, VK_SHADER_STAGE_FRAGMENT_BIT, "main",
-                                          "AsteroidFragmentShader");
-   if (!fragmentShader_)
+   if (veLoadShaderFromFile(device_, kFragmentShaderPath, VK_SHADER_STAGE_FRAGMENT_BIT, "main",
+                            "AsteroidFragmentShader", &fragmentShader_) != VE_SUCCESS ||
+       !fragmentShader_)
    {
-      std::fprintf(stderr, "Failed to load fragment shader: %s\n", veGetLastError());
+      std::fprintf(stderr, "Failed to load fragment shader\n");
       return false;
    }
 
@@ -460,36 +457,35 @@ bool AsteroidApp::createAssets()
    shaderConfigDesc.fragmentShader = fragmentShader_;
    shaderConfigDesc.debugName = "AsteroidShaderConfig";
 
-   shaderConfig_ = veCreateShaderConfig(device_, &shaderConfigDesc);
-   if (!shaderConfig_)
+   if (veCreateShaderConfig(device_, &shaderConfigDesc, &shaderConfig_) != VE_SUCCESS || !shaderConfig_)
    {
-      std::fprintf(stderr, "Failed to create shader config: %s\n", veGetLastError());
+      std::fprintf(stderr, "Failed to create shader config\n");
       return false;
    }
 
-   renderConfig_ = veCreateOpaqueRenderConfig(device_, "AsteroidRenderConfig");
-   if (!renderConfig_)
+   if (veCreateOpaqueRenderConfig(device_, "AsteroidRenderConfig", &renderConfig_) != VE_SUCCESS || !renderConfig_)
    {
-      std::fprintf(stderr, "Failed to create render config: %s\n", veGetLastError());
+      std::fprintf(stderr, "Failed to create render config\n");
       return false;
    }
 
    const auto vertices = makeIcosahedronVertices();
    const auto indices = makeIcosahedronIndices();
 
-   vertexBuffer_ = veCreateVertexBuffer(device_, vertices.data(), static_cast<uint64_t>(vertices.size() * sizeof(Vertex)),
-                                        "AsteroidVertices");
-   if (vertexBuffer_ == VE_INVALID_ADDRESS)
+   if (veCreateVertexBuffer(device_, vertices.data(), static_cast<uint64_t>(vertices.size() * sizeof(Vertex)),
+                            "AsteroidVertices", &vertexBuffer_) != VE_SUCCESS ||
+       vertexBuffer_ == VE_INVALID_ADDRESS)
    {
-      std::fprintf(stderr, "Failed to create vertex buffer: %s\n", veGetLastError());
+      std::fprintf(stderr, "Failed to create vertex buffer\n");
       return false;
    }
 
-   indexBuffer_ = veCreateIndexBuffer(device_, indices.data(),
-                                      static_cast<uint64_t>(indices.size() * sizeof(uint16_t)), "AsteroidIndices");
-   if (indexBuffer_ == VE_INVALID_ADDRESS)
+   if (veCreateIndexBuffer(device_, indices.data(),
+                           static_cast<uint64_t>(indices.size() * sizeof(uint16_t)), "AsteroidIndices", &indexBuffer_) !=
+           VE_SUCCESS ||
+       indexBuffer_ == VE_INVALID_ADDRESS)
    {
-      std::fprintf(stderr, "Failed to create index buffer: %s\n", veGetLastError());
+      std::fprintf(stderr, "Failed to create index buffer\n");
       return false;
    }
 
@@ -510,10 +506,9 @@ bool AsteroidApp::createAssets()
    instanceDesc.persistentlyMapped = false;
    instanceDesc.debugName = "AsteroidInstances";
 
-   instanceBuffer_ = veCreateBuffer(device_, &instanceDesc);
-   if (instanceBuffer_ == VE_INVALID_ADDRESS)
+   if (veCreateBuffer(device_, &instanceDesc, &instanceBuffer_) != VE_SUCCESS || instanceBuffer_ == VE_INVALID_ADDRESS)
    {
-      std::fprintf(stderr, "Failed to create instance buffer: %s\n", veGetLastError());
+      std::fprintf(stderr, "Failed to create instance buffer\n");
       return false;
    }
 
@@ -523,10 +518,9 @@ bool AsteroidApp::createAssets()
    cameraDesc.persistentlyMapped = false;
    cameraDesc.debugName = "AsteroidCamera";
 
-   cameraBuffer_ = veCreateBuffer(device_, &cameraDesc);
-   if (cameraBuffer_ == VE_INVALID_ADDRESS)
+   if (veCreateBuffer(device_, &cameraDesc, &cameraBuffer_) != VE_SUCCESS || cameraBuffer_ == VE_INVALID_ADDRESS)
    {
-      std::fprintf(stderr, "Failed to create camera buffer: %s\n", veGetLastError());
+      std::fprintf(stderr, "Failed to create camera buffer\n");
       return false;
    }
 
@@ -534,7 +528,7 @@ bool AsteroidApp::createAssets()
    if (veUpdateBuffer(device_, instanceBuffer_, cpuInstances_.data(),
                       static_cast<uint64_t>(cpuInstances_.size() * sizeof(AsteroidInstance)), 0) != VE_SUCCESS)
    {
-      std::fprintf(stderr, "Failed to upload instance data: %s\n", veGetLastError());
+      std::fprintf(stderr, "Failed to upload instance data\n");
       return false;
    }
 
@@ -556,42 +550,42 @@ void AsteroidApp::destroyAssets()
    {
       if (cameraBuffer_ != VE_INVALID_ADDRESS)
       {
-         veDestroyBuffer(device_, cameraBuffer_);
+         (void)veDestroyBuffer(device_, cameraBuffer_);
          cameraBuffer_ = VE_INVALID_ADDRESS;
       }
       if (instanceBuffer_ != VE_INVALID_ADDRESS)
       {
-         veDestroyBuffer(device_, instanceBuffer_);
+         (void)veDestroyBuffer(device_, instanceBuffer_);
          instanceBuffer_ = VE_INVALID_ADDRESS;
       }
       if (indexBuffer_ != VE_INVALID_ADDRESS)
       {
-         veDestroyBuffer(device_, indexBuffer_);
+         (void)veDestroyBuffer(device_, indexBuffer_);
          indexBuffer_ = VE_INVALID_ADDRESS;
       }
       if (vertexBuffer_ != VE_INVALID_ADDRESS)
       {
-         veDestroyBuffer(device_, vertexBuffer_);
+         (void)veDestroyBuffer(device_, vertexBuffer_);
          vertexBuffer_ = VE_INVALID_ADDRESS;
       }
       if (renderConfig_)
       {
-         veDestroyRenderConfig(renderConfig_);
+         (void)veDestroyRenderConfig(renderConfig_);
          renderConfig_ = nullptr;
       }
       if (shaderConfig_)
       {
-         veDestroyShaderConfig(shaderConfig_);
+         (void)veDestroyShaderConfig(shaderConfig_);
          shaderConfig_ = nullptr;
       }
       if (fragmentShader_)
       {
-         veDestroyShader(fragmentShader_);
+         (void)veDestroyShader(fragmentShader_);
          fragmentShader_ = nullptr;
       }
       if (vertexShader_)
       {
-         veDestroyShader(vertexShader_);
+         (void)veDestroyShader(vertexShader_);
          vertexShader_ = nullptr;
       }
    }
@@ -611,8 +605,9 @@ void AsteroidApp::mainLoop()
       double streamingMs = 0.0;
       drainSimulationUpdates(streamingMs);
 
-      uint32_t width, height;
-      veGetSwapchainSize(swapchain_, &width, &height);
+      VkExtent2D extent = veGetSwapchainSize(swapchain_);
+      uint32_t width = extent.width;
+      uint32_t height = extent.height;
       if (width == 0 || height == 0)
       {
          continue;
@@ -689,7 +684,7 @@ void AsteroidApp::drainSimulationUpdates(double &outCpuMs)
          VEResult result = veUpdateBuffer(device_, instanceBuffer_, update.instances.data(), size, offset);
          if (result != VE_SUCCESS)
          {
-            std::fprintf(stderr, "Instance buffer update failed: %s\n", veGetLastError());
+            std::fprintf(stderr, "Instance buffer update failed\n");
          }
       }
    }
@@ -734,10 +729,10 @@ void AsteroidApp::recordChunks(uint32_t width, uint32_t height, std::vector<Reco
       desc.renderAreaWidth = width;
       desc.renderAreaHeight = height;
 
-      VECommandBuffer *cmd = veBeginSecondaryCommandBuffer(device_, &desc);
-      if (!cmd)
+      VECommandBuffer *cmd = nullptr;
+      if (veBeginSecondaryCommandBuffer(device_, &desc, &cmd) != VE_SUCCESS || !cmd)
       {
-         fatal("Failed to begin secondary command buffer (no submit): %s", veGetLastError());
+         fatal("Failed to begin secondary command buffer (no submit)");
       }
 
       // With VK_EXT_shader_object, dynamic state is NOT inherited by secondary command buffers.
@@ -764,7 +759,7 @@ void AsteroidApp::recordChunks(uint32_t width, uint32_t height, std::vector<Reco
 
       if (veEndCommandBuffer(cmd) != VE_SUCCESS)
       {
-         fatal("Failed to end secondary command buffer (no submit): %s", veGetLastError());
+         fatal("Failed to end secondary command buffer (no submit)");
       }
 
       outChunk.chunkIndex = chunkIndex;
@@ -822,13 +817,14 @@ void AsteroidApp::submitFrame(const std::vector<RecordedChunk> &recorded, double
    auto start = std::chrono::high_resolution_clock::now();
 
    // Get render target size for camera projection
-   uint32_t width, height;
-   veGetRenderTargetSize(renderTarget_, &width, &height);
+   VkExtent2D extent = veGetRenderTargetSize(renderTarget_);
+   uint32_t width = extent.width;
+   uint32_t height = extent.height;
 
-   VECommandBuffer *primary = veBeginCommandBuffer(device_);
-   if (!primary)
+   VECommandBuffer *primary = nullptr;
+   if (veBeginCommandBuffer(device_, &primary) != VE_SUCCESS || !primary)
    {
-      fatal("Failed to begin primary command buffer: %s", veGetLastError());
+      fatal("Failed to begin primary command buffer");
    }
 
    // Begin rendering (automatically handles texture transitions)
@@ -886,7 +882,7 @@ void AsteroidApp::submitFrame(const std::vector<RecordedChunk> &recorded, double
                                            secondaryCmds.data(), true);  // Release secondary command buffers
       if (execResult != VE_SUCCESS)
       {
-         fatal("Failed to execute secondary command buffers: %s", veGetLastError());
+         fatal("Failed to execute secondary command buffers");
       }
    }
 
@@ -908,13 +904,15 @@ void AsteroidApp::submitFrame(const std::vector<RecordedChunk> &recorded, double
          
          // Rebuild rendering info with new size and texture handles
          renderingInfo_ = veCreateRenderingInfo(static_cast<uint32_t>(framebufferWidth),
-                                                 static_cast<uint32_t>(framebufferHeight));
-         veRenderingAddColorAttachment(&renderingInfo_,
-                                        veGetRenderTargetColorTexture(renderTarget_),
+                                               static_cast<uint32_t>(framebufferHeight));
+         VETextureIndex rtColor = veGetRenderTargetColorTexture(renderTarget_);
+         (void)veRenderingAddColorAttachment(&renderingInfo_,
+                                        rtColor,
                                         VK_ATTACHMENT_LOAD_OP_CLEAR,
                                         VEColor{0.01f, 0.01f, 0.015f, 1.0f});
-         veRenderingSetDepthAttachment(&renderingInfo_,
-                                        veGetRenderTargetDepthTexture(renderTarget_),
+         VETextureIndex rtDepth = veGetRenderTargetDepthTexture(renderTarget_);
+         (void)veRenderingSetDepthAttachment(&renderingInfo_,
+                                        rtDepth,
                                         VK_ATTACHMENT_LOAD_OP_CLEAR, 1.0f);
       }
       // Release command buffer manually on early return
@@ -928,7 +926,7 @@ void AsteroidApp::submitFrame(const std::vector<RecordedChunk> &recorded, double
    VEResult presentResult = vePresentImage(swapchain_, primary, true);
    if (presentResult != VE_SUCCESS)
    {
-      fatal("Failed to present image: %s", veGetLastError());
+      fatal("Failed to present image");
    }
 
    auto end = std::chrono::high_resolution_clock::now();

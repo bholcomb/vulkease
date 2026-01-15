@@ -74,6 +74,11 @@ struct VEContextInternal
    VkDebugUtilsMessengerEXT debugMessenger;
    bool validationEnabled;
    char applicationName[256];
+
+   // Debug / diagnostic callback (may be NULL)
+   VEMessageCallback messageCallback{nullptr};
+   void *messageCallbackUserData{nullptr};
+   VEMessageSeverity messageCallbackMinSeverity{VE_MESSAGE_SEVERITY_INFO};
 };
 
 struct VEQueueFamilies
@@ -605,7 +610,7 @@ struct VEDeviceInternal
 
 // Error handling
 void veSetError(const char *format, ...);
-const char *veResultToString(VkResult result);
+const char *veVkResultToString(VkResult result);
 void vePrintVkResult(const char *operation, VkResult result);
 
 // Command pool managment

@@ -155,7 +155,9 @@ namespace VulkEaseExamples
 
         private void RebuildRenderingInfo()
         {
-            VulkEase.VulkEase.GetRenderTargetSize(_renderTarget, out uint width, out uint height);
+            var extent = VulkEase.VulkEase.GetRenderTargetSize(_renderTarget);
+            uint width = extent.width;
+            uint height = extent.height;
             
             _renderingInfo = new VERenderingInfo(width, height);
             _renderingInfo.ColorAttachments.Add(new VERenderingAttachment
@@ -235,11 +237,6 @@ namespace VulkEaseExamples
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to initialize VulkEase: {ex.Message}");
-                string? lastError = VulkEase.VulkEase.GetLastError();
-                if (lastError != null)
-                {
-                    Console.Error.WriteLine($"VulkEase Error: {lastError}");
-                }
                 return false;
             }
         }
@@ -297,11 +294,6 @@ namespace VulkEaseExamples
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to create shaders: {ex.Message}");
-                string? lastError = VulkEase.VulkEase.GetLastError();
-                if (lastError != null)
-                {
-                    Console.Error.WriteLine($"VulkEase Error: {lastError}");
-                }
                 return false;
             }
         }
@@ -380,11 +372,6 @@ namespace VulkEaseExamples
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to create buffers: {ex.Message}");
-                string? lastError = VulkEase.VulkEase.GetLastError();
-                if (lastError != null)
-                {
-                    Console.Error.WriteLine($"VulkEase Error: {lastError}");
-                }
                 return false;
             }
         }
@@ -436,11 +423,6 @@ namespace VulkEaseExamples
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to create render config: {ex.Message}");
-                string? lastError = VulkEase.VulkEase.GetLastError();
-                if (lastError != null)
-                {
-                    Console.Error.WriteLine($"VulkEase Error: {lastError}");
-                }
                 return false;
             }
         }
@@ -481,7 +463,9 @@ namespace VulkEaseExamples
 
         private void RenderParticles(VECommandBuffer cmd)
         {
-            VulkEase.VulkEase.GetRenderTargetSize(_renderTarget, out uint width, out uint height);
+            var extent = VulkEase.VulkEase.GetRenderTargetSize(_renderTarget);
+            uint width = extent.width;
+            uint height = extent.height;
 
             // Begin graphics debug region
             var graphicsColor = new VEColor(0.0f, 1.0f, 0.5f, 1.0f);
@@ -542,7 +526,9 @@ namespace VulkEaseExamples
 
                 if (blitResult == VEResult.VE_ERROR_SWAPCHAIN_OUT_OF_DATE)
                 {
-                    VulkEase.VulkEase.GetSwapchainSize(_swapchain, out uint swWidth, out uint swHeight);
+                    var extent = VulkEase.VulkEase.GetSwapchainSize(_swapchain);
+                    uint swWidth = extent.width;
+                    uint swHeight = extent.height;
                     VulkEase.VulkEase.ResizeSwapchain(_swapchain, swWidth, swHeight);
                     VulkEase.VulkEase.ResizeRenderTarget(_renderTarget, swWidth, swHeight);
                     RebuildRenderingInfo();
@@ -554,7 +540,9 @@ namespace VulkEaseExamples
 
                 if (result == VEResult.VE_ERROR_SWAPCHAIN_OUT_OF_DATE)
                 {
-                    VulkEase.VulkEase.GetSwapchainSize(_swapchain, out uint swWidth, out uint swHeight);
+                    var extent = VulkEase.VulkEase.GetSwapchainSize(_swapchain);
+                    uint swWidth = extent.width;
+                    uint swHeight = extent.height;
                     VulkEase.VulkEase.ResizeSwapchain(_swapchain, swWidth, swHeight);
                     VulkEase.VulkEase.ResizeRenderTarget(_renderTarget, swWidth, swHeight);
                     RebuildRenderingInfo();
