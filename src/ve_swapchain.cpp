@@ -583,12 +583,18 @@ static VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR *capabilities,
 // Swapchain Implementation
 // =============================================================================
 
-VESwapchain *veCreateSwapchain(VEDevice *device, const VESwapchainDesc *desc)
+VEResult veCreateSwapchain(VEDevice *device, const VESwapchainDesc *desc, VESwapchain **outSwapchain)
 {
+   if (!outSwapchain)
+   {
+      veSetError("outSwapchain cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    if (!device || !desc || desc->width == 0 || desc->height == 0)
    {
       veSetError("Invalid parameters for swapchain creation");
-      return NULL;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
@@ -597,7 +603,7 @@ VESwapchain *veCreateSwapchain(VEDevice *device, const VESwapchainDesc *desc)
    if (!swapchain)
    {
       veSetError("Failed to allocate swapchain memory");
-      return NULL;
+      return VE_ERROR_OUT_OF_MEMORY;
    }
 
    swapchain->attachDevice(deviceInternal);
@@ -617,14 +623,14 @@ VESwapchain *veCreateSwapchain(VEDevice *device, const VESwapchainDesc *desc)
    if (result != VK_SUCCESS)
    {
       veSetError("Failed to create surface (VkResult: %d)", result);
-      return NULL;
+      return VE_ERROR_UNKNOWN;
    }
 
    // Check swapchain support
    if (!checkSwapchainSupport(deviceInternal->physicalDevice, swapchain->surface))
    {
       veSetError("Swapchain not supported on this device");
-      return NULL;
+      return VE_ERROR_FEATURE_NOT_SUPPORTED;
    }
 
    // Get surface capabilities
@@ -686,7 +692,7 @@ VESwapchain *veCreateSwapchain(VEDevice *device, const VESwapchainDesc *desc)
    if (result != VK_SUCCESS)
    {
       veSetError("Failed to create swapchain (VkResult: %d)", result);
-      return NULL;
+      return VE_ERROR_UNKNOWN;
    }
 
    // Get swapchain images
@@ -715,7 +721,7 @@ VESwapchain *veCreateSwapchain(VEDevice *device, const VESwapchainDesc *desc)
       if (result != VK_SUCCESS)
       {
          veSetError("Failed to create image view %u (VkResult: %d)", i, result);
-         return NULL;
+         return VE_ERROR_UNKNOWN;
       }
 
       // Create texture index for bindless access
@@ -765,7 +771,7 @@ VESwapchain *veCreateSwapchain(VEDevice *device, const VESwapchainDesc *desc)
           vkCreateFence(deviceInternal->device, &fenceInfo, NULL, &swapchain->inFlightFences[i]) != VK_SUCCESS)
       {
          veSetError("Cannot create sync objects");
-         return NULL;
+         return VE_ERROR_OUT_OF_MEMORY;
       }
    }
 
@@ -778,22 +784,27 @@ VESwapchain *veCreateSwapchain(VEDevice *device, const VESwapchainDesc *desc)
           VK_SUCCESS)
       {
          veSetError("Cannot create sync objects");
-         return NULL;
+         return VE_ERROR_OUT_OF_MEMORY;
       }
    }
 
    swapchain->currentImageIndex = UINT32_MAX;
    swapchain->needsRecreation = false;
 
-   return reinterpret_cast<VESwapchain *>(swapchain.release());
+   *outSwapchain = reinterpret_cast<VESwapchain *>(swapchain.release());
+   return VE_SUCCESS;
 }
 
-void veDestroySwapchain(VESwapchain *swapchain)
+VEResult veDestroySwapchain(VESwapchain *swapchain)
 {
    if (!swapchain)
-      return;
+   {
+      veSetError("Swapchain cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    delete reinterpret_cast<VESwapchainInternal *>(swapchain);
+   return VE_SUCCESS;
 }
 
 VETextureIndex veAcquireNextImage(VESwapchain *swapchain)
@@ -835,24 +846,27 @@ VEResult veResizeSwapchain(VESwapchain *swapchain, uint32_t width, uint32_t heig
    return VE_SUCCESS;
 }
 
-VEResult veGetSwapchainSize(VESwapchain *swapchain, uint32_t *width, uint32_t *height)
+VkExtent2D veGetSwapchainSize(VESwapchain *swapchain)
 {
    if (!swapchain)
    {
-      veSetError("Swapchain cannot be NULL");
-      return VE_ERROR_INVALID_PARAMETER;
+      veSetError("veGetSwapchainSize: swapchain cannot be NULL");
+      return VkExtent2D{0, 0};
    }
 
    VESwapchainInternal *internal = reinterpret_cast<VESwapchainInternal *>(swapchain);
-   internal->querySize(width, height);
-
-   return VE_SUCCESS;
+   uint32_t w = 0, h = 0;
+   internal->querySize(&w, &h);
+   return VkExtent2D{w, h};
 }
 
 VkFormat veGetSwapchainFormat(VESwapchain *swapchain)
 {
    if (!swapchain)
-      return VK_FORMAT_R8G8B8_UNORM;
+   {
+      veSetError("veGetSwapchainFormat: swapchain cannot be NULL");
+      return VK_FORMAT_UNDEFINED;
+   }
 
    VESwapchainInternal *internal = reinterpret_cast<VESwapchainInternal *>(swapchain);
    return internal->currentFormat();

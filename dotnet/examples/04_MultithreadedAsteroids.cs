@@ -388,7 +388,7 @@ namespace VulkEaseExamples
             _context = CreateContext("VulkEase Asteroids");
             if (_context.native == IntPtr.Zero)
             {
-                Console.Error.WriteLine("Failed to create context: " + GetLastError());
+                Console.Error.WriteLine("Failed to create context");
                 return false;
             }
 
@@ -396,7 +396,7 @@ namespace VulkEaseExamples
             _device = CreateDevice(_context);
             if (_device.native == IntPtr.Zero)
             {
-                Console.Error.WriteLine("Failed to create device: " + GetLastError());
+                Console.Error.WriteLine("Failed to create device");
                 return false;
             }
 
@@ -414,7 +414,7 @@ namespace VulkEaseExamples
             _swapchain = CreateSwapchain(_device, swapchainDesc);
             if (_swapchain.native == IntPtr.Zero)
             {
-                Console.Error.WriteLine("Failed to create swapchain: " + GetLastError());
+                Console.Error.WriteLine("Failed to create swapchain");
                 return false;
             }
 
@@ -432,7 +432,7 @@ namespace VulkEaseExamples
             _renderTarget = CreateRenderTarget(_device, renderTargetDesc);
             if (_renderTarget.native == IntPtr.Zero)
             {
-                Console.Error.WriteLine("Failed to create render target: " + GetLastError());
+                Console.Error.WriteLine("Failed to create render target");
                 return false;
             }
 
@@ -476,7 +476,9 @@ namespace VulkEaseExamples
 
         private void RebuildRenderingInfo()
         {
-            GetRenderTargetSize(_renderTarget, out uint width, out uint height);
+            var extent = GetRenderTargetSize(_renderTarget);
+            uint width = extent.width;
+            uint height = extent.height;
             
             _renderingInfo = new VERenderingInfo(width, height);
             _renderingInfo.ColorAttachments.Add(new VERenderingAttachment
@@ -502,14 +504,14 @@ namespace VulkEaseExamples
             _vertexShader = LoadShaderFromFile(_device, VertexShaderPath, VkShaderStageFlags.VK_SHADER_STAGE_VERTEX_BIT, "main", "AsteroidVertex");
             if (_vertexShader.native == IntPtr.Zero)
             {
-                Console.Error.WriteLine("Failed to load vertex shader: " + GetLastError());
+                Console.Error.WriteLine("Failed to load vertex shader");
                 return false;
             }
 
             _fragmentShader = LoadShaderFromFile(_device, FragmentShaderPath, VkShaderStageFlags.VK_SHADER_STAGE_FRAGMENT_BIT, "main", "AsteroidFragment");
             if (_fragmentShader.native == IntPtr.Zero)
             {
-                Console.Error.WriteLine("Failed to load fragment shader: " + GetLastError());
+                Console.Error.WriteLine("Failed to load fragment shader");
                 return false;
             }
 
@@ -522,14 +524,14 @@ namespace VulkEaseExamples
             _shaderConfig = CreateShaderConfig(_device, shaderDesc);
             if (_shaderConfig.native == IntPtr.Zero)
             {
-                Console.Error.WriteLine("Failed to create shader config: " + GetLastError());
+                Console.Error.WriteLine("Failed to create shader config");
                 return false;
             }
 
             _renderConfig = CreateOpaqueRenderConfig(_device, "AsteroidRenderConfig");
             if (_renderConfig.native == IntPtr.Zero)
             {
-                Console.Error.WriteLine("Failed to create render config: " + GetLastError());
+                Console.Error.WriteLine("Failed to create render config");
                 return false;
             }
 
@@ -539,14 +541,14 @@ namespace VulkEaseExamples
             _vertexBuffer = CreateVertexBufferFromArray(_device, vertices, "AsteroidVertices");
             if (_vertexBuffer.native == 0)
             {
-                Console.Error.WriteLine("Failed to create vertex buffer: " + GetLastError());
+                Console.Error.WriteLine("Failed to create vertex buffer");
                 return false;
             }
 
             _indexBuffer = CreateIndexBufferFromArray(_device, indices, "AsteroidIndices");
             if (_indexBuffer.native == 0)
             {
-                Console.Error.WriteLine("Failed to create index buffer: " + GetLastError());
+                Console.Error.WriteLine("Failed to create index buffer");
                 return false;
             }
             _indexCount = (uint)indices.Length;
@@ -563,7 +565,7 @@ namespace VulkEaseExamples
             _instanceBuffer = CreateBuffer(_device, instanceDesc);
             if (_instanceBuffer.native == 0)
             {
-                Console.Error.WriteLine("Failed to create instance buffer: " + GetLastError());
+                Console.Error.WriteLine("Failed to create instance buffer");
                 return false;
             }
             UploadInstances(_instances, 0);
@@ -578,7 +580,7 @@ namespace VulkEaseExamples
             _cameraBuffer = CreateBuffer(_device, cameraDesc);
             if (_cameraBuffer.native == 0)
             {
-                Console.Error.WriteLine("Failed to create camera buffer: " + GetLastError());
+                Console.Error.WriteLine("Failed to create camera buffer");
                 return false;
             }
 
@@ -652,7 +654,9 @@ namespace VulkEaseExamples
         {
             Stopwatch sw = Stopwatch.StartNew();
 
-            GetRenderTargetSize(_renderTarget, out uint width, out uint height);
+            var extent = GetRenderTargetSize(_renderTarget);
+            uint width = extent.width;
+            uint height = extent.height;
 
             var cmd = BeginCommandBuffer(_device);
 
@@ -678,7 +682,9 @@ namespace VulkEaseExamples
 
             if (blitResult == VEResult.VE_ERROR_SWAPCHAIN_OUT_OF_DATE)
             {
-                GetSwapchainSize(_swapchain, out uint newWidth, out uint newHeight);
+                var swapExtent = GetSwapchainSize(_swapchain);
+                uint newWidth = swapExtent.width;
+                uint newHeight = swapExtent.height;
                 if (newWidth > 0 && newHeight > 0)
                 {
                     ResizeSwapchain(_swapchain, newWidth, newHeight);
@@ -693,7 +699,9 @@ namespace VulkEaseExamples
             var present = PresentImage(_swapchain, cmd);
             if (present == VEResult.VE_ERROR_SWAPCHAIN_OUT_OF_DATE)
             {
-                GetSwapchainSize(_swapchain, out uint newWidth, out uint newHeight);
+                var swapExtent = GetSwapchainSize(_swapchain);
+                uint newWidth = swapExtent.width;
+                uint newHeight = swapExtent.height;
                 if (newWidth > 0 && newHeight > 0)
                 {
                     ResizeSwapchain(_swapchain, newWidth, newHeight);

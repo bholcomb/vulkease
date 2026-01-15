@@ -247,12 +247,18 @@ VEResult veEnsureCommandBufferLevel(VECommandBufferInternal *cmd, VkCommandBuffe
 // Command Buffer Operations
 // =============================================================================
 
-VECommandBuffer *veBeginCommandBuffer(VEDevice *device)
+VEResult veBeginCommandBuffer(VEDevice *device, VECommandBuffer **outCmd)
 {
+   if (!outCmd)
+   {
+      veSetError("outCmd cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    if (!device)
    {
       veSetError("Device cannot be NULL");
-      return NULL;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
@@ -261,26 +267,26 @@ VECommandBuffer *veBeginCommandBuffer(VEDevice *device)
    VECommandPool *pool = deviceInternal->threadCommandPools.acquire(deviceInternal, VECommandPoolKind::Graphics);
    if (!pool)
    {
-      return NULL;
+      return VE_ERROR_OUT_OF_MEMORY;
    }
 
    VEResult result = veAllocateCommandBuffer(deviceInternal, pool, &cmd);
    if (result != VE_SUCCESS)
    {
-      return NULL;
+      return result;
    }
 
    if (veEnsureBufferIdle(cmd) != VE_SUCCESS)
    {
       veFreeCommandBuffer(cmd);
-      return NULL;
+      return VE_ERROR_UNKNOWN;
    }
 
    VEResult levelResult = veEnsureCommandBufferLevel(cmd, VK_COMMAND_BUFFER_LEVEL_PRIMARY);
    if (levelResult != VE_SUCCESS)
    {
       veFreeCommandBuffer(cmd);
-      return NULL;
+      return levelResult;
    }
 
    VkResult resetResult = vkResetCommandBuffer(cmd->commandBuffer, 0);
@@ -292,7 +298,7 @@ VECommandBuffer *veBeginCommandBuffer(VEDevice *device)
                  resetResult, (void *)cmd->commandBuffer, cmd->index, (void *)fence, fenceStatus,
                  cmd->fenceActive ? 1 : 0);
       veFreeCommandBuffer(cmd);
-      return NULL;
+      return VE_ERROR_UNKNOWN;
    }
 
    VkCommandBufferBeginInfo beginInfo{};
@@ -304,13 +310,14 @@ VECommandBuffer *veBeginCommandBuffer(VEDevice *device)
    {
       veSetError("Failed to begin command buffer (VkResult: %d)", vkResult);
       veFreeCommandBuffer(cmd);
-      return NULL;
+      return VE_ERROR_UNKNOWN;
    }
 
    cmd->isRecording = true;
    cmd->isOneTime = true;
 
-   return (VECommandBuffer *)cmd;
+   *outCmd = (VECommandBuffer *)cmd;
+   return VE_SUCCESS;
 }
 
 VEResult veEndCommandBuffer(VECommandBuffer *cmd)
@@ -340,14 +347,7 @@ VEResult veEndCommandBuffer(VECommandBuffer *cmd)
    return VE_SUCCESS;
 }
 
-VEResult veSubmitCommandBuffer(VECommandBuffer *cmd, bool waitForCompletion)
-{
-   VESubmitInfo submitInfo{};
-   submitInfo.waitForCompletion = waitForCompletion;
-   return veSubmitCommandBufferEx(cmd, &submitInfo);
-}
-
-VEResult veSubmitCommandBufferEx(VECommandBuffer *cmd, const VESubmitInfo *submitInfo)
+VEResult veSubmitCommandBuffer(VECommandBuffer *cmd, const VESubmitInfo *submitInfo)
 {
    if (!cmd)
    {
@@ -585,15 +585,17 @@ VEResult veResetCommandBuffer(VECommandBuffer *cmd)
    return VE_SUCCESS;
 }
 
-extern "C" void veReleaseCommandBuffer(VECommandBuffer *cmd)
+extern "C" VEResult veReleaseCommandBuffer(VECommandBuffer *cmd)
 {
    if (!cmd)
    {
-      return;
+      veSetError("CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
    veFreeCommandBuffer(internal);
+   return VE_SUCCESS;
 }
 
 extern "C" VEResult vePopulateSecondaryDescFromRenderingInfo(VEDevice *device,
@@ -848,12 +850,18 @@ extern "C" VEResult veBeginSecondaryRecording(VECommandBuffer *cmd, const VESeco
    return VE_SUCCESS;
 }
 
-VECommandBuffer *veBeginSecondaryCommandBuffer(VEDevice *device, const VESecondaryCommandBufferDesc *desc)
+VEResult veBeginSecondaryCommandBuffer(VEDevice *device, const VESecondaryCommandBufferDesc *desc, VECommandBuffer **outCmd)
 {
+   if (!outCmd)
+   {
+      veSetError("outCmd cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    if (!device)
    {
       veSetError("Device cannot be NULL");
-      return NULL;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VkCommandBufferUsageFlags usageFlags =
@@ -873,26 +881,26 @@ VECommandBuffer *veBeginSecondaryCommandBuffer(VEDevice *device, const VESeconda
    VECommandPool *pool = deviceInternal->threadCommandPools.acquire(deviceInternal, VECommandPoolKind::Graphics);
    if (!pool)
    {
-      return NULL;
+      return VE_ERROR_OUT_OF_MEMORY;
    }
 
    VEResult allocResult = veAllocateCommandBuffer(deviceInternal, pool, &cmd);
    if (allocResult != VE_SUCCESS)
    {
-      return NULL;
+      return allocResult;
    }
 
    if (veEnsureBufferIdle(cmd) != VE_SUCCESS)
    {
       veFreeCommandBuffer(cmd);
-      return NULL;
+      return VE_ERROR_UNKNOWN;
    }
 
    VEResult levelResult = veEnsureCommandBufferLevel(cmd, VK_COMMAND_BUFFER_LEVEL_SECONDARY);
    if (levelResult != VE_SUCCESS)
    {
       veFreeCommandBuffer(cmd);
-      return NULL;
+      return levelResult;
    }
 
    VkCommandBufferBeginInfo beginInfo{};
@@ -920,7 +928,7 @@ VECommandBuffer *veBeginSecondaryCommandBuffer(VEDevice *device, const VESeconda
    {
       veSetError("colorAttachmentCount exceeds maximum supported attachments (8)");
       veFreeCommandBuffer(cmd);
-      return NULL;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    const VkFormat *colorFormatsPtr = nullptr;
@@ -930,7 +938,7 @@ VECommandBuffer *veBeginSecondaryCommandBuffer(VEDevice *device, const VESeconda
       {
          veSetError("colorAttachmentFormats must be provided when colorAttachmentCount > 0");
          veFreeCommandBuffer(cmd);
-         return NULL;
+         return VE_ERROR_INVALID_PARAMETER;
       }
       derivedColorFormats.assign(desc->colorAttachmentFormats,
                                  desc->colorAttachmentFormats + colorAttachmentCount);
@@ -964,7 +972,7 @@ VECommandBuffer *veBeginSecondaryCommandBuffer(VEDevice *device, const VESeconda
                     resetResult, (void *)cmd->commandBuffer, cmd->index, (void *)fence, fenceStatus,
                     cmd->fenceActive ? 1 : 0);
          veFreeCommandBuffer(cmd);
-         return NULL;
+         return VE_ERROR_UNKNOWN;
       }
 
       VkResult beginResult = vkBeginCommandBuffer(cmd->commandBuffer, &beginInfo);
@@ -972,7 +980,7 @@ VECommandBuffer *veBeginSecondaryCommandBuffer(VEDevice *device, const VESeconda
       {
          veSetError("Failed to begin secondary command buffer (VkResult: %d)", beginResult);
          veFreeCommandBuffer(cmd);
-         return NULL;
+         return VE_ERROR_UNKNOWN;
       }
 
       cmd->isRecording = true;
@@ -996,7 +1004,8 @@ VECommandBuffer *veBeginSecondaryCommandBuffer(VEDevice *device, const VESeconda
       cmd->renderAreaHeight = desc->renderAreaHeight;
    }
 
-   return (VECommandBuffer *)cmd;
+   *outCmd = (VECommandBuffer *)cmd;
+   return VE_SUCCESS;
 }
 
 VEResult veExecuteSecondaryCommandBuffers(VECommandBuffer *primaryCmd, uint32_t count,
@@ -1090,12 +1099,13 @@ VERenderingInfo veCreateRenderingInfoWithOffset(int32_t x, int32_t y, uint32_t w
    return info;
 }
 
-void veRenderingAddColorAttachment(VERenderingInfo *info, VETextureIndex texture, VkAttachmentLoadOp loadOp,
-                                    VEColor clearValue)
+VEResult veRenderingAddColorAttachment(VERenderingInfo *info, VETextureIndex texture, VkAttachmentLoadOp loadOp,
+                                      VEColor clearValue)
 {
    if (!info || info->colorAttachmentCount >= VE_MAX_COLOR_ATTACHMENTS)
    {
-      return;
+      veSetError("Invalid rendering info or too many color attachments");
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VERenderingAttachment *attachment = &info->attachments[info->colorAttachmentCount];
@@ -1106,14 +1116,16 @@ void veRenderingAddColorAttachment(VERenderingInfo *info, VETextureIndex texture
    attachment->resolveTexture = VE_INVALID_TEXTURE_INDEX;
 
    info->colorAttachmentCount++;
+   return VE_SUCCESS;
 }
 
-void veRenderingAddColorAttachmentResolve(VERenderingInfo *info, VETextureIndex texture, VETextureIndex resolveTexture,
-                                           VkAttachmentLoadOp loadOp, VEColor clearValue)
+VEResult veRenderingAddColorAttachmentResolve(VERenderingInfo *info, VETextureIndex texture, VETextureIndex resolveTexture,
+                                             VkAttachmentLoadOp loadOp, VEColor clearValue)
 {
    if (!info || info->colorAttachmentCount >= VE_MAX_COLOR_ATTACHMENTS)
    {
-      return;
+      veSetError("Invalid rendering info or too many color attachments");
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VERenderingAttachment *attachment = &info->attachments[info->colorAttachmentCount];
@@ -1124,14 +1136,16 @@ void veRenderingAddColorAttachmentResolve(VERenderingInfo *info, VETextureIndex 
    attachment->resolveTexture = resolveTexture;
 
    info->colorAttachmentCount++;
+   return VE_SUCCESS;
 }
 
-void veRenderingSetDepthAttachment(VERenderingInfo *info, VETextureIndex texture, VkAttachmentLoadOp loadOp,
-                                    float clearDepth)
+VEResult veRenderingSetDepthAttachment(VERenderingInfo *info, VETextureIndex texture, VkAttachmentLoadOp loadOp,
+                                      float clearDepth)
 {
    if (!info)
    {
-      return;
+      veSetError("Rendering info cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VERenderingAttachment *attachment = &info->attachments[VE_DEPTH_ATTACHMENT_INDEX];
@@ -1147,14 +1161,16 @@ void veRenderingSetDepthAttachment(VERenderingInfo *info, VETextureIndex texture
    attachment->resolveTexture = VE_INVALID_TEXTURE_INDEX;
 
    info->hasDepthAttachment = true;
+   return VE_SUCCESS;
 }
 
-void veRenderingSetStencilAttachment(VERenderingInfo *info, VETextureIndex texture, VkAttachmentLoadOp loadOp,
-                                      uint32_t clearStencil)
+VEResult veRenderingSetStencilAttachment(VERenderingInfo *info, VETextureIndex texture, VkAttachmentLoadOp loadOp,
+                                        uint32_t clearStencil)
 {
    if (!info)
    {
-      return;
+      veSetError("Rendering info cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VERenderingAttachment *attachment = &info->attachments[VE_STENCIL_ATTACHMENT_INDEX];
@@ -1170,16 +1186,20 @@ void veRenderingSetStencilAttachment(VERenderingInfo *info, VETextureIndex textu
    attachment->resolveTexture = VE_INVALID_TEXTURE_INDEX;
 
    info->hasStencilAttachment = true;
+   return VE_SUCCESS;
 }
 
 // =============================================================================
 // Dynamic Rendering
 // =============================================================================
 
-void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo)
+VEResult veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo)
 {
    if (!cmd || !renderingInfo)
-      return;
+   {
+      veSetError("Invalid parameters for begin rendering");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
@@ -1229,7 +1249,7 @@ void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo
       if (imageView == VK_NULL_HANDLE)
       {
          veSetError("Invalid texture index %u for color attachment %u", colorAttachments[i].texture, i);
-         return;
+         return VE_ERROR_NOT_FOUND;
       }
       vkColorAttachments[i].imageView = imageView;
 
@@ -1250,7 +1270,7 @@ void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo
          {
             veSetError("Invalid resolve texture index %u for color attachment %u",
                        colorAttachments[i].resolveTexture, i);
-            return;
+            return VE_ERROR_NOT_FOUND;
          }
          vkColorAttachments[i].resolveImageView = resolveImageView;
          vkColorAttachments[i].resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
@@ -1271,7 +1291,7 @@ void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo
       if (depthImageView == VK_NULL_HANDLE)
       {
          veSetError("Invalid texture index %u for depth attachment", depthAttachment->texture);
-         return;
+         return VE_ERROR_NOT_FOUND;
       }
       vkDepthAttachment.imageView = depthImageView;
 
@@ -1291,7 +1311,7 @@ void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo
          {
             veSetError("Invalid resolve texture index %u for depth attachment",
                        depthAttachment->resolveTexture);
-            return;
+            return VE_ERROR_NOT_FOUND;
          }
          vkDepthAttachment.resolveImageView = resolveImageView;
          vkDepthAttachment.resolveMode = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
@@ -1312,7 +1332,7 @@ void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo
       if (stencilImageView == VK_NULL_HANDLE)
       {
          veSetError("Invalid texture index %u for stencil attachment", stencilAttachment->texture);
-         return;
+         return VE_ERROR_NOT_FOUND;
       }
       vkStencilAttachment.imageView = stencilImageView;
 
@@ -1331,7 +1351,7 @@ void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo
          {
             veSetError("Invalid resolve texture index %u for stencil attachment",
                        stencilAttachment->resolveTexture);
-            return;
+            return VE_ERROR_NOT_FOUND;
          }
          vkStencilAttachment.resolveImageView = resolveImageView;
          vkStencilAttachment.resolveMode = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
@@ -1362,30 +1382,35 @@ void veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo
    {
       internal->device->frameStats.descriptorBinds += 1;
    }
+   return VE_SUCCESS;
 }
 
-void veEndRendering(VECommandBuffer *cmd)
+VEResult veEndRendering(VECommandBuffer *cmd)
 {
    if (!cmd)
-      return;
+   {
+      veSetError("CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
    vkCmdEndRendering(internal->commandBuffer);
 
    // Clear render pass tracking
    internal->inRenderPass = false;
+   return VE_SUCCESS;
 }
 
 // =============================================================================
 // Render Configuration Application
 // =============================================================================
 
-void veApplyRenderConfig(VECommandBuffer *cmd, VERenderConfig *config)
+VEResult veApplyRenderConfig(VECommandBuffer *cmd, VERenderConfig *config)
 {
    if (!cmd || !config)
    {
       veSetError("veApplyRenderConfig: Invalid parameters (cmd=%p, config=%p)", cmd, config);
-      return;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VERenderConfigInternal *configInternal = (VERenderConfigInternal *)config;
@@ -1395,20 +1420,20 @@ void veApplyRenderConfig(VECommandBuffer *cmd, VERenderConfig *config)
    if (!configInternal->isValid)
    {
       veSetError("veApplyRenderConfig: Render config is not valid");
-      return;
+      return VE_ERROR_INVALID_PARAMETER;
    }
    
    // Validate command buffer state
    if (!internal->isRecording)
    {
       veSetError("veApplyRenderConfig: Command buffer is not recording");
-      return;
+      return VE_ERROR_INVALID_PARAMETER;
    }
    
    if (!internal->commandBuffer)
    {
       veSetError("veApplyRenderConfig: Command buffer handle is null");
-      return;
+      return VE_ERROR_INVALID_PARAMETER;
    }
    
    VkCommandBuffer vkCmd = internal->commandBuffer;
@@ -1731,16 +1756,21 @@ void veApplyRenderConfig(VECommandBuffer *cmd, VERenderConfig *config)
    veFuncs.vkCmdSetLineRasterizationModeEXT(vkCmd, VK_LINE_RASTERIZATION_MODE_DEFAULT_EXT);
 
    veFuncs.vkCmdSetProvokingVertexModeEXT(vkCmd, VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT);
+
+   return VE_SUCCESS;
 }
 
 // =============================================================================
 // Shader Binding
 // =============================================================================
 
-void veBindShader(VECommandBuffer *cmd, VEShader *shader)
+VEResult veBindShader(VECommandBuffer *cmd, VEShader *shader)
 {
    if (!cmd || !shader)
-      return;
+   {
+      veSetError("Invalid parameters for veBindShader");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
    VEShaderInternal *shaderInternal = (VEShaderInternal *)shader;
@@ -1754,12 +1784,16 @@ void veBindShader(VECommandBuffer *cmd, VEShader *shader)
       internal->device->frameStats.pipelineBinds += 1;
    }
    veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, 1, &stageBit, &shaderInternal->shaderObject);
+   return VE_SUCCESS;
 }
 
-void veBindShaders(VECommandBuffer *cmd, uint32_t shaderCount, VEShader *const *shaders)
+VEResult veBindShaders(VECommandBuffer *cmd, uint32_t shaderCount, VEShader *const *shaders)
 {
    if (!cmd || shaderCount == 0 || !shaders)
-      return;
+   {
+      veSetError("Invalid parameters for veBindShaders");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VkShaderStageFlagBits stageBits[16];
    VkShaderEXT shaderObjects[16];
@@ -1785,12 +1819,16 @@ void veBindShaders(VECommandBuffer *cmd, uint32_t shaderCount, VEShader *const *
       }
       veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, validCount, stageBits, shaderObjects);
    }
+   return VE_SUCCESS;
 }
 
-void veBindShaderConfig(VECommandBuffer *cmd, VEShaderConfig *config)
+VEResult veBindShaderConfig(VECommandBuffer *cmd, VEShaderConfig *config)
 {
    if (!cmd || !config)
-      return;
+   {
+      veSetError("Invalid parameters for veBindShaderConfig");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VEShaderConfigInternal *configInternal = (VEShaderConfigInternal *)config;
    VECommandBufferInternal *cmdInternal = (VECommandBufferInternal *)cmd;
@@ -1831,14 +1869,18 @@ void veBindShaderConfig(VECommandBuffer *cmd, VEShaderConfig *config)
 
    if (shaderCount > 0)
    {
-      veBindShaders(cmd, shaderCount, shaders);
+      return veBindShaders(cmd, shaderCount, shaders);
    }
+   return VE_SUCCESS;
 }
 
-void veUnbindShaderStage(VECommandBuffer *cmd, VkShaderStageFlags stage)
+VEResult veUnbindShaderStage(VECommandBuffer *cmd, VkShaderStageFlags stage)
 {
    if (!cmd)
-      return;
+   {
+      veSetError("CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
    VkShaderEXT nullShader = VK_NULL_HANDLE;
@@ -1851,4 +1893,5 @@ void veUnbindShaderStage(VECommandBuffer *cmd, VkShaderStageFlags stage)
       veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, 1, &stageBit, &nullShader);
       remainingBits &= ~lowestBit;
    }
+   return VE_SUCCESS;
 }

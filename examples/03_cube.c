@@ -186,12 +186,14 @@ static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
             
             // Rebuild rendering info with new size and texture handles
             app->renderingInfo = veCreateRenderingInfo((uint32_t)width, (uint32_t)height);
-            veRenderingAddColorAttachment(&app->renderingInfo,
-                                           veGetRenderTargetColorTexture(app->renderTarget),
+            VETextureIndex rtColor = veGetRenderTargetColorTexture(app->renderTarget);
+            (void)veRenderingAddColorAttachment(&app->renderingInfo,
+                                           rtColor,
                                            VK_ATTACHMENT_LOAD_OP_CLEAR,
                                            (VEColor){0.1f, 0.2f, 0.3f, 1.0f});
-            veRenderingSetDepthAttachment(&app->renderingInfo,
-                                           veGetRenderTargetDepthTexture(app->renderTarget),
+            VETextureIndex rtDepth = veGetRenderTargetDepthTexture(app->renderTarget);
+            (void)veRenderingSetDepthAttachment(&app->renderingInfo,
+                                           rtDepth,
                                            VK_ATTACHMENT_LOAD_OP_CLEAR, 1.0f);
         }
     }
@@ -226,16 +228,14 @@ static bool initWindow(CubeApp* app) {
 // Initialize VulkEase
 static bool initVulkEase(CubeApp* app) {
     // Create context
-    app->context = veCreateContext("VulkEase Cube Demo", NULL, 0);
-    if (!app->context) {
-        fprintf(stderr, "Failed to create VulkEase context: %s\n", veGetLastError());
+    if (veCreateContext("VulkEase Cube Demo", NULL, 0, &app->context) != VE_SUCCESS || !app->context) {
+        fprintf(stderr, "Failed to create VulkEase context\n");
         return false;
     }
     
     // Create device (VK_NULL_HANDLE = auto-select best GPU)
-    app->device = veCreateDevice(app->context, VK_NULL_HANDLE, NULL, 0);
-    if (!app->device) {
-        fprintf(stderr, "Failed to create VulkEase device: %s\n", veGetLastError());
+    if (veCreateDevice(app->context, VK_NULL_HANDLE, NULL, 0, &app->device) != VE_SUCCESS || !app->device) {
+        fprintf(stderr, "Failed to create VulkEase device\n");
         return false;
     }
 
@@ -271,10 +271,8 @@ static bool initVulkEase(CubeApp* app) {
     }
 #endif
 
-    app->swapchain = veCreateSwapchain(app->device, &swapchainDesc); 
-
-    if (!app->swapchain) {
-        fprintf(stderr, "Failed to create swapchain: %s\n", veGetLastError());
+    if (veCreateSwapchain(app->device, &swapchainDesc, &app->swapchain) != VE_SUCCESS || !app->swapchain) {
+        fprintf(stderr, "Failed to create swapchain\n");
         return false;
     }
 
@@ -291,20 +289,21 @@ static bool initVulkEase(CubeApp* app) {
     rtDesc.hasResolveTarget = false;
     rtDesc.debugName = "CubeRenderTarget";
 
-    app->renderTarget = veCreateRenderTarget(app->device, &rtDesc);
-    if (!app->renderTarget) {
-        fprintf(stderr, "Failed to create render target: %s\n", veGetLastError());
+    if (veCreateRenderTarget(app->device, &rtDesc, &app->renderTarget) != VE_SUCCESS || !app->renderTarget) {
+        fprintf(stderr, "Failed to create render target\n");
         return false;
     }
     
     // Build rendering info once (reused every frame)
     app->renderingInfo = veCreateRenderingInfo((uint32_t)width, (uint32_t)height);
-    veRenderingAddColorAttachment(&app->renderingInfo,
-                                   veGetRenderTargetColorTexture(app->renderTarget),
+    VETextureIndex rtColor = veGetRenderTargetColorTexture(app->renderTarget);
+    (void)veRenderingAddColorAttachment(&app->renderingInfo,
+                                   rtColor,
                                    VK_ATTACHMENT_LOAD_OP_CLEAR,
                                    (VEColor){0.1f, 0.2f, 0.3f, 1.0f}); // Dark blue background
-    veRenderingSetDepthAttachment(&app->renderingInfo,
-                                   veGetRenderTargetDepthTexture(app->renderTarget),
+    VETextureIndex rtDepth = veGetRenderTargetDepthTexture(app->renderTarget);
+    (void)veRenderingSetDepthAttachment(&app->renderingInfo,
+                                   rtDepth,
                                    VK_ATTACHMENT_LOAD_OP_CLEAR, 1.0f);
     
     printf("VulkEase initialized successfully\n");
@@ -317,18 +316,18 @@ static bool initVulkEase(CubeApp* app) {
 // Load shaders
 static bool loadShaders(CubeApp* app) {
     // Load vertex shader
-    app->vertexShader = veLoadShaderFromFile(app->device, "examples/shaders/cube.vert.spv",
-                                            VK_SHADER_STAGE_VERTEX_BIT, "main", "CubeVertexShader");
-    if (!app->vertexShader) {
-        fprintf(stderr, "Failed to load vertex shader: %s\n", veGetLastError());
+    if (veLoadShaderFromFile(app->device, "examples/shaders/cube.vert.spv", VK_SHADER_STAGE_VERTEX_BIT, "main",
+                             "CubeVertexShader", &app->vertexShader) != VE_SUCCESS ||
+        !app->vertexShader) {
+        fprintf(stderr, "Failed to load vertex shader\n");
         return false;
     }
     
     // Load fragment shader
-    app->fragmentShader = veLoadShaderFromFile(app->device, "examples/shaders/cube.frag.spv",
-                                              VK_SHADER_STAGE_FRAGMENT_BIT, "main", "CubeFragmentShader");
-    if (!app->fragmentShader) {
-        fprintf(stderr, "Failed to load fragment shader: %s\n", veGetLastError());
+    if (veLoadShaderFromFile(app->device, "examples/shaders/cube.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT, "main",
+                             "CubeFragmentShader", &app->fragmentShader) != VE_SUCCESS ||
+        !app->fragmentShader) {
+        fprintf(stderr, "Failed to load fragment shader\n");
         return false;
     }
     
@@ -339,9 +338,8 @@ static bool loadShaders(CubeApp* app) {
         .debugName = "CubeShaderConfig"
     };
     
-    app->shaderConfig = veCreateShaderConfig(app->device, &shaderConfigDesc);
-    if (!app->shaderConfig) {
-        fprintf(stderr, "Failed to create shader config: %s\n", veGetLastError());
+    if (veCreateShaderConfig(app->device, &shaderConfigDesc, &app->shaderConfig) != VE_SUCCESS || !app->shaderConfig) {
+        fprintf(stderr, "Failed to create shader config\n");
         return false;
     }
     
@@ -351,26 +349,23 @@ static bool loadShaders(CubeApp* app) {
 // Create buffers and geometry
 static bool createGeometry(CubeApp* app) {
     // Create vertex buffer
-    app->vertexBuffer = veCreateVertexBuffer(app->device, cubeVertices, 
-                                           sizeof(cubeVertices), "CubeVertices");
-    if (app->vertexBuffer == VE_INVALID_ADDRESS) {
-        fprintf(stderr, "Failed to create vertex buffer: %s\n", veGetLastError());
+    if (veCreateVertexBuffer(app->device, cubeVertices, sizeof(cubeVertices), "CubeVertices", &app->vertexBuffer) != VE_SUCCESS ||
+        app->vertexBuffer == VE_INVALID_ADDRESS) {
+        fprintf(stderr, "Failed to create vertex buffer\n");
         return false;
     }
     
     // Create index buffer  
-    app->indexBuffer = veCreateIndexBuffer(app->device, cubeIndices,
-                                         sizeof(cubeIndices), "CubeIndices");
-    if (app->indexBuffer == VE_INVALID_ADDRESS) {
-        fprintf(stderr, "Failed to create index buffer: %s\n", veGetLastError());
+    if (veCreateIndexBuffer(app->device, cubeIndices, sizeof(cubeIndices), "CubeIndices", &app->indexBuffer) != VE_SUCCESS ||
+        app->indexBuffer == VE_INVALID_ADDRESS) {
+        fprintf(stderr, "Failed to create index buffer\n");
         return false;
     }
     
     // Create uniform buffer (persistently mapped for easy updates)
-    app->uniformBuffer = veCreateUniformBuffer(app->device, sizeof(UniformData),
-                                             true, "CubeUniforms");
-    if (app->uniformBuffer == VE_INVALID_ADDRESS) {
-        fprintf(stderr, "Failed to create uniform buffer: %s\n", veGetLastError());
+    if (veCreateUniformBuffer(app->device, sizeof(UniformData), true, "CubeUniforms", &app->uniformBuffer) != VE_SUCCESS ||
+        app->uniformBuffer == VE_INVALID_ADDRESS) {
+        fprintf(stderr, "Failed to create uniform buffer\n");
         return false;
     }
     
@@ -380,30 +375,28 @@ static bool createGeometry(CubeApp* app) {
 // Load texture
 static bool loadTexture(CubeApp* app) {
     // Load texture from file
-    app->texture = veLoadTexture(app->device, "examples/data/testCard.png", 
-                                VK_IMAGE_USAGE_SAMPLED_BIT, true);
-    if (app->texture == VE_INVALID_TEXTURE_INDEX) {
-        fprintf(stderr, "Failed to load texture: %s\n", veGetLastError());
+    if (veLoadTexture(app->device, "examples/data/testCard.png", VK_IMAGE_USAGE_SAMPLED_BIT, true, &app->texture) != VE_SUCCESS ||
+        app->texture == VE_INVALID_TEXTURE_INDEX) {
+        fprintf(stderr, "Failed to load texture\n");
         // Create a simple fallback texture if file doesn't exist
-        app->texture = veCreateTexture2D(app->device, 2, 2, VK_FORMAT_R8G8B8A8_UNORM,
-                                        VK_IMAGE_USAGE_SAMPLED_BIT, "FallbackTexture");
-        if (app->texture == VE_INVALID_TEXTURE_INDEX) {
-            fprintf(stderr, "Failed to create fallback texture: %s\n", veGetLastError());
+        if (veCreateTexture2D(app->device, 2, 2, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, "FallbackTexture",
+                              &app->texture) != VE_SUCCESS ||
+            app->texture == VE_INVALID_TEXTURE_INDEX) {
+            fprintf(stderr, "Failed to create fallback texture\n");
             return false;
         }
         
         // Fill with simple checkerboard pattern
         uint32_t pixels[4] = {0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFFFFFFFF};
-        VEResult result = veUpdateBuffer(app->device, app->texture, pixels, sizeof(pixels), 0);
+        VEResult result = veHostWriteTexture(app->device, app->texture, pixels, sizeof(pixels));
         if (result != VE_SUCCESS) {
             printf("Warning: Could not update fallback texture\n");
         }
     }
     
     // Create linear sampler
-    app->sampler = veCreateLinearSampler(app->device);
-    if (app->sampler == VE_INVALID_SAMPLER_INDEX) {
-        fprintf(stderr, "Failed to create sampler: %s\n", veGetLastError());
+    if (veCreateLinearSampler(app->device, &app->sampler) != VE_SUCCESS || app->sampler == VE_INVALID_SAMPLER_INDEX) {
+        fprintf(stderr, "Failed to create sampler\n");
         return false;
     }
     
@@ -457,9 +450,8 @@ static bool createRenderConfig(CubeApp* app) {
         .debugName = "CubeRenderConfig"
     };
     
-    app->renderConfig = veCreateRenderConfig(app->device, &configDesc);
-    if (!app->renderConfig) {
-        fprintf(stderr, "Failed to create render config: %s\n", veGetLastError());
+    if (veCreateRenderConfig(app->device, &configDesc, &app->renderConfig) != VE_SUCCESS || !app->renderConfig) {
+        fprintf(stderr, "Failed to create render config\n");
         return false;
     }
     
@@ -479,8 +471,9 @@ static void updateUniforms(CubeApp* app) {
     }
     
     // Build transformation matrices
-    uint32_t width, height;
-    veGetSwapchainSize(app->swapchain, &width, &height);
+    VkExtent2D extent = veGetSwapchainSize(app->swapchain);
+    uint32_t width = extent.width;
+    uint32_t height = extent.height;
     
     float aspect = (float)width / (float)height;
     Mat4 projection = mat4Perspective(PI * 0.25f, aspect, 0.1f, 100.0f);
@@ -503,8 +496,8 @@ static void updateUniforms(CubeApp* app) {
 // Render one frame
 static void renderFrame(CubeApp* app) {
     // Begin command buffer
-    VECommandBuffer* cmd = veBeginCommandBuffer(app->device);
-    if (!cmd) {
+    VECommandBuffer* cmd = NULL;
+    if (veBeginCommandBuffer(app->device, &cmd) != VE_SUCCESS || !cmd) {
         fprintf(stderr, "Failed to begin command buffer\n");
         return;
     }
@@ -602,49 +595,49 @@ static void cleanup(CubeApp* app) {
     
     // Destroy render config
     if (app->renderConfig) {
-        veDestroyRenderConfig(app->renderConfig);
+        (void)veDestroyRenderConfig(app->renderConfig);
     }
     
     // Destroy shaders
     if (app->shaderConfig) {
-        veDestroyShaderConfig(app->shaderConfig);
+        (void)veDestroyShaderConfig(app->shaderConfig);
     }
     if (app->vertexShader) {
-        veDestroyShader(app->vertexShader);
+        (void)veDestroyShader(app->vertexShader);
     }
     if (app->fragmentShader) {
-        veDestroyShader(app->fragmentShader);
+        (void)veDestroyShader(app->fragmentShader);
     }
     
     // Destroy resources
     if (app->sampler != VE_INVALID_SAMPLER_INDEX) {
-        veDestroySampler(app->device, app->sampler);
+        (void)veDestroySampler(app->device, app->sampler);
     }
     if (app->texture != VE_INVALID_TEXTURE_INDEX) {
-        veDestroyTexture(app->device, app->texture);
+        (void)veDestroyTexture(app->device, app->texture);
     }
     if (app->uniformBuffer != VE_INVALID_ADDRESS) {
-        veDestroyBuffer(app->device, app->uniformBuffer);
+        (void)veDestroyBuffer(app->device, app->uniformBuffer);
     }
     if (app->indexBuffer != VE_INVALID_ADDRESS) {
-        veDestroyBuffer(app->device, app->indexBuffer);
+        (void)veDestroyBuffer(app->device, app->indexBuffer);
     }
     if (app->vertexBuffer != VE_INVALID_ADDRESS) {
-        veDestroyBuffer(app->device, app->vertexBuffer);
+        (void)veDestroyBuffer(app->device, app->vertexBuffer);
     }
     
     // Destroy VulkEase objects
     if (app->renderTarget) {
-        veDestroyRenderTarget(app->renderTarget);
+        (void)veDestroyRenderTarget(app->renderTarget);
     }
     if (app->swapchain) {
-        veDestroySwapchain(app->swapchain);
+        (void)veDestroySwapchain(app->swapchain);
     }
     if (app->device) {
-        veDestroyDevice(app->device);
+        (void)veDestroyDevice(app->device);
     }
     if (app->context) {
-        veDestroyContext(app->context);
+        (void)veDestroyContext(app->context);
     }
     
     // Cleanup GLFW

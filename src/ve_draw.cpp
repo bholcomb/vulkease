@@ -9,10 +9,14 @@
 // Viewport and Scissor Management
 // =============================================================================
 
-void veSetViewport(VECommandBuffer *cmd, float x, float y, float width, float height, float minDepth, float maxDepth)
+VEResult veSetViewport(VECommandBuffer *cmd, float x, float y, float width, float height, float minDepth,
+                       float maxDepth)
 {
    if (!cmd)
-      return;
+   {
+      veSetError("CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
@@ -25,12 +29,16 @@ void veSetViewport(VECommandBuffer *cmd, float x, float y, float width, float he
    viewport.maxDepth = maxDepth;
 
    vkCmdSetViewportWithCount(internal->commandBuffer, 1, &viewport);
+   return VE_SUCCESS;
 }
 
-void veSetScissor(VECommandBuffer *cmd, int32_t x, int32_t y, uint32_t width, uint32_t height)
+VEResult veSetScissor(VECommandBuffer *cmd, int32_t x, int32_t y, uint32_t width, uint32_t height)
 {
    if (!cmd)
-      return;
+   {
+      veSetError("CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
@@ -41,16 +49,20 @@ void veSetScissor(VECommandBuffer *cmd, int32_t x, int32_t y, uint32_t width, ui
    scissor.extent.height = height;
 
    vkCmdSetScissorWithCount(internal->commandBuffer, 1, &scissor);
+   return VE_SUCCESS;
 }
 
 // =============================================================================
 // Combined Render State
 // =============================================================================
 
-void veApplyRenderState(VECommandBuffer *cmd, const VERenderState *state)
+VEResult veApplyRenderState(VECommandBuffer *cmd, const VERenderState *state)
 {
    if (!cmd || !state)
-      return;
+   {
+      veSetError("Invalid parameters for veApplyRenderState");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
@@ -58,54 +70,71 @@ void veApplyRenderState(VECommandBuffer *cmd, const VERenderState *state)
    if (!internal->inRenderPass && (state->viewport == NULL || state->scissor == NULL))
    {
       veSetError("veApplyRenderState: must be called inside veBeginRendering when viewport or scissor is NULL");
-      return;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    // Bind shader config if provided
    if (state->shaderConfig)
    {
-      veBindShaderConfig(cmd, state->shaderConfig);
+      VEResult r = veBindShaderConfig(cmd, state->shaderConfig);
+      if (r != VE_SUCCESS)
+         return r;
    }
 
    // Apply render config if provided
    if (state->renderConfig)
    {
-      veApplyRenderConfig(cmd, state->renderConfig);
+      VEResult r = veApplyRenderConfig(cmd, state->renderConfig);
+      if (r != VE_SUCCESS)
+         return r;
    }
 
    // Set viewport (use render area if NULL)
    if (state->viewport)
    {
-      veSetViewport(cmd, state->viewport->x, state->viewport->y, state->viewport->width, state->viewport->height,
-                    state->viewport->minDepth, state->viewport->maxDepth);
+      VEResult r = veSetViewport(cmd, state->viewport->x, state->viewport->y, state->viewport->width,
+                                 state->viewport->height, state->viewport->minDepth, state->viewport->maxDepth);
+      if (r != VE_SUCCESS)
+         return r;
    }
    else
    {
-      veSetViewport(cmd, static_cast<float>(internal->renderAreaX), static_cast<float>(internal->renderAreaY),
-                    static_cast<float>(internal->renderAreaWidth), static_cast<float>(internal->renderAreaHeight), 0.0f,
-                    1.0f);
+      VEResult r = veSetViewport(cmd, static_cast<float>(internal->renderAreaX), static_cast<float>(internal->renderAreaY),
+                                 static_cast<float>(internal->renderAreaWidth), static_cast<float>(internal->renderAreaHeight), 0.0f, 1.0f);
+      if (r != VE_SUCCESS)
+         return r;
    }
 
    // Set scissor (use render area if NULL)
    if (state->scissor)
    {
-      veSetScissor(cmd, state->scissor->x, state->scissor->y, state->scissor->width, state->scissor->height);
+      VEResult r = veSetScissor(cmd, state->scissor->x, state->scissor->y, state->scissor->width,
+                                state->scissor->height);
+      if (r != VE_SUCCESS)
+         return r;
    }
    else
    {
-      veSetScissor(cmd, static_cast<int32_t>(internal->renderAreaX), static_cast<int32_t>(internal->renderAreaY),
-                   internal->renderAreaWidth, internal->renderAreaHeight);
+      VEResult r = veSetScissor(cmd, static_cast<int32_t>(internal->renderAreaX), static_cast<int32_t>(internal->renderAreaY),
+                                internal->renderAreaWidth, internal->renderAreaHeight);
+      if (r != VE_SUCCESS)
+         return r;
    }
+
+   return VE_SUCCESS;
 }
 
 // =============================================================================
 // Runtime State Overrides
 // =============================================================================
 
-void veOverrideRasterState(VECommandBuffer *cmd, const VERasterConfig *raster)
+VEResult veOverrideRasterState(VECommandBuffer *cmd, const VERasterConfig *raster)
 {
    if (!cmd || !raster)
-      return;
+   {
+      veSetError("Invalid parameters for veOverrideRasterState");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
@@ -121,12 +150,16 @@ void veOverrideRasterState(VECommandBuffer *cmd, const VERasterConfig *raster)
 
    // Extended dynamic state 3
    veFuncs.vkCmdSetPolygonModeEXT(internal->commandBuffer, (VkPolygonMode)raster->polygonMode);
+   return VE_SUCCESS;
 }
 
-void veOverrideDepthState(VECommandBuffer *cmd, const VEDepthConfig *depth)
+VEResult veOverrideDepthState(VECommandBuffer *cmd, const VEDepthConfig *depth)
 {
    if (!cmd || !depth)
-      return;
+   {
+      veSetError("Invalid parameters for veOverrideDepthState");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
@@ -152,12 +185,16 @@ void veOverrideDepthState(VECommandBuffer *cmd, const VEDepthConfig *depth)
    {
       vkCmdSetDepthBounds(internal->commandBuffer, depth->minDepthBounds, depth->maxDepthBounds);
    }
+   return VE_SUCCESS;
 }
 
-void veOverrideBlendState(VECommandBuffer *cmd, const VEBlendConfig *blend)
+VEResult veOverrideBlendState(VECommandBuffer *cmd, const VEBlendConfig *blend)
 {
    if (!cmd || !blend)
-      return;
+   {
+      veSetError("Invalid parameters for veOverrideBlendState");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
@@ -172,52 +209,69 @@ void veOverrideBlendState(VECommandBuffer *cmd, const VEBlendConfig *blend)
       }
       veFuncs.vkCmdSetColorBlendEnableEXT(internal->commandBuffer, 0, blend->attachmentCount, colorBlendEnables);
    }
+   return VE_SUCCESS;
 }
 
 // =============================================================================
 // Quick State Toggles
 // =============================================================================
 
-void veSetWireframe(VECommandBuffer *cmd, bool enabled)
+VEResult veSetWireframe(VECommandBuffer *cmd, bool enabled)
 {
    if (!cmd)
-      return;
+   {
+      veSetError("CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
    VkPolygonMode mode = enabled ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
    veFuncs.vkCmdSetPolygonModeEXT(internal->commandBuffer, mode);
+   return VE_SUCCESS;
 }
 
-void veSetAlphaBlending(VECommandBuffer *cmd, bool enabled)
+VEResult veSetAlphaBlending(VECommandBuffer *cmd, bool enabled)
 {
    if (!cmd)
-      return;
+   {
+      veSetError("CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
    VkBool32 blendEnable = enabled ? VK_TRUE : VK_FALSE;
    veFuncs.vkCmdSetColorBlendEnableEXT(internal->commandBuffer, 0, 1, &blendEnable);
+   return VE_SUCCESS;
 }
 
-void veSetDepthTesting(VECommandBuffer *cmd, bool testEnabled, bool writeEnabled)
+VEResult veSetDepthTesting(VECommandBuffer *cmd, bool testEnabled, bool writeEnabled)
 {
    if (!cmd)
-      return;
+   {
+      veSetError("CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
    vkCmdSetDepthTestEnable(internal->commandBuffer, testEnabled);
    vkCmdSetDepthWriteEnable(internal->commandBuffer, writeEnabled);
+   return VE_SUCCESS;
 }
 
-void veSetCulling(VECommandBuffer *cmd, VkCullModeFlags cullMode)
+VEResult veSetCulling(VECommandBuffer *cmd, VkCullModeFlags cullMode)
 {
    if (!cmd)
-      return;
+   {
+      veSetError("CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
    vkCmdSetCullMode(internal->commandBuffer, cullMode);
+   return VE_SUCCESS;
 }
 
 // =============================================================================
@@ -240,10 +294,13 @@ static VkShaderStageFlags veGetBoundShaderStages(VECommandBufferInternal *cmd)
    return stages;
 }
 
-void vePushConstants(VECommandBuffer *cmd, const void *data, uint64_t size, uint64_t offset)
+VEResult vePushConstants(VECommandBuffer *cmd, const void *data, uint64_t size, uint64_t offset)
 {
    if (!cmd || !data || size == 0)
-      return;
+   {
+      veSetError("Invalid parameters for vePushConstants");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
@@ -253,14 +310,14 @@ void vePushConstants(VECommandBuffer *cmd, const void *data, uint64_t size, uint
       veSetError("Push constants offset/size must be multiples of 4 (offset=%zu "
                  "size=%zu)",
                  offset, size);
-      return; // 4-byte alignment is required [web:626]
+      return VE_ERROR_INVALID_PARAMETER; // 4-byte alignment is required
    }
 
    // Simple bounds check for VulkEase's standard push constant limit
    if (offset + size > VE_MAX_PUSH_CONSTANT_BYTES)
    { // Standard guaranteed minimum
       veSetError("Push constant size exceeds limit (max 256 bytes, requested %zu+%zu)", offset, size);
-      return;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    // With VK_EXT_shader_object: Push constants are specified per-shader, not
@@ -271,7 +328,7 @@ void vePushConstants(VECommandBuffer *cmd, const void *data, uint64_t size, uint
    if (stageFlags == 0)
    {
       veSetError("No shader objects bound - cannot push constants");
-      return;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    // find the device's global push constant layout (created at device init)
@@ -282,6 +339,7 @@ void vePushConstants(VECommandBuffer *cmd, const void *data, uint64_t size, uint
       pushConstantLayout = internal->device->globalComputePipelineLayout;
 
    vkCmdPushConstants(internal->commandBuffer, pushConstantLayout, stageFlags, (uint32_t)offset, (uint32_t)size, data);
+   return VE_SUCCESS;
 }
 
 // =============================================================================
@@ -319,11 +377,14 @@ static uint64_t calculateTriangleContribution(VkPrimitiveTopology topology, uint
    return baseTriangles * instanceCount;
 }
 
-void veDraw(VECommandBuffer *cmd, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
-            uint32_t firstInstance)
+VEResult veDraw(VECommandBuffer *cmd, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
+                uint32_t firstInstance)
 {
    if (!cmd || vertexCount == 0)
-      return;
+   {
+      veSetError("Invalid parameters for veDraw");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
    if (internal->device)
@@ -334,12 +395,16 @@ void veDraw(VECommandBuffer *cmd, uint32_t vertexCount, uint32_t instanceCount, 
           internal->currentTopology, vertexCount, instanceCount, internal->currentPatchControlPoints);
    }
    vkCmdDraw(internal->commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
+   return VE_SUCCESS;
 }
 
-void veBindIndexBuffer(VECommandBuffer *cmd, VEBufferAddress indexBuffer, uint64_t offset, VkIndexType format)
+VEResult veBindIndexBuffer(VECommandBuffer *cmd, VEBufferAddress indexBuffer, uint64_t offset, VkIndexType format)
 {
    if (!cmd || indexBuffer == 0)
-      return;
+   {
+      veSetError("Invalid parameters for veBindIndexBuffer");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
    VkBuffer buffer = internal->device->getVkBufferFromAddress(indexBuffer);
@@ -347,17 +412,21 @@ void veBindIndexBuffer(VECommandBuffer *cmd, VEBufferAddress indexBuffer, uint64
    if (buffer == VK_NULL_HANDLE)
    {
       veSetError("Invalid index buffer address");
-      return;
+      return VE_ERROR_NOT_FOUND;
    }
 
    vkCmdBindIndexBuffer(internal->commandBuffer, buffer, offset, format);
+   return VE_SUCCESS;
 }
 
-void veDrawIndexed(VECommandBuffer *cmd, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex,
-                   int32_t vertexOffset, uint32_t firstInstance)
+VEResult veDrawIndexed(VECommandBuffer *cmd, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex,
+                       int32_t vertexOffset, uint32_t firstInstance)
 {
    if (!cmd || indexCount == 0)
-      return;
+   {
+      veSetError("Invalid parameters for veDrawIndexed");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
    if (internal->device)
@@ -368,13 +437,17 @@ void veDrawIndexed(VECommandBuffer *cmd, uint32_t indexCount, uint32_t instanceC
           internal->currentTopology, indexCount, instanceCount, internal->currentPatchControlPoints);
    }
    vkCmdDrawIndexed(internal->commandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+   return VE_SUCCESS;
 }
 
-void veDrawIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t offset, uint32_t drawCount,
-                    uint32_t stride)
+VEResult veDrawIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t offset, uint32_t drawCount,
+                        uint32_t stride)
 {
    if (!cmd || indirectBuffer == VE_INVALID_ADDRESS || drawCount == 0)
-      return;
+   {
+      veSetError("Invalid parameters for veDrawIndirect");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
    VkBuffer buffer = internal->device->getVkBufferFromAddress(indirectBuffer);
@@ -382,7 +455,7 @@ void veDrawIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64
    if (buffer == VK_NULL_HANDLE)
    {
       veSetError("Invalid indirect buffer address");
-      return;
+      return VE_ERROR_NOT_FOUND;
    }
 
    vkCmdDrawIndirect(internal->commandBuffer, buffer, offset, drawCount, stride);
@@ -390,13 +463,17 @@ void veDrawIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64
    {
       internal->device->frameStats.drawCalls += drawCount;
    }
+   return VE_SUCCESS;
 }
 
-void veDrawIndexedIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t offset, uint32_t drawCount,
-                           uint32_t stride)
+VEResult veDrawIndexedIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t offset,
+                               uint32_t drawCount, uint32_t stride)
 {
    if (!cmd || indirectBuffer == VE_INVALID_ADDRESS || drawCount == 0)
-      return;
+   {
+      veSetError("Invalid parameters for veDrawIndexedIndirect");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
    VkBuffer buffer = internal->device->getVkBufferFromAddress(indirectBuffer);
@@ -404,7 +481,7 @@ void veDrawIndexedIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer,
    if (buffer == VK_NULL_HANDLE)
    {
       veSetError("Invalid indirect buffer address");
-      return;
+      return VE_ERROR_NOT_FOUND;
    }
 
    vkCmdDrawIndexedIndirect(internal->commandBuffer, buffer, offset, drawCount, stride);
@@ -412,13 +489,17 @@ void veDrawIndexedIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer,
    {
       internal->device->frameStats.drawCalls += drawCount;
    }
+   return VE_SUCCESS;
 }
 
-void veDrawIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t indirectOffset,
-                         VEBufferAddress countBuffer, uint64_t countOffset, uint32_t maxDrawCount, uint32_t stride)
+VEResult veDrawIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t indirectOffset,
+                             VEBufferAddress countBuffer, uint64_t countOffset, uint32_t maxDrawCount, uint32_t stride)
 {
    if (!cmd || indirectBuffer == VE_INVALID_ADDRESS || countBuffer == VE_INVALID_ADDRESS)
-      return;
+   {
+      veSetError("Invalid parameters for veDrawIndirectCount");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
    VkBuffer indirectBuf = internal->device->getVkBufferFromAddress(indirectBuffer);
@@ -427,7 +508,7 @@ void veDrawIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, u
    if (indirectBuf == VK_NULL_HANDLE || countBuf == VK_NULL_HANDLE)
    {
       veSetError("Invalid buffer address for indirect count draw");
-      return;
+      return VE_ERROR_NOT_FOUND;
    }
 
    vkCmdDrawIndirectCount(internal->commandBuffer, indirectBuf, indirectOffset, countBuf, countOffset, maxDrawCount,
@@ -436,14 +517,18 @@ void veDrawIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, u
    {
       internal->device->frameStats.drawCalls += maxDrawCount;
    }
+   return VE_SUCCESS;
 }
 
-void veDrawIndexedIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t indirectOffset,
-                                VEBufferAddress countBuffer, uint64_t countOffset, uint32_t maxDrawCount,
-                                uint32_t stride)
+VEResult veDrawIndexedIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t indirectOffset,
+                                    VEBufferAddress countBuffer, uint64_t countOffset, uint32_t maxDrawCount,
+                                    uint32_t stride)
 {
    if (!cmd || indirectBuffer == VE_INVALID_ADDRESS || countBuffer == VE_INVALID_ADDRESS)
-      return;
+   {
+      veSetError("Invalid parameters for veDrawIndexedIndirectCount");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
    VkBuffer indirectBuf = internal->device->getVkBufferFromAddress(indirectBuffer);
@@ -452,7 +537,7 @@ void veDrawIndexedIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBu
    if (indirectBuf == VK_NULL_HANDLE || countBuf == VK_NULL_HANDLE)
    {
       veSetError("Invalid buffer address for indexed indirect count draw");
-      return;
+      return VE_ERROR_NOT_FOUND;
    }
 
    vkCmdDrawIndexedIndirectCount(internal->commandBuffer, indirectBuf, indirectOffset, countBuf, countOffset,
@@ -461,105 +546,229 @@ void veDrawIndexedIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBu
    {
       internal->device->frameStats.drawCalls += maxDrawCount;
    }
+   return VE_SUCCESS;
 }
 
 // =============================================================================
 // Synchronization and Memory Barriers
 // =============================================================================
 
-void veBarrierVertexToFragment(VECommandBuffer *cmd)
+VEResult veBarrier(VECommandBuffer *cmd, const VEBarrierDesc *desc)
 {
-   if (!cmd)
-      return;
+   if (!cmd || !desc)
+   {
+      veSetError("Command buffer and barrier desc cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   VEDeviceInternal *device = internal->device;
+   if (!device)
+   {
+      veSetError("Command buffer has no device reference");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
-   VkMemoryBarrier2 memoryBarrier{};
-   memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-   memoryBarrier.srcStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
-   memoryBarrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
-   memoryBarrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-   memoryBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+   if ((desc->memoryBarrierCount > 0 && !desc->memoryBarriers) || (desc->bufferBarrierCount > 0 && !desc->bufferBarriers) ||
+       (desc->imageBarrierCount > 0 && !desc->imageBarriers))
+   {
+      veSetError("Barrier arrays cannot be NULL when their counts are > 0");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   std::vector<VkMemoryBarrier2> memoryBarriers;
+   memoryBarriers.reserve(desc->memoryBarrierCount);
+   for (uint32_t i = 0; i < desc->memoryBarrierCount; ++i)
+   {
+      const VEMemoryBarrier &src = desc->memoryBarriers[i];
+      VkMemoryBarrier2 b{};
+      b.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+      b.srcStageMask = src.srcStageMask;
+      b.srcAccessMask = src.srcAccessMask;
+      b.dstStageMask = src.dstStageMask;
+      b.dstAccessMask = src.dstAccessMask;
+      memoryBarriers.push_back(b);
+   }
+
+   std::vector<VkBufferMemoryBarrier2> bufferBarriers;
+   bufferBarriers.reserve(desc->bufferBarrierCount);
+   for (uint32_t i = 0; i < desc->bufferBarrierCount; ++i)
+   {
+      const VEBufferBarrier &src = desc->bufferBarriers[i];
+      if (src.buffer == VE_INVALID_ADDRESS)
+      {
+         veSetError("Buffer barrier %u has invalid buffer address", i);
+         return VE_ERROR_INVALID_PARAMETER;
+      }
+
+      VkBuffer buf = device->getVkBufferFromAddress(src.buffer);
+      if (buf == VK_NULL_HANDLE)
+      {
+         veSetError("Buffer barrier %u references unknown buffer address", i);
+         return VE_ERROR_NOT_FOUND;
+      }
+
+      VkBufferMemoryBarrier2 b{};
+      b.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+      b.srcStageMask = src.srcStageMask;
+      b.srcAccessMask = src.srcAccessMask;
+      b.dstStageMask = src.dstStageMask;
+      b.dstAccessMask = src.dstAccessMask;
+      b.srcQueueFamilyIndex = src.srcQueueFamilyIndex;
+      b.dstQueueFamilyIndex = src.dstQueueFamilyIndex;
+      b.buffer = buf;
+      b.offset = src.offset;
+      b.size = (src.size == 0) ? VK_WHOLE_SIZE : src.size;
+      bufferBarriers.push_back(b);
+   }
+
+   std::vector<VkImageMemoryBarrier2> imageBarriers;
+   imageBarriers.reserve(desc->imageBarrierCount);
+   for (uint32_t i = 0; i < desc->imageBarrierCount; ++i)
+   {
+      const VEImageBarrier &src = desc->imageBarriers[i];
+      if (src.image == VE_INVALID_TEXTURE_INDEX)
+      {
+         veSetError("Image barrier %u has invalid texture index", i);
+         return VE_ERROR_INVALID_PARAMETER;
+      }
+
+      VETextureInternal *tex = device->getTexture(src.image);
+      if (!tex || !tex->isValid || tex->image == VK_NULL_HANDLE)
+      {
+         veSetError("Image barrier %u references unknown texture index", i);
+         return VE_ERROR_NOT_FOUND;
+      }
+
+      if (src.subresourceRange.aspectMask == 0)
+      {
+         veSetError("Image barrier %u subresourceRange.aspectMask cannot be 0", i);
+         return VE_ERROR_INVALID_PARAMETER;
+      }
+
+      VkImageLayout oldLayout = src.oldLayout;
+      if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && tex->currentLayout != VK_IMAGE_LAYOUT_UNDEFINED)
+      {
+         oldLayout = tex->currentLayout;
+      }
+
+      VkImageMemoryBarrier2 b{};
+      b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+      b.srcStageMask = src.srcStageMask;
+      b.srcAccessMask = src.srcAccessMask;
+      b.dstStageMask = src.dstStageMask;
+      b.dstAccessMask = src.dstAccessMask;
+      b.srcQueueFamilyIndex = src.srcQueueFamilyIndex;
+      b.dstQueueFamilyIndex = src.dstQueueFamilyIndex;
+      b.oldLayout = oldLayout;
+      b.newLayout = src.newLayout;
+      b.image = tex->image;
+      b.subresourceRange = src.subresourceRange;
+      imageBarriers.push_back(b);
+
+      // Update tracked layout if this barrier is a layout transition.
+      if (src.newLayout != VK_IMAGE_LAYOUT_UNDEFINED)
+      {
+         tex->currentLayout = src.newLayout;
+      }
+   }
 
    VkDependencyInfo dependencyInfo{};
    dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-   dependencyInfo.memoryBarrierCount = 1;
-   dependencyInfo.pMemoryBarriers = &memoryBarrier;
+   dependencyInfo.memoryBarrierCount = (uint32_t)memoryBarriers.size();
+   dependencyInfo.pMemoryBarriers = memoryBarriers.empty() ? nullptr : memoryBarriers.data();
+   dependencyInfo.bufferMemoryBarrierCount = (uint32_t)bufferBarriers.size();
+   dependencyInfo.pBufferMemoryBarriers = bufferBarriers.empty() ? nullptr : bufferBarriers.data();
+   dependencyInfo.imageMemoryBarrierCount = (uint32_t)imageBarriers.size();
+   dependencyInfo.pImageMemoryBarriers = imageBarriers.empty() ? nullptr : imageBarriers.data();
 
    vkCmdPipelineBarrier2(internal->commandBuffer, &dependencyInfo);
+   return VE_SUCCESS;
 }
 
-void veBarrierComputeToVertex(VECommandBuffer *cmd)
+VEResult veBarrierVertexToFragment(VECommandBuffer *cmd)
 {
    if (!cmd)
-      return;
+   {
+      veSetError("CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
-   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
-
-   VkMemoryBarrier2 memoryBarrier{};
-   memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-   memoryBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-   memoryBarrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
-   memoryBarrier.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
-   memoryBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
-
-   VkDependencyInfo dependencyInfo{};
-   dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-   dependencyInfo.memoryBarrierCount = 1;
-   dependencyInfo.pMemoryBarriers = &memoryBarrier;
-
-   vkCmdPipelineBarrier2(internal->commandBuffer, &dependencyInfo);
+   VEMemoryBarrier b{};
+   b.srcStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+   b.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+   b.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+   b.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+   VEBarrierDesc desc{};
+   desc.memoryBarrierCount = 1;
+   desc.memoryBarriers = &b;
+   return veBarrier(cmd, &desc);
 }
 
-void veBarrierComputeToCompute(VECommandBuffer *cmd)
+VEResult veBarrierComputeToVertex(VECommandBuffer *cmd)
 {
    if (!cmd)
-      return;
+   {
+      veSetError("CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
-   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
-
-   VkMemoryBarrier2 memoryBarrier{};
-   memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-   memoryBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-   memoryBarrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
-   memoryBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-   memoryBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
-
-   VkDependencyInfo dependencyInfo{};
-   dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-   dependencyInfo.memoryBarrierCount = 1;
-   dependencyInfo.pMemoryBarriers = &memoryBarrier;
-
-   vkCmdPipelineBarrier2(internal->commandBuffer, &dependencyInfo);
+   VEMemoryBarrier b{};
+   b.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+   b.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+   b.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+   b.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+   VEBarrierDesc desc{};
+   desc.memoryBarrierCount = 1;
+   desc.memoryBarriers = &b;
+   return veBarrier(cmd, &desc);
 }
 
-void veBarrierGraphicsToPresent(VECommandBuffer *cmd)
+VEResult veBarrierComputeToCompute(VECommandBuffer *cmd)
 {
    if (!cmd)
-      return;
+   {
+      veSetError("CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
-   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
-
-   VkMemoryBarrier2 memoryBarrier{};
-   memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-   memoryBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-   memoryBarrier.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-   memoryBarrier.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
-   memoryBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
-
-   VkDependencyInfo dependencyInfo{};
-   dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-   dependencyInfo.memoryBarrierCount = 1;
-   dependencyInfo.pMemoryBarriers = &memoryBarrier;
-
-   vkCmdPipelineBarrier2(internal->commandBuffer, &dependencyInfo);
+   VEMemoryBarrier b{};
+   b.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+   b.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+   b.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+   b.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+   VEBarrierDesc desc{};
+   desc.memoryBarrierCount = 1;
+   desc.memoryBarriers = &b;
+   return veBarrier(cmd, &desc);
 }
 
-void veTransitionTexture(VECommandBuffer *cmd, VETextureIndex texture, VkImageLayout oldLayout, VkImageLayout newLayout)
+VEResult veBarrierGraphicsToPresent(VECommandBuffer *cmd)
+{
+   if (!cmd)
+   {
+      veSetError("CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VEMemoryBarrier b{};
+   b.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+   b.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+   b.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+   b.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+   VEBarrierDesc desc{};
+   desc.memoryBarrierCount = 1;
+   desc.memoryBarriers = &b;
+   return veBarrier(cmd, &desc);
+}
+
+VEResult veTransitionTexture(VECommandBuffer *cmd, VETextureIndex texture, VkImageLayout oldLayout,
+                            VkImageLayout newLayout)
 {
    if (!cmd || texture == VE_INVALID_TEXTURE_INDEX)
    {
-      return;
+      veSetError("Invalid parameters for veTransitionTexture");
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
@@ -568,20 +777,20 @@ void veTransitionTexture(VECommandBuffer *cmd, VETextureIndex texture, VkImageLa
    if (!device)
    {
       veSetError("Command buffer has no device reference");
-      return;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VETextureInternal *textureInternal = device->getTexture(texture);
    if (!textureInternal || !textureInternal->isValid)
    {
       veSetError("Invalid texture index: %u", texture);
-      return;
+      return VE_ERROR_NOT_FOUND;
    }
 
    // Skip if layouts are the same
    if (oldLayout == newLayout)
    {
-      return;
+      return VE_SUCCESS;
    }
 
    // If oldLayout is VK_IMAGE_LAYOUT_UNDEFINED, use the tracked current layout
@@ -708,47 +917,49 @@ void veTransitionTexture(VECommandBuffer *cmd, VETextureIndex texture, VkImageLa
 
    // Update the tracked layout
    textureInternal->currentLayout = (VkImageLayout)newLayout;
+   return VE_SUCCESS;
 }
 
 // =============================================================================
 // Common Texture Layout Transition Helpers
 // =============================================================================
 
-void veTransitionTextureForShaderRead(VECommandBuffer *cmd, VETextureIndex texture)
+VEResult veTransitionTextureForShaderRead(VECommandBuffer *cmd, VETextureIndex texture)
 {
-   veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+   return veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 }
 
-void veTransitionTextureForColorAttachment(VECommandBuffer *cmd, VETextureIndex texture)
+VEResult veTransitionTextureForColorAttachment(VECommandBuffer *cmd, VETextureIndex texture)
 {
-   veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+   return veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 }
 
-void veTransitionTextureForDepthAttachment(VECommandBuffer *cmd, VETextureIndex texture)
+VEResult veTransitionTextureForDepthAttachment(VECommandBuffer *cmd, VETextureIndex texture)
 {
-   veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+   return veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 }
 
-void veTransitionTextureForTransferSrc(VECommandBuffer *cmd, VETextureIndex texture)
+VEResult veTransitionTextureForTransferSrc(VECommandBuffer *cmd, VETextureIndex texture)
 {
-   veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+   return veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 }
 
-void veTransitionTextureForTransferDst(VECommandBuffer *cmd, VETextureIndex texture)
+VEResult veTransitionTextureForTransferDst(VECommandBuffer *cmd, VETextureIndex texture)
 {
-   veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+   return veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 }
 
-void veTransitionTextureForPresent(VECommandBuffer *cmd, VETextureIndex texture)
+VEResult veTransitionTextureForPresent(VECommandBuffer *cmd, VETextureIndex texture)
 {
-   veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+   return veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 }
 
-void veTransitionTextureToLayout(VECommandBuffer *cmd, VETextureIndex texture, VkImageLayout newLayout)
+VEResult veTransitionTextureToLayout(VECommandBuffer *cmd, VETextureIndex texture, VkImageLayout newLayout)
 {
    if (!cmd || texture == VE_INVALID_TEXTURE_INDEX)
    {
-      return;
+      veSetError("Invalid parameters for veTransitionTextureToLayout");
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
@@ -757,17 +968,17 @@ void veTransitionTextureToLayout(VECommandBuffer *cmd, VETextureIndex texture, V
    if (!device)
    {
       veSetError("Command buffer has no device reference");
-      return;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VETextureInternal *textureInternal = device->getTexture(texture);
    if (!textureInternal || !textureInternal->isValid)
    {
       veSetError("Invalid texture index: %u", texture);
-      return;
+      return VE_ERROR_NOT_FOUND;
    }
 
    // Use the tracked current layout, or UNDEFINED if not set
    VkImageLayout currentLayout = textureInternal->currentLayout;
-   veTransitionTexture(cmd, texture, currentLayout, newLayout);
+   return veTransitionTexture(cmd, texture, currentLayout, newLayout);
 }

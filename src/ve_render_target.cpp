@@ -86,8 +86,8 @@ VEResult VERenderTargetInternal::createTextures()
       colorDesc.debugName = colorName;
    }
 
-   colorTexture = veCreateTexture(reinterpret_cast<VEDevice *>(device), &colorDesc);
-   if (colorTexture == VE_INVALID_TEXTURE_INDEX)
+   if (veCreateTexture(reinterpret_cast<VEDevice *>(device), &colorDesc, &colorTexture) != VE_SUCCESS ||
+       colorTexture == VE_INVALID_TEXTURE_INDEX)
    {
       veSetError("Failed to create render target color texture");
       return VE_ERROR_UNKNOWN;
@@ -113,8 +113,8 @@ VEResult VERenderTargetInternal::createTextures()
          resolveDesc.debugName = resolveName;
       }
 
-      resolveTexture = veCreateTexture(reinterpret_cast<VEDevice *>(device), &resolveDesc);
-      if (resolveTexture == VE_INVALID_TEXTURE_INDEX)
+      if (veCreateTexture(reinterpret_cast<VEDevice *>(device), &resolveDesc, &resolveTexture) != VE_SUCCESS ||
+          resolveTexture == VE_INVALID_TEXTURE_INDEX)
       {
          veSetError("Failed to create render target resolve texture");
          destroyTextures();
@@ -142,8 +142,8 @@ VEResult VERenderTargetInternal::createTextures()
          depthDesc.debugName = depthName;
       }
 
-      depthTexture = veCreateTexture(reinterpret_cast<VEDevice *>(device), &depthDesc);
-      if (depthTexture == VE_INVALID_TEXTURE_INDEX)
+      if (veCreateTexture(reinterpret_cast<VEDevice *>(device), &depthDesc, &depthTexture) != VE_SUCCESS ||
+          depthTexture == VE_INVALID_TEXTURE_INDEX)
       {
          veSetError("Failed to create render target depth texture");
          destroyTextures();
@@ -160,17 +160,17 @@ void VERenderTargetInternal::destroyTextures()
    {
       if (colorTexture != VE_INVALID_TEXTURE_INDEX)
       {
-         veDestroyTexture(reinterpret_cast<VEDevice *>(device), colorTexture);
+         (void)veDestroyTexture(reinterpret_cast<VEDevice *>(device), colorTexture);
          colorTexture = VE_INVALID_TEXTURE_INDEX;
       }
       if (depthTexture != VE_INVALID_TEXTURE_INDEX)
       {
-         veDestroyTexture(reinterpret_cast<VEDevice *>(device), depthTexture);
+         (void)veDestroyTexture(reinterpret_cast<VEDevice *>(device), depthTexture);
          depthTexture = VE_INVALID_TEXTURE_INDEX;
       }
       if (resolveTexture != VE_INVALID_TEXTURE_INDEX)
       {
-         veDestroyTexture(reinterpret_cast<VEDevice *>(device), resolveTexture);
+         (void)veDestroyTexture(reinterpret_cast<VEDevice *>(device), resolveTexture);
          resolveTexture = VE_INVALID_TEXTURE_INDEX;
       }
    }
@@ -207,12 +207,18 @@ void VERenderTargetInternal::destroy()
 // Public API
 // =============================================================================
 
-VERenderTarget *veCreateRenderTarget(VEDevice *device, const VERenderTargetDesc *desc)
+VEResult veCreateRenderTarget(VEDevice *device, const VERenderTargetDesc *desc, VERenderTarget **outRenderTarget)
 {
+   if (!outRenderTarget)
+   {
+      veSetError("outRenderTarget cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    if (!device || !desc)
    {
       veSetError("Invalid parameters for veCreateRenderTarget");
-      return nullptr;
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
@@ -221,26 +227,31 @@ VERenderTarget *veCreateRenderTarget(VEDevice *device, const VERenderTargetDesc 
    if (!rt)
    {
       veSetError("Failed to allocate render target");
-      return nullptr;
+      return VE_ERROR_OUT_OF_MEMORY;
    }
 
    VEResult result = rt->create(deviceInternal, desc);
    if (result != VE_SUCCESS)
    {
       delete rt;
-      return nullptr;
+      return result;
    }
 
-   return reinterpret_cast<VERenderTarget *>(rt);
+   *outRenderTarget = reinterpret_cast<VERenderTarget *>(rt);
+   return VE_SUCCESS;
 }
 
-void veDestroyRenderTarget(VERenderTarget *renderTarget)
+VEResult veDestroyRenderTarget(VERenderTarget *renderTarget)
 {
    if (!renderTarget)
-      return;
+   {
+      veSetError("RenderTarget cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    VERenderTargetInternal *internal = reinterpret_cast<VERenderTargetInternal *>(renderTarget);
    delete internal;
+   return VE_SUCCESS;
 }
 
 VEResult veResizeRenderTarget(VERenderTarget *renderTarget, uint32_t width, uint32_t height)
@@ -258,7 +269,9 @@ VEResult veResizeRenderTarget(VERenderTarget *renderTarget, uint32_t width, uint
 VETextureIndex veGetRenderTargetColorTexture(VERenderTarget *renderTarget)
 {
    if (!renderTarget)
+   {
       return VE_INVALID_TEXTURE_INDEX;
+   }
 
    VERenderTargetInternal *internal = reinterpret_cast<VERenderTargetInternal *>(renderTarget);
    return internal->colorTexture;
@@ -267,7 +280,9 @@ VETextureIndex veGetRenderTargetColorTexture(VERenderTarget *renderTarget)
 VETextureIndex veGetRenderTargetDepthTexture(VERenderTarget *renderTarget)
 {
    if (!renderTarget)
+   {
       return VE_INVALID_TEXTURE_INDEX;
+   }
 
    VERenderTargetInternal *internal = reinterpret_cast<VERenderTargetInternal *>(renderTarget);
    return internal->depthTexture;
@@ -276,34 +291,33 @@ VETextureIndex veGetRenderTargetDepthTexture(VERenderTarget *renderTarget)
 VETextureIndex veGetRenderTargetResolveTexture(VERenderTarget *renderTarget)
 {
    if (!renderTarget)
+   {
       return VE_INVALID_TEXTURE_INDEX;
+   }
 
    VERenderTargetInternal *internal = reinterpret_cast<VERenderTargetInternal *>(renderTarget);
    return internal->resolveTexture;
 }
 
-VEResult veGetRenderTargetSize(VERenderTarget *renderTarget, uint32_t *outWidth, uint32_t *outHeight)
+VkExtent2D veGetRenderTargetSize(VERenderTarget *renderTarget)
 {
    if (!renderTarget)
    {
-      veSetError("Render target cannot be NULL");
-      return VE_ERROR_INVALID_PARAMETER;
+      veSetError("veGetRenderTargetSize: renderTarget cannot be NULL");
+      return VkExtent2D{0, 0};
    }
 
    VERenderTargetInternal *internal = reinterpret_cast<VERenderTargetInternal *>(renderTarget);
-
-   if (outWidth)
-      *outWidth = internal->width;
-   if (outHeight)
-      *outHeight = internal->height;
-
-   return VE_SUCCESS;
+   return VkExtent2D{internal->width, internal->height};
 }
 
 VkFormat veGetRenderTargetColorFormat(VERenderTarget *renderTarget)
 {
    if (!renderTarget)
+   {
+      veSetError("veGetRenderTargetColorFormat: renderTarget cannot be NULL");
       return VK_FORMAT_UNDEFINED;
+   }
 
    VERenderTargetInternal *internal = reinterpret_cast<VERenderTargetInternal *>(renderTarget);
    return internal->colorFormat;
@@ -312,7 +326,10 @@ VkFormat veGetRenderTargetColorFormat(VERenderTarget *renderTarget)
 VkFormat veGetRenderTargetDepthFormat(VERenderTarget *renderTarget)
 {
    if (!renderTarget)
+   {
+      veSetError("veGetRenderTargetDepthFormat: renderTarget cannot be NULL");
       return VK_FORMAT_UNDEFINED;
+   }
 
    VERenderTargetInternal *internal = reinterpret_cast<VERenderTargetInternal *>(renderTarget);
    return internal->depthFormat;

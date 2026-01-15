@@ -344,6 +344,22 @@ namespace VulkEase
         public UInt32 patchControlPoints;
     }
 
+    // Vulkan extent structs (used by value-returning native getters)
+    [StructLayout(LayoutKind.Sequential)]
+    public struct VkExtent2D
+    {
+        public UInt32 width;
+        public UInt32 height;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct VkExtent3D
+    {
+        public UInt32 width;
+        public UInt32 height;
+        public UInt32 depth;
+    }
+
     // Render config descriptor
     [StructLayout(LayoutKind.Sequential)]
     public struct VERenderConfigDesc

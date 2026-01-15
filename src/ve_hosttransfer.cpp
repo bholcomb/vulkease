@@ -153,12 +153,48 @@ static VEResult validateHostImageCopySupport(VEDeviceInternal *device, VETexture
    return VE_SUCCESS;
 }
 
+// Host image copy requires VK_IMAGE_LAYOUT_GENERAL as the current layout.
+// We ensure this via a short GPU-side layout transition (vkCmdPipelineBarrier2) and update the tracked layout.
+static VEResult ensureTextureInGeneralLayout(VEDevice *device, VETextureIndex textureIndex, VETextureInternal *texture)
+{
+   if (!device || !texture || !texture->isValid)
+      return VE_ERROR_INVALID_PARAMETER;
+
+   if (texture->currentLayout == VK_IMAGE_LAYOUT_GENERAL)
+      return VE_SUCCESS;
+
+   VECommandBuffer *cmd = NULL;
+   VEResult r = veBeginCommandBuffer(device, &cmd);
+   if (r != VE_SUCCESS || !cmd)
+      return r;
+
+   r = veTransitionTextureToLayout(cmd, textureIndex, VK_IMAGE_LAYOUT_GENERAL);
+   if (r != VE_SUCCESS)
+   {
+      (void)veReleaseCommandBuffer(cmd);
+      return r;
+   }
+
+   r = veEndCommandBuffer(cmd);
+   if (r != VE_SUCCESS)
+   {
+      (void)veReleaseCommandBuffer(cmd);
+      return r;
+   }
+
+   VESubmitInfo submitInfo{};
+   submitInfo.waitForCompletion = true;
+   r = veSubmitCommandBuffer(cmd, &submitInfo);
+   (void)veReleaseCommandBuffer(cmd);
+   return r;
+}
+
 /**
  * Copy data from host memory to texture using VK_EXT_host_image_copy
  */
-VULKEASE_API VEResult veHostCopyToTexture(VEDevice *device, VETextureIndex textureIndex, const void *srcData,
-                                          size_t dataSize, uint32_t offsetX, uint32_t offsetY, uint32_t offsetZ,
-                                          uint32_t width, uint32_t height, uint32_t depth)
+VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETextureIndex textureIndex, const void *srcData,
+                                               size_t dataSize, uint32_t offsetX, uint32_t offsetY, uint32_t offsetZ,
+                                               uint32_t width, uint32_t height, uint32_t depth)
 {
    if (!device)
    {
@@ -185,6 +221,14 @@ VULKEASE_API VEResult veHostCopyToTexture(VEDevice *device, VETextureIndex textu
    VEResult result = validateHostImageCopySupport(deviceInternal, texture);
    if (result != VE_SUCCESS)
    {
+      return result;
+   }
+
+   // Ensure the image is in GENERAL layout as required by VK_EXT_host_image_copy.
+   result = ensureTextureInGeneralLayout(device, textureIndex, texture);
+   if (result != VE_SUCCESS)
+   {
+      veSetError("Failed to transition texture to GENERAL layout for host write");
       return result;
    }
 
@@ -244,9 +288,9 @@ VULKEASE_API VEResult veHostCopyToTexture(VEDevice *device, VETextureIndex textu
 /**
  * Copy data from texture to host memory using VK_EXT_host_image_copy
  */
-VULKEASE_API VEResult veHostCopyFromTexture(VEDevice *device, VETextureIndex textureIndex, void *dstData,
-                                            size_t dataSize, uint32_t offsetX, uint32_t offsetY, uint32_t offsetZ,
-                                            uint32_t width, uint32_t height, uint32_t depth)
+VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETextureIndex textureIndex, void *dstData,
+                                              size_t dataSize, uint32_t offsetX, uint32_t offsetY, uint32_t offsetZ,
+                                              uint32_t width, uint32_t height, uint32_t depth)
 {
    if (!device)
    {
@@ -273,6 +317,14 @@ VULKEASE_API VEResult veHostCopyFromTexture(VEDevice *device, VETextureIndex tex
    VEResult result = validateHostImageCopySupport(deviceInternal, texture);
    if (result != VE_SUCCESS)
    {
+      return result;
+   }
+
+   // Ensure the image is in GENERAL layout as required by VK_EXT_host_image_copy.
+   result = ensureTextureInGeneralLayout(device, textureIndex, texture);
+   if (result != VE_SUCCESS)
+   {
+      veSetError("Failed to transition texture to GENERAL layout for host read");
       return result;
    }
 
@@ -332,7 +384,7 @@ VULKEASE_API VEResult veHostCopyFromTexture(VEDevice *device, VETextureIndex tex
 /**
  * Convenience function to copy entire texture to host memory
  */
-VEResult veHostCopyEntireTexture(VEDevice *device, VETextureIndex textureIndex, void *dstData, size_t dataSize)
+VEResult veHostReadTexture(VEDevice *device, VETextureIndex textureIndex, void *dstData, size_t dataSize)
 {
    if (!device)
    {
@@ -349,14 +401,14 @@ VEResult veHostCopyEntireTexture(VEDevice *device, VETextureIndex textureIndex, 
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   return veHostCopyFromTexture(device, textureIndex, dstData, dataSize, 0, 0, 0, texture->width, texture->height,
-                                texture->depth);
+   return veHostReadTextureRegion(device, textureIndex, dstData, dataSize, 0, 0, 0, texture->width, texture->height,
+                                  texture->depth);
 }
 
 /**
  * Convenience function to update entire texture from host memory
  */
-VEResult veHostUpdateEntireTexture(VEDevice *device, VETextureIndex textureIndex, const void *srcData, size_t dataSize)
+VEResult veHostWriteTexture(VEDevice *device, VETextureIndex textureIndex, const void *srcData, size_t dataSize)
 {
    if (!device)
    {
@@ -373,6 +425,6 @@ VEResult veHostUpdateEntireTexture(VEDevice *device, VETextureIndex textureIndex
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   return veHostCopyToTexture(device, textureIndex, srcData, dataSize, 0, 0, 0, texture->width, texture->height,
-                              texture->depth);
+   return veHostWriteTextureRegion(device, textureIndex, srcData, dataSize, 0, 0, 0, texture->width, texture->height,
+                                   texture->depth);
 }

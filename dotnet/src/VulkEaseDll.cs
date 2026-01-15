@@ -56,11 +56,11 @@ namespace VulkEase
         internal static extern UInt32 veGetVersion();
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veCreateContext([MarshalAs(UnmanagedType.LPStr)] string applicationName,
-            IntPtr additionalInstanceExtensions, UInt32 additionalInstanceExtensionCount);
+        internal static extern VEResult veCreateContext([MarshalAs(UnmanagedType.LPStr)] string applicationName,
+            IntPtr additionalInstanceExtensions, UInt32 additionalInstanceExtensionCount, out IntPtr outContext);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veDestroyContext(IntPtr context);
+        internal static extern VEResult veDestroyContext(IntPtr context);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veEnumeratePhysicalDevices(IntPtr context, out UInt32 count);
@@ -70,11 +70,11 @@ namespace VulkEase
             out IntPtr physicalDevice, IntPtr deviceName, IntPtr deviceType);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veCreateDevice(IntPtr context, IntPtr preferredDevice,
-            IntPtr additionalDeviceExtensions, UInt32 additionalDeviceExtensionCount);
+        internal static extern VEResult veCreateDevice(IntPtr context, IntPtr preferredDevice,
+            IntPtr additionalDeviceExtensions, UInt32 additionalDeviceExtensionCount, out IntPtr outDevice);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veDestroyDevice(IntPtr device);
+        internal static extern VEResult veDestroyDevice(IntPtr device);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         [return: MarshalAs(UnmanagedType.I1)]
@@ -96,8 +96,22 @@ namespace VulkEase
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern UInt32 veGetVulkanVersion(IntPtr device);
 
+        // Debug message callback / severity
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        internal delegate void VEMessageCallback(VEMessageSeverity severity, IntPtr message, IntPtr userData);
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct VEMessageCallbackDesc
+        {
+            public VEMessageCallback callback;
+            public IntPtr userData;
+        }
+
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veGetLastError();
+        internal static extern VEResult veSetMessageCallback(IntPtr context, ref VEMessageCallbackDesc desc);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veSetMinMessageSeverity(IntPtr context, VEMessageSeverity minSeverity);
 
         // Vulkan handle accessors
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
@@ -125,86 +139,89 @@ namespace VulkEase
 
         #region Buffer Management
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt64 veCreateBuffer(IntPtr device, ref VEBufferDesc desc);
+        internal static extern VEResult veCreateBuffer(IntPtr device, ref VEBufferDesc desc, out UInt64 outAddress);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veDestroyBuffer(IntPtr device, UInt64 address);
+        internal static extern VEResult veDestroyBuffer(IntPtr device, UInt64 address);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern UInt64 veGetBufferSize(IntPtr device, UInt64 address);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VkBufferUsageFlags veGetBufferUsage(IntPtr device, UInt64 address);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veMapBuffer(IntPtr device, UInt64 address, out IntPtr mappedData);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veUnmapBuffer(IntPtr device, UInt64 address);
+        internal static extern VEResult veUnmapBuffer(IntPtr device, UInt64 address);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veUpdateBuffer(IntPtr device, UInt64 address, IntPtr data, UInt64 size, UInt64 offset);
 
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UIntPtr veGetBufferSize(IntPtr device, UInt64 address);
-
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VkBufferUsageFlags veGetBufferUsage(IntPtr device, UInt64 address);
+        // NOTE: value-returning overloads removed; use the VEResult + out versions above.
         #endregion
 
 
         #region Convenience buffer functions
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt64 veCreateVertexBuffer(IntPtr device, IntPtr vertices, UInt64 size, IntPtr debugName);
+        internal static extern VEResult veCreateVertexBuffer(IntPtr device, IntPtr vertices, UInt64 size, IntPtr debugName, out UInt64 outAddress);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt64 veCreateIndexBuffer(IntPtr device, IntPtr indices, UInt64 size, IntPtr debugName);
+        internal static extern VEResult veCreateIndexBuffer(IntPtr device, IntPtr indices, UInt64 size, IntPtr debugName, out UInt64 outAddress);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt64 veCreateUniformBuffer(IntPtr device, UInt64 size, bool persistentlyMapped, IntPtr debugName);
+        internal static extern VEResult veCreateUniformBuffer(IntPtr device, UInt64 size, [MarshalAs(UnmanagedType.I1)] bool persistentlyMapped,
+            IntPtr debugName, out UInt64 outAddress);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt64 veCreateStorageBuffer(IntPtr device, UInt64 size, IntPtr debugName);
+        internal static extern VEResult veCreateStorageBuffer(IntPtr device, UInt64 size, IntPtr debugName, out UInt64 outAddress);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt64 veCreateIndirectBuffer(IntPtr device, UInt64 size, IntPtr debugName);
+        internal static extern VEResult veCreateIndirectBuffer(IntPtr device, UInt64 size, IntPtr debugName, out UInt64 outAddress);
         #endregion
 
 
         #region Texture Management
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt32 veCreateTexture(IntPtr device, ref VETextureDesc desc);
+        internal static extern VEResult veCreateTexture(IntPtr device, ref VETextureDesc desc, out UInt32 outIndex);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veDestroyTexture(IntPtr device, UInt32 index);
+        internal static extern VEResult veDestroyTexture(IntPtr device, UInt32 index);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veGetTextureSize(IntPtr device, UInt32 index, out UInt32 width, out UInt32 height, out UInt32 depth);
+        internal static extern VkExtent3D veGetTextureSize(IntPtr device, UInt32 index);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VkFormat veGetTextureFormat(IntPtr device, UInt32 index);
 
         // Convenience texture functions
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt32 veCreateTexture1D(IntPtr device, UInt32 width, VkFormat format, VkImageUsageFlags usage, IntPtr debugName);
+        internal static extern VEResult veCreateTexture1D(IntPtr device, UInt32 width, VkFormat format, VkImageUsageFlags usage, IntPtr debugName, out UInt32 outIndex);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt32 veCreateTexture2D(IntPtr device, UInt32 width, UInt32 height, VkFormat format, VkImageUsageFlags usage, IntPtr debugName);
+        internal static extern VEResult veCreateTexture2D(IntPtr device, UInt32 width, UInt32 height, VkFormat format, VkImageUsageFlags usage, IntPtr debugName, out UInt32 outIndex);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt32 veCreateTexture3D(IntPtr device, UInt32 width, UInt32 height, UInt32 depth, VkFormat format, VkImageUsageFlags usage, IntPtr debugName);
+        internal static extern VEResult veCreateTexture3D(IntPtr device, UInt32 width, UInt32 height, UInt32 depth, VkFormat format, VkImageUsageFlags usage, IntPtr debugName, out UInt32 outIndex);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt32 veCreateTexture2DArray(IntPtr device, UInt32 width, UInt32 height, UInt32 layers, VkFormat format, VkImageUsageFlags usage, IntPtr debugName);
+        internal static extern VEResult veCreateTexture2DArray(IntPtr device, UInt32 width, UInt32 height, UInt32 layers, VkFormat format, VkImageUsageFlags usage, IntPtr debugName, out UInt32 outIndex);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt32 veCreateTextureCube(IntPtr device, UInt32 size, VkFormat format, VkImageUsageFlags usage, IntPtr debugName);
+        internal static extern VEResult veCreateTextureCube(IntPtr device, UInt32 size, VkFormat format, VkImageUsageFlags usage, IntPtr debugName, out UInt32 outIndex);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt32 veCreateTexture2DMultisample(IntPtr device, UInt32 width, UInt32 height, VkFormat format, VkSampleCountFlags sampleCount, VkImageUsageFlags usage, IntPtr debugName);
+        internal static extern VEResult veCreateTexture2DMultisample(IntPtr device, UInt32 width, UInt32 height, VkFormat format, VkSampleCountFlags sampleCount, VkImageUsageFlags usage, IntPtr debugName, out UInt32 outIndex);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt32 veLoadTexture(IntPtr device, IntPtr filename, VkImageUsageFlags usage, bool generateMips);
+        internal static extern VEResult veLoadTexture(IntPtr device, IntPtr filename, VkImageUsageFlags usage, bool generateMips, out UInt32 outIndex);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt32 veLoadHDRTexture(IntPtr device, IntPtr filename, VkImageUsageFlags usage, bool generateMips);
+        internal static extern VEResult veLoadHDRTexture(IntPtr device, IntPtr filename, VkImageUsageFlags usage, bool generateMips, out UInt32 outIndex);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt32 veLoadCubeTexture(IntPtr device, IntPtr filenames, VkImageUsageFlags usage, bool generateMips);
+        internal static extern VEResult veLoadCubeTexture(IntPtr device, IntPtr filenames, VkImageUsageFlags usage, bool generateMips, out UInt32 outIndex);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veGenerateMipmaps(IntPtr device, IntPtr cmd, UInt32 texture);
@@ -217,55 +234,55 @@ namespace VulkEase
 
         // Host image copy functions
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veHostCopyToTexture(IntPtr device, UInt32 textureIndex, IntPtr srcData,
+        internal static extern VEResult veHostWriteTextureRegion(IntPtr device, UInt32 textureIndex, IntPtr srcData,
             UIntPtr dataSize, UInt32 offsetX, UInt32 offsetY, UInt32 offsetZ,
             UInt32 width, UInt32 height, UInt32 depth);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veHostCopyFromTexture(IntPtr device, UInt32 textureIndex, IntPtr dstData,
+        internal static extern VEResult veHostReadTextureRegion(IntPtr device, UInt32 textureIndex, IntPtr dstData,
             UIntPtr dataSize, UInt32 offsetX, UInt32 offsetY, UInt32 offsetZ,
             UInt32 width, UInt32 height, UInt32 depth);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veHostUpdateEntireTexture(IntPtr device, UInt32 textureIndex, IntPtr srcData,
+        internal static extern VEResult veHostWriteTexture(IntPtr device, UInt32 textureIndex, IntPtr srcData,
             UIntPtr dataSize);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veHostCopyEntireTexture(IntPtr device, UInt32 textureIndex, IntPtr dstData,
+        internal static extern VEResult veHostReadTexture(IntPtr device, UInt32 textureIndex, IntPtr dstData,
             UIntPtr dataSize);
         #endregion
 
         #region Sampler Management
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt32 veCreateSampler(IntPtr device, ref VESamplerDesc desc);
+        internal static extern VEResult veCreateSampler(IntPtr device, ref VESamplerDesc desc, out UInt32 outIndex);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veDestroySampler(IntPtr device, UInt32 index);
+        internal static extern VEResult veDestroySampler(IntPtr device, UInt32 index);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt32 veCreateLinearSampler(IntPtr device);
+        internal static extern VEResult veCreateLinearSampler(IntPtr device, out UInt32 outIndex);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt32 veCreateNearestSampler(IntPtr device);
+        internal static extern VEResult veCreateNearestSampler(IntPtr device, out UInt32 outIndex);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt32 veCreateAnisotropicSampler(IntPtr device, float maxAnisotropy);
+        internal static extern VEResult veCreateAnisotropicSampler(IntPtr device, float maxAnisotropy, out UInt32 outIndex);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern UInt32 veCreateShadowSampler(IntPtr device);
+        internal static extern VEResult veCreateShadowSampler(IntPtr device, out UInt32 outIndex);
         #endregion
 
         #region Shader Objects
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veLoadShaderFromBuffer(IntPtr device, VkShaderStageFlags stage, IntPtr code, UIntPtr codeSize, IntPtr entryPoint, IntPtr debugName);
+        internal static extern VEResult veLoadShaderFromBuffer(IntPtr device, VkShaderStageFlags stage, IntPtr code, UIntPtr codeSize, IntPtr entryPoint, IntPtr debugName, out IntPtr outShader);
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veLoadShaderFromFile(IntPtr device, IntPtr filename, VkShaderStageFlags stage, IntPtr entryPoint, IntPtr debugName);
+        internal static extern VEResult veLoadShaderFromFile(IntPtr device, IntPtr filename, VkShaderStageFlags stage, IntPtr entryPoint, IntPtr debugName, out IntPtr outShader);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veDestroyShader(IntPtr shader);
+        internal static extern VEResult veDestroyShader(IntPtr shader);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veSetShaderHotReloadEnabled(IntPtr device, [MarshalAs(UnmanagedType.I1)] bool enable);
+        internal static extern VEResult veSetShaderHotReloadEnabled(IntPtr device, [MarshalAs(UnmanagedType.I1)] bool enable);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         [return: MarshalAs(UnmanagedType.I1)]
@@ -275,24 +292,24 @@ namespace VulkEase
         internal static extern VEResult veReloadShader(IntPtr shader);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veCreateShaderConfig(IntPtr device, ref VEShaderConfigDesc desc);
+        internal static extern VEResult veCreateShaderConfig(IntPtr device, ref VEShaderConfigDesc desc, out IntPtr outConfig);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veDestroyShaderConfig(IntPtr config);
+        internal static extern VEResult veDestroyShaderConfig(IntPtr config);
         #endregion
 
         #region Render Configuration Management
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veCreateRenderConfig(IntPtr device, ref VERenderConfigDesc desc);
+        internal static extern VEResult veCreateRenderConfig(IntPtr device, ref VERenderConfigDesc desc, out IntPtr outConfig);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veDestroyRenderConfig(IntPtr config);
+        internal static extern VEResult veDestroyRenderConfig(IntPtr config);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veCreateVertexConfig(IntPtr device, UInt32 bindingCount, IntPtr bindings, UInt32 attributeCount, IntPtr attributes);
+        internal static extern VEResult veCreateVertexConfig(IntPtr device, UInt32 bindingCount, IntPtr bindings, UInt32 attributeCount, IntPtr attributes, out IntPtr outConfig);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veDestroyVertexConfig(IntPtr config);
+        internal static extern VEResult veDestroyVertexConfig(IntPtr config);
 
         // Default configurations
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
@@ -318,37 +335,43 @@ namespace VulkEase
 
         // Common render configurations
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veCreateOpaqueRenderConfig(IntPtr device, IntPtr debugName);
+        internal static extern VEResult veCreateOpaqueRenderConfig(IntPtr device, IntPtr debugName, out IntPtr outConfig);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veCreateTransparentRenderConfig(IntPtr device, IntPtr debugName);
+        internal static extern VEResult veCreateTransparentRenderConfig(IntPtr device, IntPtr debugName, out IntPtr outConfig);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veCreateWireframeRenderConfig(IntPtr device, IntPtr debugName);
+        internal static extern VEResult veCreateWireframeRenderConfig(IntPtr device, IntPtr debugName, out IntPtr outConfig);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veCreateShadowRenderConfig(IntPtr device, IntPtr debugName);
+        internal static extern VEResult veCreateShadowRenderConfig(IntPtr device, IntPtr debugName, out IntPtr outConfig);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veCreateUIRenderConfig(IntPtr device, IntPtr debugName);
+        internal static extern VEResult veCreateUIRenderConfig(IntPtr device, IntPtr debugName, out IntPtr outConfig);
 
         // Configuration composition
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veCreateConfigVariant(IntPtr baseConfig, ref VERenderConfigDesc overrides);
+        internal static extern VEResult veCreateConfigVariant(IntPtr baseConfig, ref VERenderConfigDesc overrides, out IntPtr outConfig);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veMergeRenderConfigs(IntPtr device, UInt32 configCount, IntPtr configs, IntPtr debugName);
+        internal static extern VEResult veMergeRenderConfigs(IntPtr device, UInt32 configCount, IntPtr configs, IntPtr debugName, out IntPtr outConfig);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veCloneRenderConfig(IntPtr config, IntPtr debugName);
+        internal static extern VEResult veCloneRenderConfig(IntPtr config, IntPtr debugName, out IntPtr outConfig);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VERenderingInfoInternal veCreateRenderingInfo(UInt32 width, UInt32 height);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VERenderingInfoInternal veCreateRenderingInfoWithOffset(Int32 x, Int32 y, UInt32 width, UInt32 height);
         #endregion
 
         #region Command Buffer and Rendering
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veBeginCommandBuffer(IntPtr device);
+        internal static extern VEResult veBeginCommandBuffer(IntPtr device, out IntPtr outCmd);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veBeginSecondaryCommandBuffer(IntPtr device, IntPtr desc);
+        internal static extern VEResult veBeginSecondaryCommandBuffer(IntPtr device, IntPtr desc, out IntPtr outCmd);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult vePopulateSecondaryDescFromRenderingInfo(IntPtr device,
@@ -363,160 +386,196 @@ namespace VulkEase
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veExecuteSecondaryCommandBuffers(IntPtr primaryCmd, UInt32 count, IntPtr[] secondaryCmds, [MarshalAs(UnmanagedType.I1)] bool releaseCommandBuffers);
 
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veSubmitCommandBuffer(IntPtr cmd, bool waitForCompletion);
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct VESubmitInfo
+        {
+            public IntPtr waitSemaphores;
+            public IntPtr waitSemaphoreValues;
+            public IntPtr waitStageMasks;
+            public UInt32 waitSemaphoreCount;
+
+            public IntPtr signalSemaphores;
+            public IntPtr signalSemaphoreValues;
+            public UInt32 signalSemaphoreCount;
+
+            public IntPtr fence;
+            [MarshalAs(UnmanagedType.I1)]
+            public bool waitForCompletion;
+        }
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veSubmitCommandBufferEx(IntPtr cmd, ref VESubmitInfo submitInfo);
+        internal static extern VEResult veSubmitCommandBuffer(IntPtr cmd, ref VESubmitInfo submitInfo);
+
+        // Escape hatch getters
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr veGetVkBufferFromAddress(IntPtr device, UInt64 address);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr veGetVkImageFromTexture(IntPtr device, UInt32 textureIndex);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr veGetVkImageViewFromTexture(IntPtr device, UInt32 textureIndex);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr veGetVkSamplerFromIndex(IntPtr device, UInt32 samplerIndex);
+
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veResetCommandBuffer(IntPtr cmd);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veReleaseCommandBuffer(IntPtr cmd);
+        internal static extern VEResult veReleaseCommandBuffer(IntPtr cmd);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veBeginRendering(IntPtr cmd, ref VERenderingInfoInternal renderingInfo);
+        internal static extern VEResult veBeginRendering(IntPtr cmd, ref VERenderingInfoInternal renderingInfo);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veEndRendering(IntPtr cmd);
+        internal static extern VEResult veEndRendering(IntPtr cmd);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veApplyRenderConfig(IntPtr cmd, IntPtr config);
+        internal static extern VEResult veApplyRenderConfig(IntPtr cmd, IntPtr config);
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct VERenderState
+        {
+            public IntPtr shaderConfig;
+            public IntPtr renderConfig;
+            public IntPtr viewport;
+            public IntPtr scissor;
+        }
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veApplyRenderState(IntPtr cmd, IntPtr shaderConfig, IntPtr renderConfig,
-            IntPtr viewport, IntPtr scissor);
+        internal static extern VEResult veApplyRenderState(IntPtr cmd, ref VERenderState state);
         #endregion
 
         #region Shader binding
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veBindShader(IntPtr cmd, IntPtr shader);
+        internal static extern VEResult veBindShader(IntPtr cmd, IntPtr shader);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veBindShaders(IntPtr cmd, UInt32 shaderCount, IntPtr shaders);
+        internal static extern VEResult veBindShaders(IntPtr cmd, UInt32 shaderCount, IntPtr shaders);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veBindShaderConfig(IntPtr cmd, IntPtr config);
+        internal static extern VEResult veBindShaderConfig(IntPtr cmd, IntPtr config);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veUnbindShaderStage(IntPtr cmd, VkShaderStageFlags stage);
+        internal static extern VEResult veUnbindShaderStage(IntPtr cmd, VkShaderStageFlags stage);
         #endregion
 
         #region Dynamic state
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veSetViewport(IntPtr cmd, float x, float y, float width, float height, float minDepth, float maxDepth);
+        internal static extern VEResult veSetViewport(IntPtr cmd, float x, float y, float width, float height, float minDepth, float maxDepth);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veSetScissor(IntPtr cmd, int x, int y, UInt32 width, UInt32 height);
+        internal static extern VEResult veSetScissor(IntPtr cmd, int x, int y, UInt32 width, UInt32 height);
 
         // State overrides
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veOverrideRasterState(IntPtr cmd, ref VERasterConfig raster);
+        internal static extern VEResult veOverrideRasterState(IntPtr cmd, ref VERasterConfig raster);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veOverrideDepthState(IntPtr cmd, ref VEDepthConfig depth);
+        internal static extern VEResult veOverrideDepthState(IntPtr cmd, ref VEDepthConfig depth);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veOverrideBlendState(IntPtr cmd, ref VEBlendConfig blend);
+        internal static extern VEResult veOverrideBlendState(IntPtr cmd, ref VEBlendConfig blend);
         #endregion
 
         #region Quick toggles
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veSetWireframe(IntPtr cmd, bool enabled);
+        internal static extern VEResult veSetWireframe(IntPtr cmd, [MarshalAs(UnmanagedType.I1)] bool enabled);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veSetAlphaBlending(IntPtr cmd, bool enabled);
+        internal static extern VEResult veSetAlphaBlending(IntPtr cmd, [MarshalAs(UnmanagedType.I1)] bool enabled);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veSetDepthTesting(IntPtr cmd, bool testEnabled, bool writeEnabled);
+        internal static extern VEResult veSetDepthTesting(IntPtr cmd, [MarshalAs(UnmanagedType.I1)] bool testEnabled, [MarshalAs(UnmanagedType.I1)] bool writeEnabled);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veSetCulling(IntPtr cmd, VkCullModeFlags cullMode);
+        internal static extern VEResult veSetCulling(IntPtr cmd, VkCullModeFlags cullMode);
         #endregion
 
         #region Push constants and binding
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void vePushConstants(IntPtr cmd, IntPtr data, UIntPtr size, UIntPtr offset);
+        internal static extern VEResult vePushConstants(IntPtr cmd, IntPtr data, UIntPtr size, UIntPtr offset);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veBindIndexBuffer(IntPtr cmd, UInt64 indexBuffer, UInt32 offset, VkIndexType format);
+        internal static extern VEResult veBindIndexBuffer(IntPtr cmd, UInt64 indexBuffer, UInt64 offset, VkIndexType format);
         #endregion
 
         #region Drawing
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veDraw(IntPtr cmd, UInt32 vertexCount, UInt32 instanceCount, UInt32 firstVertex, UInt32 firstInstance);
+        internal static extern VEResult veDraw(IntPtr cmd, UInt32 vertexCount, UInt32 instanceCount, UInt32 firstVertex, UInt32 firstInstance);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veDrawIndexed(IntPtr cmd, UInt32 indexCount, UInt32 instanceCount, UInt32 firstIndex, int vertexOffset, UInt32 firstInstance);
+        internal static extern VEResult veDrawIndexed(IntPtr cmd, UInt32 indexCount, UInt32 instanceCount, UInt32 firstIndex, int vertexOffset, UInt32 firstInstance);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veDrawIndirect(IntPtr cmd, UInt64 indirectBuffer, UInt64 offset, UInt32 drawCount, UInt32 stride);
+        internal static extern VEResult veDrawIndirect(IntPtr cmd, UInt64 indirectBuffer, UInt64 offset, UInt32 drawCount, UInt32 stride);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veDrawIndexedIndirect(IntPtr cmd, UInt64 indirectBuffer, UInt64 offset, UInt32 drawCount, UInt32 stride);
+        internal static extern VEResult veDrawIndexedIndirect(IntPtr cmd, UInt64 indirectBuffer, UInt64 offset, UInt32 drawCount, UInt32 stride);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veDrawIndirectCount(IntPtr cmd, UInt64 indirectBuffer, UInt64 indirectOffset, UInt64 countBuffer, UInt64 countOffset, UInt32 maxDrawCount, UInt32 stride);
+        internal static extern VEResult veDrawIndirectCount(IntPtr cmd, UInt64 indirectBuffer, UInt64 indirectOffset, UInt64 countBuffer, UInt64 countOffset, UInt32 maxDrawCount, UInt32 stride);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veDrawIndexedIndirectCount(IntPtr cmd, UInt64 indirectBuffer, UInt64 indirectOffset, UInt64 countBuffer, UInt64 countOffset, UInt32 maxDrawCount, UInt32 stride);
+        internal static extern VEResult veDrawIndexedIndirectCount(IntPtr cmd, UInt64 indirectBuffer, UInt64 indirectOffset, UInt64 countBuffer, UInt64 countOffset, UInt32 maxDrawCount, UInt32 stride);
         #endregion
 
         #region Compute
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veDispatch(IntPtr cmd, UInt32 groupCountX, UInt32 groupCountY, UInt32 groupCountZ);
+        internal static extern VEResult veDispatch(IntPtr cmd, UInt32 groupCountX, UInt32 groupCountY, UInt32 groupCountZ);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veDispatchIndirect(IntPtr cmd, UInt64 indirectBuffer, UIntPtr offset);
+        internal static extern VEResult veDispatchIndirect(IntPtr cmd, UInt64 indirectBuffer, UInt64 offset);
         #endregion
 
         #region Barriers
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veBarrierVertexToFragment(IntPtr cmd);
+        internal static extern VEResult veBarrierVertexToFragment(IntPtr cmd);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veBarrierComputeToVertex(IntPtr cmd);
+        internal static extern VEResult veBarrierComputeToVertex(IntPtr cmd);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veBarrierComputeToCompute(IntPtr cmd);
+        internal static extern VEResult veBarrierComputeToCompute(IntPtr cmd);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veBarrierGraphicsToPresent(IntPtr cmd);
+        internal static extern VEResult veBarrierGraphicsToPresent(IntPtr cmd);
         #endregion
 
         #region Texture transitions
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veTransitionTexture(IntPtr cmd, UInt32 texture, VkImageLayout oldLayout, VkImageLayout newLayout);
+        internal static extern VEResult veTransitionTexture(IntPtr cmd, UInt32 texture, VkImageLayout oldLayout, VkImageLayout newLayout);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veTransitionTextureForShaderRead(IntPtr cmd, UInt32 texture);
+        internal static extern VEResult veTransitionTextureForShaderRead(IntPtr cmd, UInt32 texture);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veTransitionTextureForColorAttachment(IntPtr cmd, UInt32 texture);
+        internal static extern VEResult veTransitionTextureForColorAttachment(IntPtr cmd, UInt32 texture);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veTransitionTextureForDepthAttachment(IntPtr cmd, UInt32 texture);
+        internal static extern VEResult veTransitionTextureForDepthAttachment(IntPtr cmd, UInt32 texture);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veTransitionTextureForTransferSrc(IntPtr cmd, UInt32 texture);
+        internal static extern VEResult veTransitionTextureForTransferSrc(IntPtr cmd, UInt32 texture);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veTransitionTextureForTransferDst(IntPtr cmd, UInt32 texture);
+        internal static extern VEResult veTransitionTextureForTransferDst(IntPtr cmd, UInt32 texture);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veTransitionTextureForPresent(IntPtr cmd, UInt32 texture);
+        internal static extern VEResult veTransitionTextureForPresent(IntPtr cmd, UInt32 texture);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veTransitionTextureToLayout(IntPtr cmd, UInt32 texture, VkImageLayout newLayout);
+        internal static extern VEResult veTransitionTextureToLayout(IntPtr cmd, UInt32 texture, VkImageLayout newLayout);
         #endregion
 
         #region Swapchain
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veCreateSwapchain(IntPtr device, ref VESwapchainDescInternal desc);
+        internal static extern VEResult veCreateSwapchain(IntPtr device, ref VESwapchainDescInternal desc, out IntPtr outSwapchain);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veDestroySwapchain(IntPtr swapchain);
+        internal static extern VEResult veDestroySwapchain(IntPtr swapchain);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult vePresentImage(IntPtr swapchain, IntPtr cmd, [MarshalAs(UnmanagedType.I1)] bool releaseCommandBuffer);
@@ -525,7 +584,7 @@ namespace VulkEase
         internal static extern VEResult veResizeSwapchain(IntPtr swapchain, UInt32 width, UInt32 height);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veGetSwapchainSize(IntPtr swapchain, out UInt32 width, out UInt32 height);
+        internal static extern VkExtent2D veGetSwapchainSize(IntPtr swapchain);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VkFormat veGetSwapchainFormat(IntPtr swapchain);
@@ -533,10 +592,10 @@ namespace VulkEase
 
         #region Render Targets
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veCreateRenderTarget(IntPtr device, ref VERenderTargetDescInternal desc);
+        internal static extern VEResult veCreateRenderTarget(IntPtr device, ref VERenderTargetDescInternal desc, out IntPtr outRenderTarget);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veDestroyRenderTarget(IntPtr renderTarget);
+        internal static extern VEResult veDestroyRenderTarget(IntPtr renderTarget);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veResizeRenderTarget(IntPtr renderTarget, UInt32 width, UInt32 height);
@@ -551,7 +610,7 @@ namespace VulkEase
         internal static extern UInt32 veGetRenderTargetResolveTexture(IntPtr renderTarget);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veGetRenderTargetSize(IntPtr renderTarget, out UInt32 width, out UInt32 height);
+        internal static extern VkExtent2D veGetRenderTargetSize(IntPtr renderTarget);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VkFormat veGetRenderTargetColorFormat(IntPtr renderTarget);
@@ -565,13 +624,13 @@ namespace VulkEase
 
         #region Debug and Profiling
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veBeginDebugLabel(IntPtr cmd, IntPtr label, VEColor color);
+        internal static extern VEResult veBeginDebugLabel(IntPtr cmd, IntPtr label, VEColor color);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veEndDebugLabel(IntPtr cmd);
+        internal static extern VEResult veEndDebugLabel(IntPtr cmd);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void veInsertDebugLabel(IntPtr cmd, IntPtr label, VEColor color);
+        internal static extern VEResult veInsertDebugLabel(IntPtr cmd, IntPtr label, VEColor color);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veSetBufferDebugName(IntPtr device, UInt64 address, IntPtr name);
@@ -596,13 +655,13 @@ namespace VulkEase
 
         #region Debug information
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void vePrintDebugInfo(IntPtr device);
+        internal static extern VEResult vePrintDebugInfo(IntPtr device);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void vePrintProfileInfo(IntPtr device);
+        internal static extern VEResult vePrintProfileInfo(IntPtr device);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void vePrintRenderConfig(IntPtr config);
+        internal static extern VEResult vePrintRenderConfig(IntPtr config);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veValidateRenderConfig(IntPtr config);

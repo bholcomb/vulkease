@@ -60,6 +60,42 @@ VulkEase replaces all of this with a clean, modern API.
 
 ---
 
+# Ownership, Threading, and Diagnostics
+
+VulkEase is intentionally lightweight, which means you still need to be clear about **who owns what** and **what is safe to do concurrently**.
+
+## Ownership / Lifetimes
+
+- **`VEContext`**
+  - Owns: `VkInstance`, debug messenger (if enabled), and message routing state.
+  - Destroy with: `veDestroyContext(context)` *after* destroying all devices created from it.
+
+- **`VEDevice`**
+  - Owns: `VkDevice`, queues, and all resources created from it (buffers/textures/samplers/configs/shaders).
+  - Destroy with: `veDestroyDevice(device)` after destroying swapchains/render targets and freeing other objects created from the device.
+
+- **Escape hatch Vulkan handles**
+  - APIs like `veGetVkDevice()`, `veGetVkImageFromTexture()`, etc return raw Vulkan handles.
+  - **Returned handles are owned by VulkEase**. Do **not** destroy them directly.
+  - Handle lifetime matches the owning VulkEase object (`VEContext`, `VEDevice`, etc).
+
+## Threading Model (current)
+
+- **Message callback**
+  - May be invoked from **any thread**. Keep it thread-safe and non-blocking.
+
+- **Command buffers**
+  - A single `VECommandBuffer*` must only be recorded from **one thread at a time**.
+  - Recording **different** command buffers on **different** threads is supported (this is how secondary command buffers are intended to be used).
+
+## Diagnostics (return-by-value getters)
+
+Many “simple getters” return values directly instead of `VEResult`.
+
+- **On invalid input**, these getters:
+  - **Emit an ERROR-level message** via the installed message callback (or stderr fallback)
+  - Return a **sentinel** value (e.g. `VK_NULL_HANDLE`, `VK_FORMAT_UNDEFINED`, `{0,0}`, `0`)
+
 # 2. The Basics
 
 ## Context and Device
@@ -68,10 +104,14 @@ Every VulkEase application starts by creating a **Context** (Vulkan instance) an
 
 ```c
 // Create context - initializes Vulkan
-VEContext* context = veCreateContext("My Application", NULL, 0);
+VEContext* context = NULL;
+VEResult r = veCreateContext("My Application", NULL, 0, &context);
+if (r != VE_SUCCESS) { /* handle error */ }
 
 // Create device - selects GPU (VK_NULL_HANDLE = auto-select best)
-VEDevice* device = veCreateDevice(context, VK_NULL_HANDLE, NULL, 0);
+VEDevice* device = NULL;
+r = veCreateDevice(context, VK_NULL_HANDLE, NULL, 0, &device);
+if (r != VE_SUCCESS) { /* handle error */ }
 
 // Get device info
 printf("GPU: %s\n", veGetDeviceName(device));
@@ -104,7 +144,8 @@ VEDevice* device = veCreateDevice(context, selectedGPU, NULL, 0);
 // Check availability first
 if (veIsDeviceExtensionAvailable(context, "VK_KHR_ray_tracing_pipeline")) {
     const char* extensions[] = { "VK_KHR_ray_tracing_pipeline" };
-    VEDevice* device = veCreateDevice(context, VK_NULL_HANDLE, extensions, 1);
+    VEDevice* device = NULL;
+    veCreateDevice(context, VK_NULL_HANDLE, extensions, 1, &device);
 }
 ```
 
@@ -279,8 +320,10 @@ Replace graphics pipelines with lightweight **render configurations**.
 
 ```c
 // Use built-in configurations
-VERenderConfig* opaqueConfig = veCreateOpaqueRenderConfig(device, "Opaque");
-VERenderConfig* transparentConfig = veCreateTransparentRenderConfig(device, "Transparent");
+VERenderConfig* opaqueConfig = NULL;
+VERenderConfig* transparentConfig = NULL;
+veCreateOpaqueRenderConfig(device, "Opaque", &opaqueConfig);
+veCreateTransparentRenderConfig(device, "Transparent", &transparentConfig);
 
 // Apply during rendering
 veApplyRenderConfig(cmd, opaqueConfig);
@@ -309,7 +352,40 @@ VERenderConfigDesc configDesc = {
     .vertexInputConfig = &vertexInput
 };
 
-VERenderConfig* config = veCreateRenderConfig(device, &configDesc);
+VERenderConfig* config = NULL;
+veCreateRenderConfig(device, &configDesc, &config);
+```
+
+### Defaults and `NULL` behavior (exact)
+
+In `VERenderConfigDesc`, any pointer field can be `NULL` to request defaults:
+
+- `viewportConfig == NULL`: defaults to `{ x=0, y=0, width=800, height=600, minDepth=0, maxDepth=1 }`
+- `scissorConfig == NULL`: defaults to `{ x=0, y=0, width=800, height=600 }`
+- `rasterConfig == NULL`: defaults to:
+  - `cullMode = VK_CULL_MODE_BACK_BIT`
+  - `frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE`
+  - `polygonMode = VK_POLYGON_MODE_FILL`
+  - `lineWidth = 1.0f`
+  - depth bias disabled (all bias values 0)
+  - `depthClampEnable = false`, `rasterizerDiscardEnable = false`
+- `depthConfig == NULL`: defaults to:
+  - `depthTestEnable = true`, `depthWriteEnable = true`, `depthCompareOp = VK_COMPARE_OP_LESS`
+  - depth bounds disabled (`min=0`, `max=1`)
+  - stencil disabled; stencil ops are KEEP with compare ALWAYS (masks 0xFF, reference 0)
+- `blendConfig == NULL`: defaults to **opaque** blending:
+  - `logicOpEnable = false`, `logicOp = VK_LOGIC_OP_COPY`
+  - `attachmentCount = 1`
+  - attachment 0: `blendEnable = false`, write mask = RGBA
+  - `blendConstants = {0,0,0,0}`
+- `multisampleConfig == NULL`: defaults to:
+  - `rasterizationSamples = VK_SAMPLE_COUNT_1_BIT`
+  - sample shading disabled, `minSampleShading = 1.0f`
+  - alpha-to-coverage/one disabled
+- `vertexInputConfig == NULL`: defaults to:
+  - no bindings/attributes, `topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST`, `primitiveRestartEnable = false`
+
+**Important**: The default viewport/scissor in render configs are fixed at **800×600**. For most apps, prefer using `veApplyRenderState()` with `viewport=NULL` / `scissor=NULL` (inside a render pass) so they default to the **current render area** instead.
 ```
 
 ## The Render Loop
@@ -998,13 +1074,12 @@ Returns underlying Vulkan handles for custom extension use.
 
 ---
 
-### veGetLastError
+### Errors and Diagnostics
 
-```c
-const char* veGetLastError(void);
-```
+VulkEase no longer exposes a global “last error string” API. For diagnostics:
 
-Returns the last error message. Check after any function returns NULL or an error code.
+- Enable Vulkan validation and use the **debug message callback** (`veSetMessageCallback`).
+- Many functions return `VEResult`; convert it to text with `veResultToString`.
 
 ---
 
@@ -1067,7 +1142,7 @@ Resizes the swapchain. Call in your window resize callback.
 ### veGetSwapchainSize / veGetSwapchainFormat
 
 ```c
-VEResult veGetSwapchainSize(VESwapchain* swapchain, uint32_t* width, uint32_t* height);
+VkExtent2D veGetSwapchainSize(VESwapchain* swapchain);
 VkFormat veGetSwapchainFormat(VESwapchain* swapchain);
 ```
 
@@ -1129,7 +1204,7 @@ Returns texture handles for use in `VERenderingInfo`.
 ### veGetRenderTargetSize / veGetRenderTargetColorFormat
 
 ```c
-VEResult veGetRenderTargetSize(VERenderTarget* renderTarget, uint32_t* width, uint32_t* height);
+VkExtent2D veGetRenderTargetSize(VERenderTarget* renderTarget);
 VkFormat veGetRenderTargetColorFormat(VERenderTarget* renderTarget);
 VkFormat veGetRenderTargetDepthFormat(VERenderTarget* renderTarget);
 ```
@@ -1415,7 +1490,7 @@ Ends recording. Called automatically by `veSubmitCommandBuffer`.
 ### veSubmitCommandBuffer
 
 ```c
-VEResult veSubmitCommandBuffer(VECommandBuffer* cmd, bool waitForCompletion);
+VEResult veSubmitCommandBuffer(VECommandBuffer* cmd, const VESubmitInfo* submitInfo);
 ```
 
 Submits the command buffer for execution.
@@ -1846,6 +1921,6 @@ VEComputePushConstants pc = VE_INIT_COMPUTE_PUSH_CONSTANTS();
 Use these to check for creation failures:
 ```c
 if (buffer == VE_INVALID_ADDRESS) {
-    printf("Error: %s\n", veGetLastError());
+    printf("Error: buffer creation failed\n");
 }
 ```
