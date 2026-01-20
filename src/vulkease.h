@@ -81,9 +81,8 @@ extern "C"
 
    // Resource handles
    typedef struct VEShader VEShader;
-   typedef struct VERenderConfig VERenderConfig;
-   typedef struct VEVertexConfig VEVertexConfig;
-   typedef struct VEShaderConfig VEShaderConfig;
+   typedef struct VEGraphicsPipeline VEGraphicsPipeline;
+   typedef struct VEDrawState VEDrawState;
 
    // GPU addresses for buffer device address (64-bit pointers)
    typedef uint64_t VEBufferAddress;
@@ -122,24 +121,6 @@ extern "C"
     */
    VULKEASE_API const char *veResultToString(VEResult result);
 
-   // =============================================================================
-   // Render Configuration Types (Modern State Management)
-   // =============================================================================
-
-   // Configuration type flags (inspired by Graphics Pipeline Libraries)
-   typedef enum VEConfigType
-   {
-      VE_CONFIG_TYPE_VERTEX_INPUT = 0x1,  // Vertex layout and input assembly
-      VE_CONFIG_TYPE_RASTERIZATION = 0x2, // Culling, polygon mode, depth bias
-      VE_CONFIG_TYPE_DEPTH_STENCIL = 0x4, // Depth/stencil testing and operations
-      VE_CONFIG_TYPE_COLOR_BLEND = 0x8,   // Color blending and write masks
-      VE_CONFIG_TYPE_MULTISAMPLE = 0x10,  // MSAA and coverage operations
-      VE_CONFIG_TYPE_SHADERS = 0x20,      // Shader object bindings
-      VE_CONFIG_TYPE_VIEWPORT = 0x40,     // Viewport settings
-      VE_CONFIG_TYPE_SCISSOR = 0x80,      // Scissor settings
-      VE_CONFIG_TYPE_COMPLETE = 0xFF      // All categories combined
-   } VEConfigType;
-   typedef uint32_t VEConfigTypeFlags;
 
    typedef enum VEMessageSeverity
    {
@@ -301,99 +282,13 @@ extern "C"
    } VERenderTargetDesc;
 
    // =============================================================================
-   // Render Configuration Structures
+   // Graphics Pipeline and Draw State Structures
    // =============================================================================
 
-   // Rasterization configuration (VK_EXT_extended_dynamic_state3)
-   typedef struct VERasterConfig
-   {
-      // Basic rasterization
-      VkCullModeFlags cullMode;  // VK_DYNAMIC_STATE_CULL_MODE
-      VkFrontFace frontFace;     // VK_DYNAMIC_STATE_FRONT_FACE
-      VkPolygonMode polygonMode; // VK_DYNAMIC_STATE_POLYGON_MODE_EXT
-      float lineWidth;           // VK_DYNAMIC_STATE_LINE_WIDTH
+// Maximum color attachments supported
+#define VE_MAX_COLOR_ATTACHMENTS 8
 
-      // Depth bias
-      bool depthBiasEnable;          // VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE
-      float depthBiasConstantFactor; // VK_DYNAMIC_STATE_DEPTH_BIAS
-      float depthBiasClamp;
-      float depthBiasSlopeFactor;
-
-      // Advanced rasterization
-      bool depthClampEnable;        // VK_DYNAMIC_STATE_DEPTH_CLAMP_ENABLE_EXT
-      bool rasterizerDiscardEnable; // VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE
-   } VERasterConfig;
-
-   // Depth/stencil configuration
-   typedef struct VEDepthConfig
-   {
-      // Depth testing
-      bool depthTestEnable;       // VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE
-      bool depthWriteEnable;      // VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE
-      VkCompareOp depthCompareOp; // VK_DYNAMIC_STATE_DEPTH_COMPARE_OP
-
-      // Depth bounds
-      bool depthBoundsTestEnable; // VK_DYNAMIC_STATE_DEPTH_BOUNDS_TEST_ENABLE
-      float minDepthBounds;       // VK_DYNAMIC_STATE_DEPTH_BOUNDS
-      float maxDepthBounds;
-
-      // Stencil testing
-      bool stencilTestEnable; // VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE
-
-      // Front face stencil
-      VkStencilOp frontFailOp;
-      VkStencilOp frontPassOp;
-      VkStencilOp frontDepthFailOp;
-      VkCompareOp frontCompareOp;
-      uint32_t frontCompareMask; // VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK
-      uint32_t frontWriteMask;   // VK_DYNAMIC_STATE_STENCIL_WRITE_MASK
-      uint32_t frontReference;   // VK_DYNAMIC_STATE_STENCIL_REFERENCE
-
-      // Back face stencil
-      VkStencilOp backFailOp;
-      VkStencilOp backPassOp;
-      VkStencilOp backDepthFailOp;
-      VkCompareOp backCompareOp;
-      uint32_t backCompareMask;
-      uint32_t backWriteMask;
-      uint32_t backReference;
-   } VEDepthConfig;
-
-   // Color blending configuration (VK_EXT_extended_dynamic_state3)
-   typedef struct VEBlendAttachment
-   {
-      bool blendEnable;                  // VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT
-      VkBlendFactor srcColorBlendFactor; // VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT
-      VkBlendFactor dstColorBlendFactor;
-      VkBlendOp colorBlendOp;
-      VkBlendFactor srcAlphaBlendFactor;
-      VkBlendFactor dstAlphaBlendFactor;
-      VkBlendOp alphaBlendOp;
-      VkColorComponentFlags colorWriteMask; // VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT
-   } VEBlendAttachment;
-
-   typedef struct VEBlendConfig
-   {
-      bool logicOpEnable; // VK_DYNAMIC_STATE_LOGIC_OP_ENABLE_EXT
-      VkLogicOp logicOp;  // VK_DYNAMIC_STATE_LOGIC_OP_EXT
-
-      uint32_t attachmentCount; // Up to 8 attachments
-      VEBlendAttachment attachments[8];
-
-      float blendConstants[4]; // VK_DYNAMIC_STATE_BLEND_CONSTANTS
-   } VEBlendConfig;
-
-   // Multisample configuration
-   typedef struct VEMultisampleConfig
-   {
-      VkSampleCountFlags rasterizationSamples;
-      bool sampleShadingEnable;
-      float minSampleShading;
-      bool alphaToCoverageEnable;
-      bool alphaToOneEnable;
-   } VEMultisampleConfig;
-
-   // Vertex input configuration (VK_EXT_vertex_input_dynamic_state)
+   // Vertex input structures
    typedef struct VEVertexBinding
    {
       uint32_t binding;
@@ -410,53 +305,123 @@ extern "C"
       uint32_t offset;
    } VEVertexAttribute;
 
-   typedef struct VEVertexInputConfig
+   // Color blending per-attachment
+   typedef struct VEBlendAttachment
    {
-      uint32_t bindingCount;
-      VEVertexBinding *bindings; // VK_DYNAMIC_STATE_VERTEX_INPUT_EXT
+      bool blendEnable;
+      VkBlendFactor srcColorBlendFactor;
+      VkBlendFactor dstColorBlendFactor;
+      VkBlendOp colorBlendOp;
+      VkBlendFactor srcAlphaBlendFactor;
+      VkBlendFactor dstAlphaBlendFactor;
+      VkBlendOp alphaBlendOp;
+      VkColorComponentFlags colorWriteMask;
+   } VEBlendAttachment;
 
-      uint32_t attributeCount;
-      VEVertexAttribute *attributes; // VK_DYNAMIC_STATE_VERTEX_INPUT_EXT
-
-      VkPrimitiveTopology topology; // VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY
-      bool primitiveRestartEnable;  // VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE
-
-      uint32_t patchControlPoints; // VK_DYNAMIC_STATE_PATCH_CONTROL_POINTS_EXT
-   } VEVertexInputConfig;
-
-   // Complete render configuration descriptor
-   typedef struct VERenderConfigDesc
+   // Stencil operation state (front or back face)
+   typedef struct VEStencilOpState
    {
-      VEConfigTypeFlags configTypes; // Which config categories to include
+      VkStencilOp failOp;
+      VkStencilOp passOp;
+      VkStencilOp depthFailOp;
+      VkCompareOp compareOp;
+      uint32_t compareMask;
+      uint32_t writeMask;
+      uint32_t reference;
+   } VEStencilOpState;
 
-      // Configuration components (NULL = use defaults)
-      const VEViewport *viewportConfig;
-      const VERect2D *scissorConfig;
-      const VERasterConfig *rasterConfig;
-      const VEDepthConfig *depthConfig;
-      const VEBlendConfig *blendConfig;
-      const VEMultisampleConfig *multisampleConfig;
-      const VEVertexInputConfig *vertexInputConfig;
-
-      // Shader bindings (optional - can bind separately)
-      uint32_t shaderCount;
-      VEShader *const *shaders;
-
-      const char *debugName;
-   } VERenderConfigDesc;
-
-   // Shader configuration descriptor
-   typedef struct VEShaderConfigDesc
+   /**
+    * Graphics Pipeline Descriptor
+    * 
+    * Combines shaders, vertex input, and material-level state into a single object.
+    * This is the "how should this class of objects be rendered" configuration.
+    * 
+    * Changes per: material/technique (opaque PBR, transparent glass, shadow caster)
+    */
+   typedef struct VEGraphicsPipelineDesc
    {
+      // === SHADERS ===
       VEShader *vertexShader;
       VEShader *fragmentShader;
-      VEShader *geometryShader;    // Optional
-      VEShader *tessControlShader; // Optional
-      VEShader *tessEvalShader;    // Optional
-      VEShader *computeShader;     // For compute dispatches
+      VEShader *geometryShader;      // Optional
+      VEShader *tessControlShader;   // Optional
+      VEShader *tessEvalShader;      // Optional
+
+      // === VERTEX INPUT ===
+      uint32_t vertexBindingCount;
+      const VEVertexBinding *vertexBindings;
+      uint32_t vertexAttributeCount;
+      const VEVertexAttribute *vertexAttributes;
+
+      // === DEPTH CONFIG ===
+      bool depthTestEnable;
+      bool depthWriteEnable;
+      VkCompareOp depthCompareOp;
+      bool depthBoundsTestEnable;
+      float minDepthBounds;
+      float maxDepthBounds;
+
+      // === STENCIL CONFIG ===
+      bool stencilTestEnable;
+      VEStencilOpState frontStencil;
+      VEStencilOpState backStencil;
+
+      // === BLEND CONFIG ===
+      bool logicOpEnable;
+      VkLogicOp logicOp;
+      uint32_t blendAttachmentCount;
+      VEBlendAttachment blendAttachments[VE_MAX_COLOR_ATTACHMENTS];
+      float blendConstants[4];
+
+      // === RASTERIZATION (material-level defaults) ===
+      VkCullModeFlags cullMode;
+      VkFrontFace frontFace;
+
+      // === MULTISAMPLING ===
+      bool sampleShadingEnable;
+      float minSampleShading;
 
       const char *debugName;
-   } VEShaderConfigDesc;
+   } VEGraphicsPipelineDesc;
+
+   /**
+    * Draw State Descriptor
+    * 
+    * Per-draw dynamic state for geometry interpretation and overrides.
+    * All fields are dynamic state in Vulkan 1.3+ and can vary per draw call.
+    * 
+    * Changes per: draw call or renderable type
+    */
+   typedef struct VEDrawStateDesc
+   {
+      // === GEOMETRY INTERPRETATION ===
+      VkPrimitiveTopology topology;
+      bool primitiveRestartEnable;
+      uint32_t patchControlPoints;   // For tessellation
+
+      // === RASTERIZATION OVERRIDES ===
+      VkPolygonMode polygonMode;     // Fill, line, point
+      float lineWidth;
+      VkCullModeFlags cullMode;      // Override pipeline default (VK_CULL_MODE_FLAG_BITS_MAX_ENUM = use pipeline)
+      VkFrontFace frontFace;         // Override pipeline default
+      bool rasterizerDiscardEnable;
+
+      // === DEPTH BIAS (polygon offset) ===
+      bool depthBiasEnable;
+      float depthBiasConstantFactor;
+      float depthBiasClamp;
+      float depthBiasSlopeFactor;
+      bool depthClampEnable;
+
+      // === COVERAGE ===
+      bool alphaToCoverageEnable;
+      bool alphaToOneEnable;
+
+      const char *debugName;
+   } VEDrawStateDesc;
+
+   // Special value indicating "use pipeline default" for cull mode override
+   #define VE_CULL_MODE_USE_PIPELINE VK_CULL_MODE_FLAG_BITS_MAX_ENUM
 
    // =============================================================================
    // Dynamic Rendering Structures
@@ -471,9 +436,6 @@ extern "C"
       VEColor clearValue;            // Used if loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR
       VETextureIndex resolveTexture; // For MSAA resolve (optional)
    } VERenderingAttachment;
-
-// Maximum color attachments supported
-#define VE_MAX_COLOR_ATTACHMENTS 8
 
 // Indices for depth and stencil in the attachments array
 #define VE_DEPTH_ATTACHMENT_INDEX VE_MAX_COLOR_ATTACHMENTS
@@ -533,15 +495,15 @@ extern "C"
       } heaps[16];
    } VEMemoryStats;
 
-   // Render configuration statistics
-   typedef struct VERenderConfigStats
+   // Graphics pipeline statistics
+   typedef struct VEPipelineStats
    {
-      uint32_t totalConfigs;
-      uint32_t activeConfigs;
-      uint32_t configSwitches;
-      uint32_t stateSwitches;
-      uint32_t overrides;
-   } VERenderConfigStats;
+      uint32_t totalPipelines;
+      uint32_t activePipelines;
+      uint32_t pipelineBinds;
+      uint32_t drawStateChanges;
+      uint32_t individualOverrides;
+   } VEPipelineStats;
 
    // =============================================================================
    // Context and Device Management
@@ -890,70 +852,86 @@ extern "C"
    VULKEASE_API bool veShaderNeedsReload(VEShader *shader);
    VULKEASE_API VEResult veReloadShader(VEShader *shader);
 
-   /**
-    * Shader configuration management
-    */
-   VULKEASE_API VEResult veCreateShaderConfig(VEDevice *device, const VEShaderConfigDesc *desc,
-                                             VEShaderConfig **outConfig);
-   VULKEASE_API VEResult veDestroyShaderConfig(VEShaderConfig *config);
-
    // =============================================================================
-   // Render Configuration Management
+   // Graphics Pipeline Management
    // =============================================================================
 
    /**
-    * Create render configuration - lightweight state template
+    * Create graphics pipeline - combines shaders, vertex input, and material state
+    *
+    * @param device Device handle
+    * @param desc Pipeline descriptor
+    * @param outPipeline Pointer to receive the pipeline handle
+    * @return VE_SUCCESS on success
     */
-   VULKEASE_API VEResult veCreateRenderConfig(VEDevice *device, const VERenderConfigDesc *desc,
-                                             VERenderConfig **outConfig);
+   VULKEASE_API VEResult veCreateGraphicsPipeline(VEDevice *device, const VEGraphicsPipelineDesc *desc,
+                                                  VEGraphicsPipeline **outPipeline);
 
    /**
-    * Destroy render configuration
+    * Destroy graphics pipeline
     */
-   VULKEASE_API VEResult veDestroyRenderConfig(VERenderConfig *config);
+   VULKEASE_API VEResult veDestroyGraphicsPipeline(VEGraphicsPipeline *pipeline);
 
    /**
-    * Create vertex configuration for dynamic vertex input
+    * Create common graphics pipelines (convenience functions)
     */
-   VULKEASE_API VEResult veCreateVertexConfig(VEDevice *device, uint32_t bindingCount, const VEVertexBinding *bindings,
-                                             uint32_t attributeCount, const VEVertexAttribute *attributes,
-                                             VEVertexConfig **outConfig);
-   VULKEASE_API VEResult veDestroyVertexConfig(VEVertexConfig *config);
+   VULKEASE_API VEResult veCreateOpaquePipeline(VEDevice *device, VEShader *vertexShader, VEShader *fragmentShader,
+                                                const VEVertexBinding *bindings, uint32_t bindingCount,
+                                                const VEVertexAttribute *attrs, uint32_t attrCount,
+                                                const char *debugName, VEGraphicsPipeline **outPipeline);
+   VULKEASE_API VEResult veCreateTransparentPipeline(VEDevice *device, VEShader *vertexShader, VEShader *fragmentShader,
+                                                     const VEVertexBinding *bindings, uint32_t bindingCount,
+                                                     const VEVertexAttribute *attrs, uint32_t attrCount,
+                                                     const char *debugName, VEGraphicsPipeline **outPipeline);
+   VULKEASE_API VEResult veCreateAdditivePipeline(VEDevice *device, VEShader *vertexShader, VEShader *fragmentShader,
+                                                  const VEVertexBinding *bindings, uint32_t bindingCount,
+                                                  const VEVertexAttribute *attrs, uint32_t attrCount,
+                                                  const char *debugName, VEGraphicsPipeline **outPipeline);
+   VULKEASE_API VEResult veCreateShadowPipeline(VEDevice *device, VEShader *vertexShader, VEShader *fragmentShader,
+                                                const VEVertexBinding *bindings, uint32_t bindingCount,
+                                                const VEVertexAttribute *attrs, uint32_t attrCount,
+                                                const char *debugName, VEGraphicsPipeline **outPipeline);
+   VULKEASE_API VEResult veCreateUIOverlayPipeline(VEDevice *device, VEShader *vertexShader, VEShader *fragmentShader,
+                                                   const VEVertexBinding *bindings, uint32_t bindingCount,
+                                                   const VEVertexAttribute *attrs, uint32_t attrCount,
+                                                   const char *debugName, VEGraphicsPipeline **outPipeline);
 
    /**
-    * Get default configurations for common scenarios
+    * Get default graphics pipeline descriptor (opaque, backface culled, depth test/write)
     */
-   VULKEASE_API VERasterConfig veDefaultRasterConfig(void);
-   VULKEASE_API VEDepthConfig veDefaultDepthConfig(void);
-   VULKEASE_API VEBlendConfig veDefaultOpaqueBlendConfig(void);
-   VULKEASE_API VEBlendConfig veDefaultAlphaBlendConfig(void);
-   VULKEASE_API VEBlendConfig veDefaultAdditiveBlendConfig(void);
-   VULKEASE_API VEMultisampleConfig veDefaultMultisampleConfig(void);
-   VULKEASE_API VEVertexInputConfig veDefaultVertexInputConfig(void);
+   VULKEASE_API VEGraphicsPipelineDesc veDefaultGraphicsPipelineDesc(void);
+
+   // =============================================================================
+   // Draw State Management
+   // =============================================================================
 
    /**
-    * Create common render configurations
+    * Create draw state - per-draw dynamic state preset
+    *
+    * @param device Device handle
+    * @param desc Draw state descriptor
+    * @param outDrawState Pointer to receive the draw state handle
+    * @return VE_SUCCESS on success
     */
-   VULKEASE_API VEResult veCreateOpaqueRenderConfig(VEDevice *device, const char *debugName,
-                                                   VERenderConfig **outConfig);
-   VULKEASE_API VEResult veCreateTransparentRenderConfig(VEDevice *device, const char *debugName,
-                                                        VERenderConfig **outConfig);
-   VULKEASE_API VEResult veCreateWireframeRenderConfig(VEDevice *device, const char *debugName,
-                                                      VERenderConfig **outConfig);
-   VULKEASE_API VEResult veCreateShadowRenderConfig(VEDevice *device, const char *debugName,
-                                                   VERenderConfig **outConfig);
-   VULKEASE_API VEResult veCreateUIRenderConfig(VEDevice *device, const char *debugName,
-                                               VERenderConfig **outConfig);
+   VULKEASE_API VEResult veCreateDrawState(VEDevice *device, const VEDrawStateDesc *desc,
+                                           VEDrawState **outDrawState);
 
    /**
-    * Configuration composition and variants
+    * Destroy draw state
     */
-   VULKEASE_API VEResult veCreateConfigVariant(VERenderConfig *baseConfig, const VERenderConfigDesc *overrides,
-                                              VERenderConfig **outConfig);
-   VULKEASE_API VEResult veMergeRenderConfigs(VEDevice *device, uint32_t configCount, VERenderConfig *const *configs,
-                                             const char *debugName, VERenderConfig **outConfig);
-   VULKEASE_API VEResult veCloneRenderConfig(VERenderConfig *config, const char *debugName,
-                                            VERenderConfig **outConfig);
+   VULKEASE_API VEResult veDestroyDrawState(VEDrawState *drawState);
+
+   /**
+    * Create common draw states (convenience functions)
+    */
+   VULKEASE_API VEResult veCreateDefaultDrawState(VEDevice *device, VEDrawState **outDrawState);
+   VULKEASE_API VEResult veCreateWireframeDrawState(VEDevice *device, VEDrawState **outDrawState);
+   VULKEASE_API VEResult veCreateShadowDrawState(VEDevice *device, VEDrawState **outDrawState);
+
+   /**
+    * Get default draw state descriptor (triangle list, fill, no bias)
+    */
+   VULKEASE_API VEDrawStateDesc veDefaultDrawStateDesc(void);
 
    // =============================================================================
    // Command Buffer and Rendering
@@ -1107,16 +1085,33 @@ extern "C"
    VULKEASE_API VEResult veEndRendering(VECommandBuffer *cmd);
 
    /**
-    * Apply render configuration - sets all associated rendering state
+    * Bind graphics pipeline - sets shaders, vertex input, and material-level state
     */
-   VULKEASE_API VEResult veApplyRenderConfig(VECommandBuffer *cmd, VERenderConfig *config);
+   VULKEASE_API VEResult veBindGraphicsPipeline(VECommandBuffer *cmd, VEGraphicsPipeline *pipeline);
 
    /**
-    * Bind shaders (can mix and match any combination)
+    * Apply draw state - sets per-draw dynamic state
+    */
+   VULKEASE_API VEResult veApplyDrawState(VECommandBuffer *cmd, VEDrawState *drawState);
+
+   /**
+    * Apply graphics state - convenience function combining pipeline + draw state + viewport/scissor
+    *
+    * @param cmd Command buffer (must be recording)
+    * @param pipeline Graphics pipeline (NULL = don't change)
+    * @param drawState Draw state (NULL = use defaults)
+    * @param viewport Viewport (NULL = use full render area)
+    * @param scissor Scissor rectangle (NULL = use full render area)
+    */
+   VULKEASE_API VEResult veApplyGraphicsState(VECommandBuffer *cmd, VEGraphicsPipeline *pipeline,
+                                              VEDrawState *drawState, const VEViewport *viewport,
+                                              const VERect2D *scissor);
+
+   /**
+    * Bind individual shader (for compute or advanced use)
     */
    VULKEASE_API VEResult veBindShader(VECommandBuffer *cmd, VEShader *shader);
    VULKEASE_API VEResult veBindShaders(VECommandBuffer *cmd, uint32_t shaderCount, VEShader *const *shaders);
-   VULKEASE_API VEResult veBindShaderConfig(VECommandBuffer *cmd, VEShaderConfig *config);
    VULKEASE_API VEResult veUnbindShaderStage(VECommandBuffer *cmd, VkShaderStageFlags stage);
 
    /**
@@ -1127,46 +1122,47 @@ extern "C"
    VULKEASE_API VEResult veSetScissor(VECommandBuffer *cmd, int32_t x, int32_t y, uint32_t width, uint32_t height);
 
    // =============================================================================
-   // Combined Render State
+   // Individual Dynamic State Setters
    // =============================================================================
 
    /**
-    * Combined render state for convenience.
-    * Bundles shader config, render config, viewport, and scissor into a single call.
-    * NULL viewport/scissor will default to the current render area (must be called inside veBeginRendering).
+    * Individual dynamic state setters for per-draw overrides.
+    * Use these after veBindGraphicsPipeline/veApplyDrawState for quick changes.
     */
-   typedef struct VERenderState
-   {
-      VEShaderConfig *shaderConfig; // Shader configuration (NULL = don't bind)
-      VERenderConfig *renderConfig; // Render state configuration (NULL = don't apply)
-      const VEViewport *viewport;   // Viewport (NULL = use full render area)
-      const VERect2D *scissor;      // Scissor rectangle (NULL = use full render area)
-   } VERenderState;
 
-   /**
-    * Apply combined render state in a single call.
-    * Must be called inside a rendering pass (after veBeginRendering).
-    * If viewport or scissor are NULL, they default to the full render area.
-    *
-    * @param cmd Command buffer (must be inside a rendering pass)
-    * @param state Render state to apply
-    */
-   VULKEASE_API VEResult veApplyRenderState(VECommandBuffer *cmd, const VERenderState *state);
+   // Geometry interpretation
+   VULKEASE_API VEResult veSetTopology(VECommandBuffer *cmd, VkPrimitiveTopology topology);
+   VULKEASE_API VEResult veSetPrimitiveRestart(VECommandBuffer *cmd, bool enable);
+   VULKEASE_API VEResult veSetPatchControlPoints(VECommandBuffer *cmd, uint32_t controlPoints);
 
-   /**
-    * Runtime state overrides (maximum flexibility)
-    */
-   VULKEASE_API VEResult veOverrideRasterState(VECommandBuffer *cmd, const VERasterConfig *raster);
-   VULKEASE_API VEResult veOverrideDepthState(VECommandBuffer *cmd, const VEDepthConfig *depth);
-   VULKEASE_API VEResult veOverrideBlendState(VECommandBuffer *cmd, const VEBlendConfig *blend);
+   // Rasterization
+   VULKEASE_API VEResult veSetPolygonMode(VECommandBuffer *cmd, VkPolygonMode mode);
+   VULKEASE_API VEResult veSetLineWidth(VECommandBuffer *cmd, float width);
+   VULKEASE_API VEResult veSetCullMode(VECommandBuffer *cmd, VkCullModeFlags cullMode);
+   VULKEASE_API VEResult veSetFrontFace(VECommandBuffer *cmd, VkFrontFace frontFace);
+   VULKEASE_API VEResult veSetRasterizerDiscard(VECommandBuffer *cmd, bool enable);
 
-   /**
-    * Quick state toggles for common cases
-    */
+   // Depth bias (polygon offset)
+   VULKEASE_API VEResult veSetDepthBias(VECommandBuffer *cmd, bool enable, float constantFactor, float clamp,
+                                        float slopeFactor);
+   VULKEASE_API VEResult veSetDepthClamp(VECommandBuffer *cmd, bool enable);
+
+   // Coverage
+   VULKEASE_API VEResult veSetAlphaToCoverage(VECommandBuffer *cmd, bool enable);
+   VULKEASE_API VEResult veSetAlphaToOne(VECommandBuffer *cmd, bool enable);
+
+   // Depth/stencil (for runtime overrides - typically set in pipeline)
+   VULKEASE_API VEResult veSetDepthTest(VECommandBuffer *cmd, bool enable);
+   VULKEASE_API VEResult veSetDepthWrite(VECommandBuffer *cmd, bool enable);
+   VULKEASE_API VEResult veSetDepthCompareOp(VECommandBuffer *cmd, VkCompareOp op);
+   VULKEASE_API VEResult veSetStencilTest(VECommandBuffer *cmd, bool enable);
+   VULKEASE_API VEResult veSetStencilOp(VECommandBuffer *cmd, VkStencilFaceFlags faceMask, VkStencilOp failOp,
+                                        VkStencilOp passOp, VkStencilOp depthFailOp, VkCompareOp compareOp);
+   VULKEASE_API VEResult veSetStencilReference(VECommandBuffer *cmd, VkStencilFaceFlags faceMask, uint32_t reference);
+
+   // Convenience toggles
    VULKEASE_API VEResult veSetWireframe(VECommandBuffer *cmd, bool enabled);
-   VULKEASE_API VEResult veSetAlphaBlending(VECommandBuffer *cmd, bool enabled);
    VULKEASE_API VEResult veSetDepthTesting(VECommandBuffer *cmd, bool testEnabled, bool writeEnabled);
-   VULKEASE_API VEResult veSetCulling(VECommandBuffer *cmd, VkCullModeFlags cullMode);
 
    /**
     * Push constants for bindless resource access
@@ -1422,15 +1418,15 @@ extern "C"
     */
    VULKEASE_API VEResult veGetPerformanceStats(VEDevice *device, VEPerformanceStats *stats);
    VULKEASE_API VEResult veGetMemoryStats(VEDevice *device, VEMemoryStats *stats);
-   VULKEASE_API VEResult veGetRenderConfigStats(VEDevice *device, VERenderConfigStats *stats);
+   VULKEASE_API VEResult veGetPipelineStats(VEDevice *device, VEPipelineStats *stats);
 
    /**
     * Debug information
     */
    VULKEASE_API VEResult vePrintDebugInfo(VEDevice *device);
    VULKEASE_API VEResult vePrintProfileInfo(VEDevice *device);
-   VULKEASE_API VEResult vePrintRenderConfig(VERenderConfig *config);
-   VULKEASE_API VEResult veValidateRenderConfig(VERenderConfig *config);
+   VULKEASE_API VEResult vePrintGraphicsPipeline(VEGraphicsPipeline *pipeline);
+   VULKEASE_API VEResult veValidateGraphicsPipeline(VEGraphicsPipeline *pipeline);
 
    // =============================================================================
    // Utility Macros and Helper Functions

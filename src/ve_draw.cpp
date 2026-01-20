@@ -53,47 +53,49 @@ VEResult veSetScissor(VECommandBuffer *cmd, int32_t x, int32_t y, uint32_t width
 }
 
 // =============================================================================
-// Combined Render State
+// Graphics State Application
 // =============================================================================
 
-VEResult veApplyRenderState(VECommandBuffer *cmd, const VERenderState *state)
+VEResult veApplyGraphicsState(VECommandBuffer *cmd, VEGraphicsPipeline *pipeline,
+                              VEDrawState *drawState, const VEViewport *viewport,
+                              const VERect2D *scissor)
 {
-   if (!cmd || !state)
+   if (!cmd)
    {
-      veSetError("Invalid parameters for veApplyRenderState");
+      veSetError("veApplyGraphicsState: Invalid command buffer");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
    // Validate we're inside a render pass (required for default viewport/scissor)
-   if (!internal->inRenderPass && (state->viewport == NULL || state->scissor == NULL))
+   if (!internal->inRenderPass && (viewport == NULL || scissor == NULL))
    {
-      veSetError("veApplyRenderState: must be called inside veBeginRendering when viewport or scissor is NULL");
+      veSetError("veApplyGraphicsState: must be called inside veBeginRendering when viewport or scissor is NULL");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   // Bind shader config if provided
-   if (state->shaderConfig)
+   // Bind graphics pipeline if provided
+   if (pipeline)
    {
-      VEResult r = veBindShaderConfig(cmd, state->shaderConfig);
+      VEResult r = veBindGraphicsPipeline(cmd, pipeline);
       if (r != VE_SUCCESS)
          return r;
    }
 
-   // Apply render config if provided
-   if (state->renderConfig)
+   // Apply draw state if provided
+   if (drawState)
    {
-      VEResult r = veApplyRenderConfig(cmd, state->renderConfig);
+      VEResult r = veApplyDrawState(cmd, drawState);
       if (r != VE_SUCCESS)
          return r;
    }
 
    // Set viewport (use render area if NULL)
-   if (state->viewport)
+   if (viewport)
    {
-      VEResult r = veSetViewport(cmd, state->viewport->x, state->viewport->y, state->viewport->width,
-                                 state->viewport->height, state->viewport->minDepth, state->viewport->maxDepth);
+      VEResult r = veSetViewport(cmd, viewport->x, viewport->y, viewport->width,
+                                 viewport->height, viewport->minDepth, viewport->maxDepth);
       if (r != VE_SUCCESS)
          return r;
    }
@@ -106,10 +108,9 @@ VEResult veApplyRenderState(VECommandBuffer *cmd, const VERenderState *state)
    }
 
    // Set scissor (use render area if NULL)
-   if (state->scissor)
+   if (scissor)
    {
-      VEResult r = veSetScissor(cmd, state->scissor->x, state->scissor->y, state->scissor->width,
-                                state->scissor->height);
+      VEResult r = veSetScissor(cmd, scissor->x, scissor->y, scissor->width, scissor->height);
       if (r != VE_SUCCESS)
          return r;
    }
@@ -125,125 +126,511 @@ VEResult veApplyRenderState(VECommandBuffer *cmd, const VERenderState *state)
 }
 
 // =============================================================================
-// Runtime State Overrides
+// Graphics Pipeline Binding
 // =============================================================================
 
-VEResult veOverrideRasterState(VECommandBuffer *cmd, const VERasterConfig *raster)
+VEResult veBindGraphicsPipeline(VECommandBuffer *cmd, VEGraphicsPipeline *pipeline)
 {
-   if (!cmd || !raster)
+   if (!cmd || !pipeline)
    {
-      veSetError("Invalid parameters for veOverrideRasterState");
+      veSetError("veBindGraphicsPipeline: Invalid parameters");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   VEGraphicsPipelineInternal *pipelineInternal = (VEGraphicsPipelineInternal *)pipeline;
 
-   vkCmdSetCullMode(internal->commandBuffer, (VkCullModeFlags)raster->cullMode);
-   vkCmdSetFrontFace(internal->commandBuffer, (VkFrontFace)raster->frontFace);
-   vkCmdSetLineWidth(internal->commandBuffer, raster->lineWidth);
-
-   if (raster->depthBiasEnable)
+   if (!pipelineInternal->isValid)
    {
-      vkCmdSetDepthBias(internal->commandBuffer, raster->depthBiasConstantFactor, raster->depthBiasClamp,
-                        raster->depthBiasSlopeFactor);
-   }
-
-   // Extended dynamic state 3
-   veFuncs.vkCmdSetPolygonModeEXT(internal->commandBuffer, (VkPolygonMode)raster->polygonMode);
-   return VE_SUCCESS;
-}
-
-VEResult veOverrideDepthState(VECommandBuffer *cmd, const VEDepthConfig *depth)
-{
-   if (!cmd || !depth)
-   {
-      veSetError("Invalid parameters for veOverrideDepthState");
+      veSetError("veBindGraphicsPipeline: Pipeline is not valid");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
-
-   vkCmdSetDepthTestEnable(internal->commandBuffer, depth->depthTestEnable);
-   vkCmdSetDepthWriteEnable(internal->commandBuffer, depth->depthWriteEnable);
-   vkCmdSetDepthCompareOp(internal->commandBuffer, (VkCompareOp)depth->depthCompareOp);
-
-   vkCmdSetStencilTestEnable(internal->commandBuffer, depth->stencilTestEnable);
-
-   if (depth->stencilTestEnable)
+   if (!internal->isRecording)
    {
-      vkCmdSetStencilCompareMask(internal->commandBuffer, VK_STENCIL_FACE_FRONT_BIT, depth->frontCompareMask);
-      vkCmdSetStencilCompareMask(internal->commandBuffer, VK_STENCIL_FACE_BACK_BIT, depth->backCompareMask);
-
-      vkCmdSetStencilWriteMask(internal->commandBuffer, VK_STENCIL_FACE_FRONT_BIT, depth->frontWriteMask);
-      vkCmdSetStencilWriteMask(internal->commandBuffer, VK_STENCIL_FACE_BACK_BIT, depth->backWriteMask);
-
-      vkCmdSetStencilReference(internal->commandBuffer, VK_STENCIL_FACE_FRONT_BIT, depth->frontReference);
-      vkCmdSetStencilReference(internal->commandBuffer, VK_STENCIL_FACE_BACK_BIT, depth->backReference);
-   }
-
-   if (depth->depthBoundsTestEnable)
-   {
-      vkCmdSetDepthBounds(internal->commandBuffer, depth->minDepthBounds, depth->maxDepthBounds);
-   }
-   return VE_SUCCESS;
-}
-
-VEResult veOverrideBlendState(VECommandBuffer *cmd, const VEBlendConfig *blend)
-{
-   if (!cmd || !blend)
-   {
-      veSetError("Invalid parameters for veOverrideBlendState");
+      veSetError("veBindGraphicsPipeline: Command buffer is not recording");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   VkCommandBuffer vkCmd = internal->commandBuffer;
 
-   vkCmdSetBlendConstants(internal->commandBuffer, blend->blendConstants);
+   // Bind shaders
+   VkShaderEXT shaders[5] = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
+   VkShaderStageFlagBits stages[5] = {
+      VK_SHADER_STAGE_VERTEX_BIT,
+      VK_SHADER_STAGE_FRAGMENT_BIT,
+      VK_SHADER_STAGE_GEOMETRY_BIT,
+      VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
+      VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT
+   };
+   
+   if (pipelineInternal->vertexShader)
+      shaders[0] = ((VEShaderInternal *)pipelineInternal->vertexShader)->shaderObject;
+   if (pipelineInternal->fragmentShader)
+      shaders[1] = ((VEShaderInternal *)pipelineInternal->fragmentShader)->shaderObject;
+   if (pipelineInternal->geometryShader)
+      shaders[2] = ((VEShaderInternal *)pipelineInternal->geometryShader)->shaderObject;
+   if (pipelineInternal->tessControlShader)
+      shaders[3] = ((VEShaderInternal *)pipelineInternal->tessControlShader)->shaderObject;
+   if (pipelineInternal->tessEvalShader)
+      shaders[4] = ((VEShaderInternal *)pipelineInternal->tessEvalShader)->shaderObject;
 
-   if (blend->attachmentCount > 0)
+   veFuncs.vkCmdBindShadersEXT(vkCmd, 5, stages, shaders);
+
+   // Track bound shader stages
+   internal->boundShaders = 0;
+   if (pipelineInternal->vertexShader) internal->boundShaders |= VK_SHADER_STAGE_VERTEX_BIT;
+   if (pipelineInternal->fragmentShader) internal->boundShaders |= VK_SHADER_STAGE_FRAGMENT_BIT;
+   if (pipelineInternal->geometryShader) internal->boundShaders |= VK_SHADER_STAGE_GEOMETRY_BIT;
+   if (pipelineInternal->tessControlShader) internal->boundShaders |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+   if (pipelineInternal->tessEvalShader) internal->boundShaders |= VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+
+   // Set vertex input
+   if (pipelineInternal->vertexBindingCount > 0 || pipelineInternal->vertexAttributeCount > 0)
    {
-      VkBool32 colorBlendEnables[8];
-      for (uint32_t i = 0; i < blend->attachmentCount && i < 8; i++)
+      VkVertexInputBindingDescription2EXT bindings[VE_MAX_VERTEX_BINDINGS];
+      VkVertexInputAttributeDescription2EXT attrs[VE_MAX_VERTEX_ATTRIBUTES];
+
+      for (uint32_t i = 0; i < pipelineInternal->vertexBindingCount; i++)
       {
-         colorBlendEnables[i] = blend->attachments[i].blendEnable;
+         bindings[i] = {};
+         bindings[i].sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT;
+         bindings[i].binding = pipelineInternal->vertexBindings[i].binding;
+         bindings[i].stride = pipelineInternal->vertexBindings[i].stride;
+         bindings[i].inputRate = pipelineInternal->vertexBindings[i].inputRate;
+         bindings[i].divisor = pipelineInternal->vertexBindings[i].divisor > 0 ? 
+                               pipelineInternal->vertexBindings[i].divisor : 1;
       }
-      veFuncs.vkCmdSetColorBlendEnableEXT(internal->commandBuffer, 0, blend->attachmentCount, colorBlendEnables);
+
+      for (uint32_t i = 0; i < pipelineInternal->vertexAttributeCount; i++)
+      {
+         attrs[i] = {};
+         attrs[i].sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT;
+         attrs[i].location = pipelineInternal->vertexAttributes[i].location;
+         attrs[i].binding = pipelineInternal->vertexAttributes[i].binding;
+         attrs[i].format = pipelineInternal->vertexAttributes[i].format;
+         attrs[i].offset = pipelineInternal->vertexAttributes[i].offset;
+      }
+
+      veFuncs.vkCmdSetVertexInputEXT(vkCmd, pipelineInternal->vertexBindingCount, bindings,
+                                     pipelineInternal->vertexAttributeCount, attrs);
    }
+
+   // Set depth state
+   vkCmdSetDepthTestEnable(vkCmd, pipelineInternal->depthTestEnable ? VK_TRUE : VK_FALSE);
+   vkCmdSetDepthWriteEnable(vkCmd, pipelineInternal->depthWriteEnable ? VK_TRUE : VK_FALSE);
+   vkCmdSetDepthCompareOp(vkCmd, pipelineInternal->depthCompareOp);
+   vkCmdSetDepthBoundsTestEnable(vkCmd, pipelineInternal->depthBoundsTestEnable ? VK_TRUE : VK_FALSE);
+   if (pipelineInternal->depthBoundsTestEnable)
+   {
+      vkCmdSetDepthBounds(vkCmd, pipelineInternal->minDepthBounds, pipelineInternal->maxDepthBounds);
+   }
+
+   // Set stencil state
+   vkCmdSetStencilTestEnable(vkCmd, pipelineInternal->stencilTestEnable ? VK_TRUE : VK_FALSE);
+   if (pipelineInternal->stencilTestEnable)
+   {
+      vkCmdSetStencilOp(vkCmd, VK_STENCIL_FACE_FRONT_BIT,
+                        pipelineInternal->frontStencil.failOp,
+                        pipelineInternal->frontStencil.passOp,
+                        pipelineInternal->frontStencil.depthFailOp,
+                        pipelineInternal->frontStencil.compareOp);
+      vkCmdSetStencilCompareMask(vkCmd, VK_STENCIL_FACE_FRONT_BIT, pipelineInternal->frontStencil.compareMask);
+      vkCmdSetStencilWriteMask(vkCmd, VK_STENCIL_FACE_FRONT_BIT, pipelineInternal->frontStencil.writeMask);
+      vkCmdSetStencilReference(vkCmd, VK_STENCIL_FACE_FRONT_BIT, pipelineInternal->frontStencil.reference);
+
+      vkCmdSetStencilOp(vkCmd, VK_STENCIL_FACE_BACK_BIT,
+                        pipelineInternal->backStencil.failOp,
+                        pipelineInternal->backStencil.passOp,
+                        pipelineInternal->backStencil.depthFailOp,
+                        pipelineInternal->backStencil.compareOp);
+      vkCmdSetStencilCompareMask(vkCmd, VK_STENCIL_FACE_BACK_BIT, pipelineInternal->backStencil.compareMask);
+      vkCmdSetStencilWriteMask(vkCmd, VK_STENCIL_FACE_BACK_BIT, pipelineInternal->backStencil.writeMask);
+      vkCmdSetStencilReference(vkCmd, VK_STENCIL_FACE_BACK_BIT, pipelineInternal->backStencil.reference);
+   }
+
+   // Set blend state
+   veFuncs.vkCmdSetLogicOpEnableEXT(vkCmd, pipelineInternal->logicOpEnable ? VK_TRUE : VK_FALSE);
+   if (pipelineInternal->logicOpEnable)
+   {
+      veFuncs.vkCmdSetLogicOpEXT(vkCmd, pipelineInternal->logicOp);
+   }
+
+   if (pipelineInternal->blendAttachmentCount > 0)
+   {
+      VkBool32 colorBlendEnables[VE_MAX_COLOR_ATTACHMENTS];
+      VkColorBlendEquationEXT equations[VE_MAX_COLOR_ATTACHMENTS];
+      VkColorComponentFlags writeMasks[VE_MAX_COLOR_ATTACHMENTS];
+
+      for (uint32_t i = 0; i < pipelineInternal->blendAttachmentCount; i++)
+      {
+         colorBlendEnables[i] = pipelineInternal->blendAttachments[i].blendEnable ? VK_TRUE : VK_FALSE;
+         
+         equations[i] = {};
+         equations[i].srcColorBlendFactor = pipelineInternal->blendAttachments[i].srcColorBlendFactor;
+         equations[i].dstColorBlendFactor = pipelineInternal->blendAttachments[i].dstColorBlendFactor;
+         equations[i].colorBlendOp = pipelineInternal->blendAttachments[i].colorBlendOp;
+         equations[i].srcAlphaBlendFactor = pipelineInternal->blendAttachments[i].srcAlphaBlendFactor;
+         equations[i].dstAlphaBlendFactor = pipelineInternal->blendAttachments[i].dstAlphaBlendFactor;
+         equations[i].alphaBlendOp = pipelineInternal->blendAttachments[i].alphaBlendOp;
+         
+         writeMasks[i] = pipelineInternal->blendAttachments[i].colorWriteMask;
+      }
+
+      veFuncs.vkCmdSetColorBlendEnableEXT(vkCmd, 0, pipelineInternal->blendAttachmentCount, colorBlendEnables);
+      veFuncs.vkCmdSetColorBlendEquationEXT(vkCmd, 0, pipelineInternal->blendAttachmentCount, equations);
+      veFuncs.vkCmdSetColorWriteMaskEXT(vkCmd, 0, pipelineInternal->blendAttachmentCount, writeMasks);
+   }
+   vkCmdSetBlendConstants(vkCmd, pipelineInternal->blendConstants);
+
+   // Set rasterization defaults
+   vkCmdSetCullMode(vkCmd, pipelineInternal->cullMode);
+   vkCmdSetFrontFace(vkCmd, pipelineInternal->frontFace);
+
+   // Set multisampling
+   if (pipelineInternal->sampleShadingEnable)
+   {
+      // Note: sample shading requires VK_EXT_extended_dynamic_state3
+   }
+
    return VE_SUCCESS;
 }
 
-// =============================================================================
-// Quick State Toggles
-// =============================================================================
-
-VEResult veSetWireframe(VECommandBuffer *cmd, bool enabled)
+VEResult veApplyDrawState(VECommandBuffer *cmd, VEDrawState *drawState)
 {
    if (!cmd)
    {
-      veSetError("CommandBuffer cannot be NULL");
+      veSetError("veApplyDrawState: Invalid command buffer");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   VkCommandBuffer vkCmd = internal->commandBuffer;
 
-   VkPolygonMode mode = enabled ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
+   // If drawState is NULL, apply defaults
+   VEDrawStateDesc defaults;
+   VEDrawStateInternal *stateInternal;
+   
+   if (drawState)
+   {
+      stateInternal = (VEDrawStateInternal *)drawState;
+      if (!stateInternal->isValid)
+      {
+         veSetError("veApplyDrawState: Draw state is not valid");
+         return VE_ERROR_INVALID_PARAMETER;
+      }
+   }
+   else
+   {
+      // Create a temporary internal with defaults
+      defaults = veDefaultDrawStateDesc();
+      stateInternal = (VEDrawStateInternal *)&defaults;
+   }
+
+   // Set topology
+   vkCmdSetPrimitiveTopology(vkCmd, stateInternal->topology);
+   internal->currentTopology = stateInternal->topology;
+
+   // Set primitive restart
+   vkCmdSetPrimitiveRestartEnable(vkCmd, stateInternal->primitiveRestartEnable ? VK_TRUE : VK_FALSE);
+
+   // Set patch control points (for tessellation)
+   if (stateInternal->patchControlPoints > 0)
+   {
+      veFuncs.vkCmdSetPatchControlPointsEXT(vkCmd, stateInternal->patchControlPoints);
+      internal->currentPatchControlPoints = stateInternal->patchControlPoints;
+   }
+
+   // Set polygon mode
+   veFuncs.vkCmdSetPolygonModeEXT(vkCmd, stateInternal->polygonMode);
+
+   // Set line width
+   vkCmdSetLineWidth(vkCmd, stateInternal->lineWidth);
+
+   // Set cull mode (only if not using pipeline default)
+   if (stateInternal->cullMode != VE_CULL_MODE_USE_PIPELINE)
+   {
+      vkCmdSetCullMode(vkCmd, stateInternal->cullMode);
+   }
+
+   // Set front face
+   vkCmdSetFrontFace(vkCmd, stateInternal->frontFace);
+
+   // Set rasterizer discard
+   vkCmdSetRasterizerDiscardEnable(vkCmd, stateInternal->rasterizerDiscardEnable ? VK_TRUE : VK_FALSE);
+
+   // Set depth bias
+   vkCmdSetDepthBiasEnable(vkCmd, stateInternal->depthBiasEnable ? VK_TRUE : VK_FALSE);
+   if (stateInternal->depthBiasEnable)
+   {
+      vkCmdSetDepthBias(vkCmd, stateInternal->depthBiasConstantFactor,
+                        stateInternal->depthBiasClamp, stateInternal->depthBiasSlopeFactor);
+   }
+
+   // Set depth clamp
+   veFuncs.vkCmdSetDepthClampEnableEXT(vkCmd, stateInternal->depthClampEnable ? VK_TRUE : VK_FALSE);
+
+   // Set alpha to coverage
+   veFuncs.vkCmdSetAlphaToCoverageEnableEXT(vkCmd, stateInternal->alphaToCoverageEnable ? VK_TRUE : VK_FALSE);
+
+   // Set alpha to one
+   veFuncs.vkCmdSetAlphaToOneEnableEXT(vkCmd, stateInternal->alphaToOneEnable ? VK_TRUE : VK_FALSE);
+
+   return VE_SUCCESS;
+}
+
+// =============================================================================
+// Individual Dynamic State Setters
+// =============================================================================
+
+VEResult veSetTopology(VECommandBuffer *cmd, VkPrimitiveTopology topology)
+{
+   if (!cmd)
+   {
+      veSetError("veSetTopology: CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   vkCmdSetPrimitiveTopology(internal->commandBuffer, topology);
+   internal->currentTopology = topology;
+   return VE_SUCCESS;
+}
+
+VEResult veSetPrimitiveRestart(VECommandBuffer *cmd, bool enable)
+{
+   if (!cmd)
+   {
+      veSetError("veSetPrimitiveRestart: CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   vkCmdSetPrimitiveRestartEnable(internal->commandBuffer, enable ? VK_TRUE : VK_FALSE);
+   return VE_SUCCESS;
+}
+
+VEResult veSetPatchControlPoints(VECommandBuffer *cmd, uint32_t controlPoints)
+{
+   if (!cmd)
+   {
+      veSetError("veSetPatchControlPoints: CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   veFuncs.vkCmdSetPatchControlPointsEXT(internal->commandBuffer, controlPoints);
+   internal->currentPatchControlPoints = controlPoints;
+   return VE_SUCCESS;
+}
+
+VEResult veSetPolygonMode(VECommandBuffer *cmd, VkPolygonMode mode)
+{
+   if (!cmd)
+   {
+      veSetError("veSetPolygonMode: CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
    veFuncs.vkCmdSetPolygonModeEXT(internal->commandBuffer, mode);
    return VE_SUCCESS;
 }
 
-VEResult veSetAlphaBlending(VECommandBuffer *cmd, bool enabled)
+VEResult veSetLineWidth(VECommandBuffer *cmd, float width)
 {
    if (!cmd)
    {
-      veSetError("CommandBuffer cannot be NULL");
+      veSetError("veSetLineWidth: CommandBuffer cannot be NULL");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
-
-   VkBool32 blendEnable = enabled ? VK_TRUE : VK_FALSE;
-   veFuncs.vkCmdSetColorBlendEnableEXT(internal->commandBuffer, 0, 1, &blendEnable);
+   vkCmdSetLineWidth(internal->commandBuffer, width);
    return VE_SUCCESS;
+}
+
+VEResult veSetCullMode(VECommandBuffer *cmd, VkCullModeFlags cullMode)
+{
+   if (!cmd)
+   {
+      veSetError("veSetCullMode: CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   vkCmdSetCullMode(internal->commandBuffer, cullMode);
+   return VE_SUCCESS;
+}
+
+VEResult veSetFrontFace(VECommandBuffer *cmd, VkFrontFace frontFace)
+{
+   if (!cmd)
+   {
+      veSetError("veSetFrontFace: CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   vkCmdSetFrontFace(internal->commandBuffer, frontFace);
+   return VE_SUCCESS;
+}
+
+VEResult veSetRasterizerDiscard(VECommandBuffer *cmd, bool enable)
+{
+   if (!cmd)
+   {
+      veSetError("veSetRasterizerDiscard: CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   vkCmdSetRasterizerDiscardEnable(internal->commandBuffer, enable ? VK_TRUE : VK_FALSE);
+   return VE_SUCCESS;
+}
+
+VEResult veSetDepthBias(VECommandBuffer *cmd, bool enable, float constantFactor, float clamp, float slopeFactor)
+{
+   if (!cmd)
+   {
+      veSetError("veSetDepthBias: CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   vkCmdSetDepthBiasEnable(internal->commandBuffer, enable ? VK_TRUE : VK_FALSE);
+   if (enable)
+   {
+      vkCmdSetDepthBias(internal->commandBuffer, constantFactor, clamp, slopeFactor);
+   }
+   return VE_SUCCESS;
+}
+
+VEResult veSetDepthClamp(VECommandBuffer *cmd, bool enable)
+{
+   if (!cmd)
+   {
+      veSetError("veSetDepthClamp: CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   veFuncs.vkCmdSetDepthClampEnableEXT(internal->commandBuffer, enable ? VK_TRUE : VK_FALSE);
+   return VE_SUCCESS;
+}
+
+VEResult veSetAlphaToCoverage(VECommandBuffer *cmd, bool enable)
+{
+   if (!cmd)
+   {
+      veSetError("veSetAlphaToCoverage: CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   veFuncs.vkCmdSetAlphaToCoverageEnableEXT(internal->commandBuffer, enable ? VK_TRUE : VK_FALSE);
+   return VE_SUCCESS;
+}
+
+VEResult veSetAlphaToOne(VECommandBuffer *cmd, bool enable)
+{
+   if (!cmd)
+   {
+      veSetError("veSetAlphaToOne: CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   veFuncs.vkCmdSetAlphaToOneEnableEXT(internal->commandBuffer, enable ? VK_TRUE : VK_FALSE);
+   return VE_SUCCESS;
+}
+
+VEResult veSetDepthTest(VECommandBuffer *cmd, bool enable)
+{
+   if (!cmd)
+   {
+      veSetError("veSetDepthTest: CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   vkCmdSetDepthTestEnable(internal->commandBuffer, enable ? VK_TRUE : VK_FALSE);
+   return VE_SUCCESS;
+}
+
+VEResult veSetDepthWrite(VECommandBuffer *cmd, bool enable)
+{
+   if (!cmd)
+   {
+      veSetError("veSetDepthWrite: CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   vkCmdSetDepthWriteEnable(internal->commandBuffer, enable ? VK_TRUE : VK_FALSE);
+   return VE_SUCCESS;
+}
+
+VEResult veSetDepthCompareOp(VECommandBuffer *cmd, VkCompareOp op)
+{
+   if (!cmd)
+   {
+      veSetError("veSetDepthCompareOp: CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   vkCmdSetDepthCompareOp(internal->commandBuffer, op);
+   return VE_SUCCESS;
+}
+
+VEResult veSetStencilTest(VECommandBuffer *cmd, bool enable)
+{
+   if (!cmd)
+   {
+      veSetError("veSetStencilTest: CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   vkCmdSetStencilTestEnable(internal->commandBuffer, enable ? VK_TRUE : VK_FALSE);
+   return VE_SUCCESS;
+}
+
+VEResult veSetStencilOp(VECommandBuffer *cmd, VkStencilFaceFlags faceMask, VkStencilOp failOp,
+                        VkStencilOp passOp, VkStencilOp depthFailOp, VkCompareOp compareOp)
+{
+   if (!cmd)
+   {
+      veSetError("veSetStencilOp: CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   vkCmdSetStencilOp(internal->commandBuffer, faceMask, failOp, passOp, depthFailOp, compareOp);
+   return VE_SUCCESS;
+}
+
+VEResult veSetStencilReference(VECommandBuffer *cmd, VkStencilFaceFlags faceMask, uint32_t reference)
+{
+   if (!cmd)
+   {
+      veSetError("veSetStencilReference: CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   vkCmdSetStencilReference(internal->commandBuffer, faceMask, reference);
+   return VE_SUCCESS;
+}
+
+// =============================================================================
+// Convenience State Toggles
+// =============================================================================
+
+VEResult veSetWireframe(VECommandBuffer *cmd, bool enabled)
+{
+   return veSetPolygonMode(cmd, enabled ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL);
 }
 
 VEResult veSetDepthTesting(VECommandBuffer *cmd, bool testEnabled, bool writeEnabled)
@@ -258,19 +645,6 @@ VEResult veSetDepthTesting(VECommandBuffer *cmd, bool testEnabled, bool writeEna
 
    vkCmdSetDepthTestEnable(internal->commandBuffer, testEnabled);
    vkCmdSetDepthWriteEnable(internal->commandBuffer, writeEnabled);
-   return VE_SUCCESS;
-}
-
-VEResult veSetCulling(VECommandBuffer *cmd, VkCullModeFlags cullMode)
-{
-   if (!cmd)
-   {
-      veSetError("CommandBuffer cannot be NULL");
-      return VE_ERROR_INVALID_PARAMETER;
-   }
-
-   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
-   vkCmdSetCullMode(internal->commandBuffer, cullMode);
    return VE_SUCCESS;
 }
 

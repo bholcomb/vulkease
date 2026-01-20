@@ -291,73 +291,61 @@ namespace VulkEase
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veReloadShader(IntPtr shader);
 
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veCreateShaderConfig(IntPtr device, ref VEShaderConfigDesc desc, out IntPtr outConfig);
-
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veDestroyShaderConfig(IntPtr config);
         #endregion
 
-        #region Render Configuration Management
+        #region Graphics Pipeline Management
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veCreateRenderConfig(IntPtr device, ref VERenderConfigDesc desc, out IntPtr outConfig);
+        internal static extern VEResult veCreateGraphicsPipeline(IntPtr device, ref VEGraphicsPipelineDesc desc, out IntPtr outPipeline);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veDestroyRenderConfig(IntPtr config);
+        internal static extern VEResult veDestroyGraphicsPipeline(IntPtr pipeline);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veCreateVertexConfig(IntPtr device, UInt32 bindingCount, IntPtr bindings, UInt32 attributeCount, IntPtr attributes, out IntPtr outConfig);
+        internal static extern VEGraphicsPipelineDesc veDefaultGraphicsPipelineDesc();
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        internal static extern VEResult veCreateOpaquePipeline(IntPtr device, IntPtr vertexShader, IntPtr fragmentShader,
+            IntPtr bindings, UInt32 bindingCount, IntPtr attrs, UInt32 attrCount,
+            [MarshalAs(UnmanagedType.LPStr)] string debugName, out IntPtr outPipeline);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        internal static extern VEResult veCreateTransparentPipeline(IntPtr device, IntPtr vertexShader, IntPtr fragmentShader,
+            IntPtr bindings, UInt32 bindingCount, IntPtr attrs, UInt32 attrCount,
+            [MarshalAs(UnmanagedType.LPStr)] string debugName, out IntPtr outPipeline);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        internal static extern VEResult veCreateAdditivePipeline(IntPtr device, IntPtr vertexShader, IntPtr fragmentShader,
+            IntPtr bindings, UInt32 bindingCount, IntPtr attrs, UInt32 attrCount,
+            [MarshalAs(UnmanagedType.LPStr)] string debugName, out IntPtr outPipeline);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        internal static extern VEResult veCreateShadowPipeline(IntPtr device, IntPtr vertexShader, IntPtr fragmentShader,
+            IntPtr bindings, UInt32 bindingCount, IntPtr attrs, UInt32 attrCount,
+            [MarshalAs(UnmanagedType.LPStr)] string debugName, out IntPtr outPipeline);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        internal static extern VEResult veCreateUIOverlayPipeline(IntPtr device, IntPtr vertexShader, IntPtr fragmentShader,
+            IntPtr bindings, UInt32 bindingCount, IntPtr attrs, UInt32 attrCount,
+            [MarshalAs(UnmanagedType.LPStr)] string debugName, out IntPtr outPipeline);
+
+        // Draw State Management
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veCreateDrawState(IntPtr device, ref VEDrawStateDesc desc, out IntPtr outDrawState);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veDestroyVertexConfig(IntPtr config);
-
-        // Default configurations
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VERasterConfig veDefaultRasterConfig();
+        internal static extern VEResult veDestroyDrawState(IntPtr drawState);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEDepthConfig veDefaultDepthConfig();
+        internal static extern VEResult veCreateDefaultDrawState(IntPtr device, out IntPtr outDrawState);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEBlendConfig veDefaultOpaqueBlendConfig();
+        internal static extern VEResult veCreateWireframeDrawState(IntPtr device, out IntPtr outDrawState);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEBlendConfig veDefaultAlphaBlendConfig();
+        internal static extern VEResult veCreateShadowDrawState(IntPtr device, out IntPtr outDrawState);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEBlendConfig veDefaultAdditiveBlendConfig();
-
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEMultisampleConfig veDefaultMultisampleConfig();
-
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEVertexInputConfig veDefaultVertexInputConfig();
-
-        // Common render configurations
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veCreateOpaqueRenderConfig(IntPtr device, IntPtr debugName, out IntPtr outConfig);
-
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veCreateTransparentRenderConfig(IntPtr device, IntPtr debugName, out IntPtr outConfig);
-
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veCreateWireframeRenderConfig(IntPtr device, IntPtr debugName, out IntPtr outConfig);
-
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veCreateShadowRenderConfig(IntPtr device, IntPtr debugName, out IntPtr outConfig);
-
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veCreateUIRenderConfig(IntPtr device, IntPtr debugName, out IntPtr outConfig);
-
-        // Configuration composition
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veCreateConfigVariant(IntPtr baseConfig, ref VERenderConfigDesc overrides, out IntPtr outConfig);
-
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veMergeRenderConfigs(IntPtr device, UInt32 configCount, IntPtr configs, IntPtr debugName, out IntPtr outConfig);
-
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veCloneRenderConfig(IntPtr config, IntPtr debugName, out IntPtr outConfig);
+        internal static extern VEDrawStateDesc veDefaultDrawStateDesc();
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VERenderingInfoInternal veCreateRenderingInfo(UInt32 width, UInt32 height);
@@ -441,20 +429,15 @@ namespace VulkEase
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veEndRendering(IntPtr cmd);
 
+        // Graphics pipeline and draw state binding
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veApplyRenderConfig(IntPtr cmd, IntPtr config);
-
-        [StructLayout(LayoutKind.Sequential)]
-        internal struct VERenderState
-        {
-            public IntPtr shaderConfig;
-            public IntPtr renderConfig;
-            public IntPtr viewport;
-            public IntPtr scissor;
-        }
+        internal static extern VEResult veBindGraphicsPipeline(IntPtr cmd, IntPtr pipeline);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veApplyRenderState(IntPtr cmd, ref VERenderState state);
+        internal static extern VEResult veApplyDrawState(IntPtr cmd, IntPtr drawState);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veApplyGraphicsState(IntPtr cmd, IntPtr pipeline, IntPtr drawState, IntPtr viewport, IntPtr scissor);
         #endregion
 
         #region Shader binding
@@ -463,9 +446,6 @@ namespace VulkEase
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veBindShaders(IntPtr cmd, UInt32 shaderCount, IntPtr shaders);
-
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veBindShaderConfig(IntPtr cmd, IntPtr config);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veUnbindShaderStage(IntPtr cmd, VkShaderStageFlags stage);
@@ -659,7 +639,7 @@ namespace VulkEase
         internal static extern VEResult veGetMemoryStats(IntPtr device, out VEMemoryStats stats);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veGetRenderConfigStats(IntPtr device, out VERenderConfigStats stats);
+        internal static extern VEResult veGetGraphicsPipelineStats(IntPtr device, out VEGraphicsPipelineStats stats);
         #endregion
 
         #region Debug information
@@ -668,12 +648,6 @@ namespace VulkEase
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult vePrintProfileInfo(IntPtr device);
-
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult vePrintRenderConfig(IntPtr config);
-
-        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veValidateRenderConfig(IntPtr config);
         #endregion
     }
 }

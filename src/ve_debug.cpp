@@ -360,32 +360,32 @@ VEResult veGetMemoryStats(VEDevice *device, VEMemoryStats *stats)
    return VE_SUCCESS;
 }
 
-VEResult veGetRenderConfigStats(VEDevice *device, VERenderConfigStats *stats)
+VEResult veGetPipelineStats(VEDevice *device, VEPipelineStats *stats)
 {
    if (!device || !stats)
    {
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   memset(stats, 0, sizeof(VERenderConfigStats));
+   memset(stats, 0, sizeof(VEPipelineStats));
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
 
-   stats->totalConfigs = deviceInternal->renderConfigCount;
-   stats->activeConfigs = 0;
+   stats->totalPipelines = deviceInternal->graphicsPipelineCount;
+   stats->activePipelines = 0;
 
-   // Count active configurations
-   for (uint32_t i = 0; i < deviceInternal->maxRenderConfigs; i++)
+   // Count active pipelines
+   for (uint32_t i = 0; i < deviceInternal->maxGraphicsPipelines; i++)
    {
-      if (deviceInternal->renderConfigs[i].isValid)
+      if (deviceInternal->graphicsPipelines[i].isValid)
       {
-         stats->activeConfigs++;
+         stats->activePipelines++;
       }
    }
 
    // These would be tracked by the device if implemented
-   stats->configSwitches = 0;
-   stats->stateSwitches = 0;
-   stats->overrides = 0;
+   stats->pipelineBinds = 0;
+   stats->drawStateChanges = 0;
+   stats->individualOverrides = 0;
 
    return VE_SUCCESS;
 }
@@ -645,7 +645,8 @@ VEResult vePrintDebugInfo(VEDevice *device)
    printf("  Textures: %u / %u\n", deviceInternal->textureCount.load(), deviceInternal->maxTextures);
    printf("  Samplers: %u / %u\n", deviceInternal->samplerCount.load(), deviceInternal->maxSamplers);
    printf("  Shaders: %u / %u\n", deviceInternal->shaderCount, deviceInternal->maxShaders);
-   printf("  Render Configs: %u / %u\n", deviceInternal->renderConfigCount, deviceInternal->maxRenderConfigs);
+   printf("  Graphics Pipelines: %u / %u\n", deviceInternal->graphicsPipelineCount, deviceInternal->maxGraphicsPipelines);
+   printf("  Draw States: %u / %u\n", deviceInternal->drawStateCount, deviceInternal->maxDrawStates);
 
    // Memory information
    VEMemoryStats memStats;
@@ -686,7 +687,8 @@ VEResult vePrintProfileInfo(VEDevice *device)
    printf("  Textures: %u / %u\n", deviceInternal->textureCount.load(), deviceInternal->maxTextures);
    printf("  Samplers: %u / %u\n", deviceInternal->samplerCount.load(), deviceInternal->maxSamplers);
    printf("  Shaders: %u / %u\n", deviceInternal->shaderCount, deviceInternal->maxShaders);
-   printf("  Render Configs: %u / %u\n", deviceInternal->renderConfigCount, deviceInternal->maxRenderConfigs);
+   printf("  Graphics Pipelines: %u / %u\n", deviceInternal->graphicsPipelineCount, deviceInternal->maxGraphicsPipelines);
+   printf("  Draw States: %u / %u\n", deviceInternal->drawStateCount, deviceInternal->maxDrawStates);
 
    // Memory information
    VEMemoryStats memStats;
@@ -716,80 +718,71 @@ VEResult vePrintProfileInfo(VEDevice *device)
    return VE_SUCCESS;
 }
 
-VEResult vePrintRenderConfig(VERenderConfig *config)
+VEResult vePrintGraphicsPipeline(VEGraphicsPipeline *pipeline)
 {
-   if (!config)
+   if (!pipeline)
    {
-      printf("VulkEase Render Config: Config is NULL\n");
+      printf("VulkEase Graphics Pipeline: Pipeline is NULL\n");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   VERenderConfigInternal *configInternal = (VERenderConfigInternal *)config;
+   VEGraphicsPipelineInternal *pipelineInternal = (VEGraphicsPipelineInternal *)pipeline;
 
-   printf("=== VulkEase Render Configuration ===\n");
-   printf("Debug Name: %s\n", configInternal->debugName);
-   printf("Valid: %s\n", configInternal->isValid ? "Yes" : "No");
+   printf("=== VulkEase Graphics Pipeline ===\n");
+   printf("Debug Name: %s\n", pipelineInternal->debugName);
+   printf("Valid: %s\n", pipelineInternal->isValid ? "Yes" : "No");
 
-   if (configInternal->isValid)
+   if (pipelineInternal->isValid)
    {
-      printf("Configuration Types: 0x%08X\n", configInternal->configTypes);
-
-      if (configInternal->configTypes & VE_CONFIG_TYPE_RASTERIZATION)
-      {
-         printf("  - Rasterization: Enabled\n");
-      }
-      if (configInternal->configTypes & VE_CONFIG_TYPE_DEPTH_STENCIL)
-      {
-         printf("  - Depth/Stencil: Enabled\n");
-      }
-      if (configInternal->configTypes & VE_CONFIG_TYPE_COLOR_BLEND)
-      {
-         printf("  - Color Blend: Enabled\n");
-      }
-      if (configInternal->configTypes & VE_CONFIG_TYPE_MULTISAMPLE)
-      {
-         printf("  - Multisample: Enabled\n");
-      }
-      if (configInternal->configTypes & VE_CONFIG_TYPE_VERTEX_INPUT)
-      {
-         printf("  - Vertex Input: Enabled\n");
-      }
-      if (configInternal->configTypes & VE_CONFIG_TYPE_SHADERS)
-      {
-         printf("  - Shaders: Enabled\n");
-      }
+      printf("Shaders:\n");
+      printf("  - Vertex: %s\n", pipelineInternal->vertexShader ? "Present" : "None");
+      printf("  - Fragment: %s\n", pipelineInternal->fragmentShader ? "Present" : "None");
+      printf("  - Geometry: %s\n", pipelineInternal->geometryShader ? "Present" : "None");
+      printf("  - Tess Control: %s\n", pipelineInternal->tessControlShader ? "Present" : "None");
+      printf("  - Tess Eval: %s\n", pipelineInternal->tessEvalShader ? "Present" : "None");
+      
+      printf("Vertex Input:\n");
+      printf("  - Bindings: %u\n", pipelineInternal->vertexBindingCount);
+      printf("  - Attributes: %u\n", pipelineInternal->vertexAttributeCount);
+      
+      printf("Depth Config:\n");
+      printf("  - Test Enable: %s\n", pipelineInternal->depthTestEnable ? "Yes" : "No");
+      printf("  - Write Enable: %s\n", pipelineInternal->depthWriteEnable ? "Yes" : "No");
+      
+      printf("Blend Config:\n");
+      printf("  - Attachment Count: %u\n", pipelineInternal->blendAttachmentCount);
    }
 
-   printf("====================================\n");
+   printf("==================================\n");
    return VE_SUCCESS;
 }
 
-VEResult veValidateRenderConfig(VERenderConfig *config)
+VEResult veValidateGraphicsPipeline(VEGraphicsPipeline *pipeline)
 {
-   if (!config)
+   if (!pipeline)
    {
-      veSetError("Render config is NULL");
+      veSetError("Graphics pipeline is NULL");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   VERenderConfigInternal *configInternal = (VERenderConfigInternal *)config;
+   VEGraphicsPipelineInternal *pipelineInternal = (VEGraphicsPipelineInternal *)pipeline;
 
-   if (!configInternal->isValid)
+   if (!pipelineInternal->isValid)
    {
-      veSetError("Render config is not valid");
+      veSetError("Graphics pipeline is not valid");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   // Validate configuration types
-   if (configInternal->configTypes == 0)
+   // Validate that at least vertex shader is present for graphics
+   if (!pipelineInternal->vertexShader)
    {
-      veSetError("Render config has no configuration types set");
+      veSetError("Graphics pipeline has no vertex shader");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
    // Additional validation could be added here:
-   // - Check if required configurations are present
-   // - Validate configuration compatibility
+   // - Check vertex input matches shader
+   // - Validate blend configuration
    // - Check resource limits
 
    return VE_SUCCESS;

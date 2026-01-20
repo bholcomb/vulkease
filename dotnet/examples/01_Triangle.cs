@@ -51,7 +51,7 @@ namespace VulkEaseExamples
         private VEShader _vertexShader;
         private VEShader _fragmentShader;
         private VEBufferAddress _vertexBuffer;
-        private VERenderConfig _renderConfig;
+        private VEGraphicsPipeline _pipeline;
         private VERenderingInfo _renderingInfo;
 
         // Animation state
@@ -249,10 +249,10 @@ namespace VulkEaseExamples
                 _fragmentShader = VulkEase.VulkEase.LoadShaderFromFile(_device, "examples/shaders/triangle.frag.spv",
                     VkShaderStageFlags.VK_SHADER_STAGE_FRAGMENT_BIT, "main", "SpinningTriangleFragment");
 
-                // Create default render config
-                _renderConfig = VulkEase.VulkEase.CreateOpaqueRenderConfig(_device, "opaque render config");
+                // Create opaque graphics pipeline
+                _pipeline = VulkEase.VulkEase.CreateOpaquePipeline(_device, _vertexShader, _fragmentShader, "opaque pipeline");
 
-                Console.WriteLine("Shaders loaded successfully");
+                Console.WriteLine("Shaders and pipeline created successfully");
                 return true;
             }
             catch (Exception ex)
@@ -336,8 +336,8 @@ namespace VulkEaseExamples
                 VulkEase.VulkEase.SetViewport(cmd, 0.0f, 0.0f, width, height, 0.0f, 1.0f);
                 VulkEase.VulkEase.SetScissor(cmd, 0, 0, width, height);
 
-                // Default render state
-                VulkEase.VulkEase.ApplyRenderConfig(cmd, _renderConfig);
+                // Bind graphics pipeline
+                VulkEase.VulkEase.BindGraphicsPipeline(cmd, _pipeline);
 
                 // Set up push constants with the vertex buffer address
                 var pushConstants = new TrianglePushConstants
@@ -430,9 +430,9 @@ namespace VulkEaseExamples
                 VulkEase.VulkEase.DestroyShader(_fragmentShader);
             }
 
-            if (_renderConfig.native != IntPtr.Zero)
+            if (_pipeline.native != IntPtr.Zero)
             {
-                VulkEase.VulkEase.DestroyRenderConfig(_renderConfig);
+                VulkEase.VulkEase.DestroyGraphicsPipeline(_pipeline);
             }
 
             if (_renderTarget.native != IntPtr.Zero)

@@ -213,8 +213,7 @@ namespace VulkEaseExamples
 
         private VEShader _vertexShader;
         private VEShader _fragmentShader;
-        private VEShaderConfig _shaderConfig;
-        private VERenderConfig _renderConfig;
+        private VEGraphicsPipeline _pipeline;
 
         private VEBufferAddress _vertexBuffer;
         private VEBufferAddress _indexBuffer;
@@ -308,10 +307,8 @@ namespace VulkEaseExamples
             if (_vertexBuffer.native != 0)
                 DestroyBuffer(_device, _vertexBuffer);
 
-            if (_renderConfig.native != IntPtr.Zero)
-                DestroyRenderConfig(_renderConfig);
-            if (_shaderConfig.native != IntPtr.Zero)
-                DestroyShaderConfig(_shaderConfig);
+            if (_pipeline.native != IntPtr.Zero)
+                DestroyGraphicsPipeline(_pipeline);
             if (_fragmentShader.native != IntPtr.Zero)
                 DestroyShader(_fragmentShader);
             if (_vertexShader.native != IntPtr.Zero)
@@ -515,23 +512,10 @@ namespace VulkEaseExamples
                 return false;
             }
 
-            VEShaderConfigDesc shaderDesc = new()
+            _pipeline = CreateOpaquePipeline(_device, _vertexShader, _fragmentShader, "AsteroidPipeline");
+            if (_pipeline.native == IntPtr.Zero)
             {
-                vertexShader = _vertexShader,
-                fragmentShader = _fragmentShader,
-                debugName = "AsteroidShader"
-            };
-            _shaderConfig = CreateShaderConfig(_device, shaderDesc);
-            if (_shaderConfig.native == IntPtr.Zero)
-            {
-                Console.Error.WriteLine("Failed to create shader config");
-                return false;
-            }
-
-            _renderConfig = CreateOpaqueRenderConfig(_device, "AsteroidRenderConfig");
-            if (_renderConfig.native == IntPtr.Zero)
-            {
-                Console.Error.WriteLine("Failed to create render config");
+                Console.Error.WriteLine("Failed to create graphics pipeline");
                 return false;
             }
 
@@ -839,8 +823,7 @@ namespace VulkEaseExamples
 
             var cmd = BeginSecondaryCommandBuffer(_device, desc);
 
-            BindShaderConfig(cmd, _shaderConfig);
-            ApplyRenderConfig(cmd, _renderConfig);
+            BindGraphicsPipeline(cmd, _pipeline);
             SetViewport(cmd, 0.0f, 0.0f, ClientSize.X, ClientSize.Y, 0.0f, 1.0f);
             SetScissor(cmd, 0, 0, (uint)ClientSize.X, (uint)ClientSize.Y);
 

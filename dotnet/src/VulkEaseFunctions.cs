@@ -729,256 +729,123 @@ namespace VulkEase
             return VulkEaseDll.veReloadShader(shader.native);
         }
 
-        public static VEShaderConfig CreateShaderConfig(VEDevice device, VEShaderConfigDesc desc)
+        // Graphics Pipeline Management
+        public static VEGraphicsPipeline CreateGraphicsPipeline(VEDevice device, VEGraphicsPipelineDesc desc)
         {
-            VEResult result = VulkEaseDll.veCreateShaderConfig(device.native, ref desc, out IntPtr cfgPtr);
+            VEResult result = VulkEaseDll.veCreateGraphicsPipeline(device.native, ref desc, out IntPtr pipelinePtr);
             if (result != VEResult.VE_SUCCESS)
-                throw new InvalidOperationException($"veCreateShaderConfig failed: {result}");
-            return new VEShaderConfig { native = cfgPtr };
+                throw new InvalidOperationException($"veCreateGraphicsPipeline failed: {result}");
+            return new VEGraphicsPipeline { native = pipelinePtr };
         }
 
-        public static void DestroyShaderConfig(VEShaderConfig config)
+        public static void DestroyGraphicsPipeline(VEGraphicsPipeline pipeline)
         {
-            _ = VulkEaseDll.veDestroyShaderConfig(config.native);
+            _ = VulkEaseDll.veDestroyGraphicsPipeline(pipeline.native);
         }
 
-        // Render Configuration Management
-        public static VERenderConfig CreateRenderConfig(VEDevice device, VERenderConfigDesc desc)
+        public static VEGraphicsPipelineDesc DefaultGraphicsPipelineDesc()
         {
-            VEResult result = VulkEaseDll.veCreateRenderConfig(device.native, ref desc, out IntPtr cfgPtr);
+            return VulkEaseDll.veDefaultGraphicsPipelineDesc();
+        }
+
+        /// <summary>
+        /// Creates an opaque graphics pipeline with depth testing enabled and no blending.
+        /// </summary>
+        public static VEGraphicsPipeline CreateOpaquePipeline(VEDevice device, VEShader vertexShader, VEShader fragmentShader, string debugName)
+        {
+            VEResult result = VulkEaseDll.veCreateOpaquePipeline(device.native, vertexShader.native, fragmentShader.native,
+                IntPtr.Zero, 0, IntPtr.Zero, 0, debugName, out IntPtr pipelinePtr);
             if (result != VEResult.VE_SUCCESS)
-                throw new InvalidOperationException($"veCreateRenderConfig failed: {result}");
-            return new VERenderConfig { native = cfgPtr };
+                throw new InvalidOperationException($"veCreateOpaquePipeline failed: {result}");
+            return new VEGraphicsPipeline { native = pipelinePtr };
         }
 
-        public static void DestroyRenderConfig(VERenderConfig config)
+        /// <summary>
+        /// Creates a transparent graphics pipeline with alpha blending enabled.
+        /// </summary>
+        public static VEGraphicsPipeline CreateTransparentPipeline(VEDevice device, VEShader vertexShader, VEShader fragmentShader, string debugName)
         {
-            _ = VulkEaseDll.veDestroyRenderConfig(config.native);
+            VEResult result = VulkEaseDll.veCreateTransparentPipeline(device.native, vertexShader.native, fragmentShader.native,
+                IntPtr.Zero, 0, IntPtr.Zero, 0, debugName, out IntPtr pipelinePtr);
+            if (result != VEResult.VE_SUCCESS)
+                throw new InvalidOperationException($"veCreateTransparentPipeline failed: {result}");
+            return new VEGraphicsPipeline { native = pipelinePtr };
         }
 
-        public static VEVertexConfig CreateVertexConfig(VEDevice device, VEVertexBinding[] bindings, VEVertexAttribute[] attributes)
+        /// <summary>
+        /// Creates an additive blending graphics pipeline.
+        /// </summary>
+        public static VEGraphicsPipeline CreateAdditivePipeline(VEDevice device, VEShader vertexShader, VEShader fragmentShader, string debugName)
         {
-            IntPtr bindingsPtr = IntPtr.Zero;
-            IntPtr attributesPtr = IntPtr.Zero;
-
-            try
-            {
-                if (bindings != null && bindings.Length > 0)
-                {
-                    bindingsPtr = Marshal.AllocHGlobal(Marshal.SizeOf<VEVertexBinding>() * bindings.Length);
-                    for (int i = 0; i < bindings.Length; i++)
-                    {
-                        Marshal.StructureToPtr(bindings[i], bindingsPtr + i * Marshal.SizeOf<VEVertexBinding>(), false);
-                    }
-                }
-
-                if (attributes != null && attributes.Length > 0)
-                {
-                    attributesPtr = Marshal.AllocHGlobal(Marshal.SizeOf<VEVertexAttribute>() * attributes.Length);
-                    for (int i = 0; i < attributes.Length; i++)
-                    {
-                        Marshal.StructureToPtr(attributes[i], attributesPtr + i * Marshal.SizeOf<VEVertexAttribute>(), false);
-                    }
-                }
-
-                VEResult result = VulkEaseDll.veCreateVertexConfig(device.native,
-                    (UInt32)(bindings?.Length ?? 0), bindingsPtr,
-                    (UInt32)(attributes?.Length ?? 0), attributesPtr,
-                    out IntPtr cfgPtr);
-                if (result != VEResult.VE_SUCCESS)
-                    throw new InvalidOperationException($"veCreateVertexConfig failed: {result}");
-                return new VEVertexConfig { native = cfgPtr };
-            }
-            finally
-            {
-                if (bindingsPtr != IntPtr.Zero)
-                    Marshal.FreeHGlobal(bindingsPtr);
-                if (attributesPtr != IntPtr.Zero)
-                    Marshal.FreeHGlobal(attributesPtr);
-            }
+            VEResult result = VulkEaseDll.veCreateAdditivePipeline(device.native, vertexShader.native, fragmentShader.native,
+                IntPtr.Zero, 0, IntPtr.Zero, 0, debugName, out IntPtr pipelinePtr);
+            if (result != VEResult.VE_SUCCESS)
+                throw new InvalidOperationException($"veCreateAdditivePipeline failed: {result}");
+            return new VEGraphicsPipeline { native = pipelinePtr };
         }
 
-        public static void DestroyVertexConfig(VEVertexConfig config)
+        /// <summary>
+        /// Creates a shadow rendering graphics pipeline (depth-only).
+        /// </summary>
+        public static VEGraphicsPipeline CreateShadowPipeline(VEDevice device, VEShader vertexShader, VEShader fragmentShader, string debugName)
         {
-            _ = VulkEaseDll.veDestroyVertexConfig(config.native);
+            VEResult result = VulkEaseDll.veCreateShadowPipeline(device.native, vertexShader.native, fragmentShader.native,
+                IntPtr.Zero, 0, IntPtr.Zero, 0, debugName, out IntPtr pipelinePtr);
+            if (result != VEResult.VE_SUCCESS)
+                throw new InvalidOperationException($"veCreateShadowPipeline failed: {result}");
+            return new VEGraphicsPipeline { native = pipelinePtr };
         }
 
-        // Default configurations
-        public static VERasterConfig DefaultRasterConfig()
+        /// <summary>
+        /// Creates a UI overlay graphics pipeline with transparency.
+        /// </summary>
+        public static VEGraphicsPipeline CreateUIOverlayPipeline(VEDevice device, VEShader vertexShader, VEShader fragmentShader, string debugName)
         {
-            return VulkEaseDll.veDefaultRasterConfig();
-        }
-        public static VEDepthConfig DefaultDepthConfig()
-        {
-            return VulkEaseDll.veDefaultDepthConfig();
-        }
-        public static VEBlendConfig DefaultOpaqueBlendConfig()
-        {
-            return VulkEaseDll.veDefaultOpaqueBlendConfig();
-        }
-        public static VEBlendConfig DefaultAlphaBlendConfig()
-        {
-            return VulkEaseDll.veDefaultAlphaBlendConfig();
-        }
-        public static VEBlendConfig DefaultAdditiveBlendConfig()
-        {
-            return VulkEaseDll.veDefaultAdditiveBlendConfig();
-        }
-        public static VEMultisampleConfig DefaultMultisampleConfig()
-        {
-            return VulkEaseDll.veDefaultMultisampleConfig();
-        }
-        public static VEVertexInputConfig DefaultVertexInputConfig()
-        {
-            return VulkEaseDll.veDefaultVertexInputConfig();
+            VEResult result = VulkEaseDll.veCreateUIOverlayPipeline(device.native, vertexShader.native, fragmentShader.native,
+                IntPtr.Zero, 0, IntPtr.Zero, 0, debugName, out IntPtr pipelinePtr);
+            if (result != VEResult.VE_SUCCESS)
+                throw new InvalidOperationException($"veCreateUIOverlayPipeline failed: {result}");
+            return new VEGraphicsPipeline { native = pipelinePtr };
         }
 
-        // Common render configurations
-        public static VERenderConfig CreateOpaqueRenderConfig(VEDevice device, string debugName = null)
+        // Draw State Management
+        public static VEDrawState CreateDrawState(VEDevice device, VEDrawStateDesc desc)
         {
-            var namePtr = StringToHGlobalAnsi(debugName);
-            try
-            {
-                VEResult result = VulkEaseDll.veCreateOpaqueRenderConfig(device.native, namePtr, out IntPtr cfgPtr);
-                if (result != VEResult.VE_SUCCESS)
-                    throw new InvalidOperationException($"veCreateOpaqueRenderConfig failed: {result}");
-                return new VERenderConfig { native = cfgPtr };
-            }
-            finally
-            {
-                if (namePtr != IntPtr.Zero)
-                    Marshal.FreeHGlobal(namePtr);
-            }
+            VEResult result = VulkEaseDll.veCreateDrawState(device.native, ref desc, out IntPtr drawStatePtr);
+            if (result != VEResult.VE_SUCCESS)
+                throw new InvalidOperationException($"veCreateDrawState failed: {result}");
+            return new VEDrawState { native = drawStatePtr };
         }
 
-        public static VERenderConfig CreateTransparentRenderConfig(VEDevice device, string debugName = null)
+        public static void DestroyDrawState(VEDrawState drawState)
         {
-            var namePtr = StringToHGlobalAnsi(debugName);
-            try
-            {
-                VEResult result = VulkEaseDll.veCreateTransparentRenderConfig(device.native, namePtr, out IntPtr cfgPtr);
-                if (result != VEResult.VE_SUCCESS)
-                    throw new InvalidOperationException($"veCreateTransparentRenderConfig failed: {result}");
-                return new VERenderConfig { native = cfgPtr };
-            }
-            finally
-            {
-                if (namePtr != IntPtr.Zero)
-                    Marshal.FreeHGlobal(namePtr);
-            }
+            _ = VulkEaseDll.veDestroyDrawState(drawState.native);
+        }
+
+        public static VEDrawState CreateDefaultDrawState(VEDevice device)
+        {
+            VEResult result = VulkEaseDll.veCreateDefaultDrawState(device.native, out IntPtr drawStatePtr);
+            if (result != VEResult.VE_SUCCESS)
+                throw new InvalidOperationException($"veCreateDefaultDrawState failed: {result}");
+            return new VEDrawState { native = drawStatePtr };
+        }
+
+        public static VEDrawState CreateWireframeDrawState(VEDevice device)
+        {
+            VEResult result = VulkEaseDll.veCreateWireframeDrawState(device.native, out IntPtr drawStatePtr);
+            if (result != VEResult.VE_SUCCESS)
+                throw new InvalidOperationException($"veCreateWireframeDrawState failed: {result}");
+            return new VEDrawState { native = drawStatePtr };
+        }
+
+        public static VEDrawStateDesc DefaultDrawStateDesc()
+        {
+            return VulkEaseDll.veDefaultDrawStateDesc();
         }
 
         public static VERenderingInfo CreateRenderingInfo(uint width, uint height)
         {
             return new VERenderingInfo(width, height);
-        }
-
-        public static VERenderConfig CreateWireframeRenderConfig(VEDevice device, string debugName = null)
-        {
-            var namePtr = StringToHGlobalAnsi(debugName);
-            try
-            {
-                VEResult result = VulkEaseDll.veCreateWireframeRenderConfig(device.native, namePtr, out IntPtr cfgPtr);
-                if (result != VEResult.VE_SUCCESS)
-                    throw new InvalidOperationException($"veCreateWireframeRenderConfig failed: {result}");
-                return new VERenderConfig { native = cfgPtr };
-            }
-            finally
-            {
-                if (namePtr != IntPtr.Zero)
-                    Marshal.FreeHGlobal(namePtr);
-            }
-        }
-
-        public static VERenderConfig CreateShadowRenderConfig(VEDevice device, string debugName = null)
-        {
-            var namePtr = StringToHGlobalAnsi(debugName);
-            try
-            {
-                VEResult result = VulkEaseDll.veCreateShadowRenderConfig(device.native, namePtr, out IntPtr cfgPtr);
-                if (result != VEResult.VE_SUCCESS)
-                    throw new InvalidOperationException($"veCreateShadowRenderConfig failed: {result}");
-                return new VERenderConfig { native = cfgPtr };
-            }
-            finally
-            {
-                if (namePtr != IntPtr.Zero)
-                    Marshal.FreeHGlobal(namePtr);
-            }
-        }
-
-        public static VERenderConfig CreateUIRenderConfig(VEDevice device, string debugName = null)
-        {
-            var namePtr = StringToHGlobalAnsi(debugName);
-            try
-            {
-                VEResult result = VulkEaseDll.veCreateUIRenderConfig(device.native, namePtr, out IntPtr cfgPtr);
-                if (result != VEResult.VE_SUCCESS)
-                    throw new InvalidOperationException($"veCreateUIRenderConfig failed: {result}");
-                return new VERenderConfig { native = cfgPtr };
-            }
-            finally
-            {
-                if (namePtr != IntPtr.Zero)
-                    Marshal.FreeHGlobal(namePtr);
-            }
-        }
-
-        // Configuration composition
-        public static VERenderConfig CreateConfigVariant(VERenderConfig baseConfig, VERenderConfigDesc overrides)
-        {
-            VEResult result = VulkEaseDll.veCreateConfigVariant(baseConfig.native, ref overrides, out IntPtr cfgPtr);
-            if (result != VEResult.VE_SUCCESS)
-                throw new InvalidOperationException($"veCreateConfigVariant failed: {result}");
-            return new VERenderConfig { native = cfgPtr };
-        }
-
-        public static VERenderConfig CloneRenderConfig(VERenderConfig config, string debugName = null)
-        {
-            var namePtr = StringToHGlobalAnsi(debugName);
-            try
-            {
-                VEResult result = VulkEaseDll.veCloneRenderConfig(config.native, namePtr, out IntPtr cfgPtr);
-                if (result != VEResult.VE_SUCCESS)
-                    throw new InvalidOperationException($"veCloneRenderConfig failed: {result}");
-                return new VERenderConfig { native = cfgPtr };
-            }
-            finally
-            {
-                if (namePtr != IntPtr.Zero)
-                    Marshal.FreeHGlobal(namePtr);
-            }
-        }
-
-        public static VERenderConfig MergeRenderConfigs(VEDevice device, VERenderConfig[] configs, string debugName = null)
-        {
-            if (configs == null || configs.Length == 0)
-                return new VERenderConfig { native = IntPtr.Zero };
-
-            var namePtr = StringToHGlobalAnsi(debugName);
-            IntPtr configsPtr = IntPtr.Zero;
-            try
-            {
-                configsPtr = Marshal.AllocHGlobal(IntPtr.Size * configs.Length);
-                IntPtr[] nativePtrs = new IntPtr[configs.Length];
-                for (int i = 0; i < configs.Length; i++)
-                {
-                    nativePtrs[i] = configs[i].native;
-                }
-                Marshal.Copy(nativePtrs, 0, configsPtr, configs.Length);
-
-                VEResult result = VulkEaseDll.veMergeRenderConfigs(device.native, (UInt32)configs.Length, configsPtr, namePtr, out IntPtr cfgPtr);
-                if (result != VEResult.VE_SUCCESS)
-                    throw new InvalidOperationException($"veMergeRenderConfigs failed: {result}");
-                return new VERenderConfig { native = cfgPtr };
-            }
-            finally
-            {
-                if (configsPtr != IntPtr.Zero)
-                    Marshal.FreeHGlobal(configsPtr);
-                if (namePtr != IntPtr.Zero)
-                    Marshal.FreeHGlobal(namePtr);
-            }
         }
 
         // Command Buffer and Rendering
@@ -1140,13 +1007,18 @@ namespace VulkEase
             VulkEaseDll.veEndRendering(cmd.native);
         }
 
-        public static void ApplyRenderConfig(VECommandBuffer cmd, VERenderConfig config)
+        public static void BindGraphicsPipeline(VECommandBuffer cmd, VEGraphicsPipeline pipeline)
         {
-            VulkEaseDll.veApplyRenderConfig(cmd.native, config.native);
+            VulkEaseDll.veBindGraphicsPipeline(cmd.native, pipeline.native);
         }
 
-        public static void ApplyRenderState(VECommandBuffer cmd, VEShaderConfig shaderConfig, VERenderConfig renderConfig,
-            VEViewport? viewport = null, VERect2D? scissor = null)
+        public static void ApplyDrawState(VECommandBuffer cmd, VEDrawState drawState)
+        {
+            VulkEaseDll.veApplyDrawState(cmd.native, drawState.native);
+        }
+
+        public static void ApplyGraphicsState(VECommandBuffer cmd, VEGraphicsPipeline pipeline,
+            VEDrawState? drawState = null, VEViewport? viewport = null, VERect2D? scissor = null)
         {
             IntPtr viewportPtr = IntPtr.Zero;
             IntPtr scissorPtr = IntPtr.Zero;
@@ -1164,16 +1036,10 @@ namespace VulkEase
                     Marshal.StructureToPtr(scissor.Value, scissorPtr, false);
                 }
 
-                var state = new VulkEaseDll.VERenderState
-                {
-                    shaderConfig = shaderConfig.native,
-                    renderConfig = renderConfig.native,
-                    viewport = viewportPtr,
-                    scissor = scissorPtr
-                };
-                VEResult result = VulkEaseDll.veApplyRenderState(cmd.native, ref state);
+                VEResult result = VulkEaseDll.veApplyGraphicsState(cmd.native, pipeline.native,
+                    drawState?.native ?? IntPtr.Zero, viewportPtr, scissorPtr);
                 if (result != VEResult.VE_SUCCESS)
-                    throw new InvalidOperationException($"veApplyRenderState failed: {result}");
+                    throw new InvalidOperationException($"veApplyGraphicsState failed: {result}");
             }
             finally
             {
@@ -1211,11 +1077,6 @@ namespace VulkEase
                 if (shadersPtr != IntPtr.Zero)
                     Marshal.FreeHGlobal(shadersPtr);
             }
-        }
-
-        public static void BindShaderConfig(VECommandBuffer cmd, VEShaderConfig config)
-        {
-            VulkEaseDll.veBindShaderConfig(cmd.native, config.native);
         }
 
         public static void UnbindShaderStage(VECommandBuffer cmd, VkShaderStageFlags stage)
@@ -1604,9 +1465,9 @@ namespace VulkEase
             return VulkEaseDll.veGetMemoryStats(device.native, out stats);
         }
 
-        public static VEResult GetRenderConfigStats(VEDevice device, out VERenderConfigStats stats)
+        public static VEResult GetGraphicsPipelineStats(VEDevice device, out VEGraphicsPipelineStats stats)
         {
-            return VulkEaseDll.veGetRenderConfigStats(device.native, out stats);
+            return VulkEaseDll.veGetGraphicsPipelineStats(device.native, out stats);
         }
 
         // Debug information
@@ -1618,16 +1479,6 @@ namespace VulkEase
         public static void PrintProfileInfo(VEDevice device)
         {
             VulkEaseDll.vePrintProfileInfo(device.native);
-        }
-
-        public static void PrintRenderConfig(VERenderConfig config)
-        {
-            VulkEaseDll.vePrintRenderConfig(config.native);
-        }
-
-        public static VEResult ValidateRenderConfig(VERenderConfig config)
-        {
-            return VulkEaseDll.veValidateRenderConfig(config.native);
         }
     }
 }

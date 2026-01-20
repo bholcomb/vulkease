@@ -88,7 +88,7 @@ namespace VulkEaseExamples
         private VEShader _fragmentShader;
 
         // Render configuration
-        private VERenderConfig _renderConfig;
+        private VEGraphicsPipeline _pipeline;
 
         // Animation
         private float _rotationAngle;
@@ -141,7 +141,7 @@ namespace VulkEaseExamples
                 return;
             }
 
-            if (!CreateRenderConfig())
+            if (!CreatePipeline())
             {
                 Close();
                 return;
@@ -434,19 +434,19 @@ namespace VulkEaseExamples
             }
         }
 
-        private bool CreateRenderConfig()
+        private bool CreatePipeline()
         {
             try
             {
-                // Create opaque render config with depth testing
-                _renderConfig = VE.CreateOpaqueRenderConfig(_device, "CubeRenderConfig");
+                // Create opaque graphics pipeline with depth testing
+                _pipeline = VE.CreateOpaquePipeline(_device, _vertexShader, _fragmentShader, "CubePipeline");
 
-                Console.WriteLine("Render config created successfully");
+                Console.WriteLine("Graphics pipeline created successfully");
                 return true;
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Failed to create render config: {ex.Message}");
+                Console.Error.WriteLine($"Failed to create graphics pipeline: {ex.Message}");
                 return false;
             }
         }
@@ -568,10 +568,8 @@ namespace VulkEaseExamples
                 VE.SetViewport(cmd, 0.0f, 0.0f, width, height, 0.0f, 1.0f);
                 VE.SetScissor(cmd, 0, 0, width, height);
 
-                // Bind shaders and render configuration
-                VE.BindShader(cmd, _vertexShader);
-                VE.BindShader(cmd, _fragmentShader);
-                VE.ApplyRenderConfig(cmd, _renderConfig);
+                // Bind graphics pipeline (shaders and render state)
+                VE.BindGraphicsPipeline(cmd, _pipeline);
 
                 // Set up push constants with bindless resource indices
                 var pushConstants = new VEGraphicsPushConstants
@@ -645,10 +643,10 @@ namespace VulkEaseExamples
                 VE.DeviceWaitIdle(_device);
             }
 
-            // Destroy render config
-            if (_renderConfig.native != IntPtr.Zero)
+            // Destroy graphics pipeline
+            if (_pipeline.native != IntPtr.Zero)
             {
-                VE.DestroyRenderConfig(_renderConfig);
+                VE.DestroyGraphicsPipeline(_pipeline);
             }
 
             // Destroy shaders
