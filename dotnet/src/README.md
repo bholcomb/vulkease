@@ -81,7 +81,7 @@ var vertexShader = VulkEase.LoadShader(device, "triangle.vert.spv",
     VkShaderStageFlags.VK_SHADER_STAGE_VERTEX_BIT, "main", "TriangleVert");
 var fragmentShader = VulkEase.LoadShader(device, "triangle.frag.spv",
     VkShaderStageFlags.VK_SHADER_STAGE_FRAGMENT_BIT, "main", "TriangleFrag");
-var renderConfig = VulkEase.CreateOpaqueRenderConfig(device, "Triangle");
+var renderState = VulkEase.CreateOpaqueRenderState(device, "Triangle");
 
 // Render loop
 while (!shouldClose)
@@ -107,7 +107,7 @@ while (!shouldClose)
     VulkEase.BeginRendering(cmd, renderingInfo);
     VulkEase.BindShader(cmd, vertexShader);
     VulkEase.BindShader(cmd, fragmentShader);
-    VulkEase.ApplyRenderConfig(cmd, renderConfig);
+    VulkEase.ApplyRenderState(cmd, renderState);
     
     var pushConstants = new VEGraphicsPushConstants { vertexBuffer = vertexBuffer };
     VulkEase.PushConstants(cmd, pushConstants);
@@ -123,7 +123,7 @@ while (!shouldClose)
 VulkEase.DestroyBuffer(device, vertexBuffer);
 VulkEase.DestroyShader(vertexShader);
 VulkEase.DestroyShader(fragmentShader);
-VulkEase.DestroyRenderConfig(renderConfig);
+VulkEase.DestroyRenderState(renderState);
 VulkEase.DestroySwapchain(swapchain);
 VulkEase.DestroyDevice(device);
 VulkEase.DestroyContext(context);

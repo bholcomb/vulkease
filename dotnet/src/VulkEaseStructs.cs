@@ -11,9 +11,8 @@ namespace VulkEase
     [StructLayout(LayoutKind.Sequential)] public struct VESwapchain { public IntPtr native; }
     [StructLayout(LayoutKind.Sequential)] public struct VERenderTarget { public IntPtr native; }
     [StructLayout(LayoutKind.Sequential)] public struct VEShader { public IntPtr native; }
-    [StructLayout(LayoutKind.Sequential)] public struct VERenderConfig { public IntPtr native; }
-    [StructLayout(LayoutKind.Sequential)] public struct VEVertexConfig { public IntPtr native; }
-    [StructLayout(LayoutKind.Sequential)] public struct VEShaderConfig { public IntPtr native; }
+    [StructLayout(LayoutKind.Sequential)] public struct VEGraphicsPipeline { public IntPtr native; }
+    [StructLayout(LayoutKind.Sequential)] public struct VEDrawState { public IntPtr native; }
     [StructLayout(LayoutKind.Sequential)] public struct VEBufferAddress { public UInt64 native; }
     [StructLayout(LayoutKind.Sequential)] public struct VETextureIndex { public UInt32 native; }
     [StructLayout(LayoutKind.Sequential)] public struct VESamplerIndex { public UInt32 native; }
@@ -360,34 +359,109 @@ namespace VulkEase
         public UInt32 depth;
     }
 
-    // Render config descriptor
+    // Stencil op state
     [StructLayout(LayoutKind.Sequential)]
-    public struct VERenderConfigDesc
+    public struct VEStencilOpState
     {
-        public VEConfigTypeFlags configTypes;
-        public IntPtr viewportConfig; // const VEViewport*
-        public IntPtr scissorConfig; // const VERect2D*
-        public IntPtr rasterConfig; // const VERasterConfig*
-        public IntPtr depthConfig; // const VEDepthConfig*
-        public IntPtr blendConfig; // const VEBlendConfig*
-        public IntPtr multisampleConfig; // const VEMultisampleConfig*
-        public IntPtr vertexInputConfig; // const VEVertexInputConfig*
-        public UInt32 shaderCount;
-        public IntPtr shaders; // VEShader* const*
-        [MarshalAs(UnmanagedType.LPStr)]
-        public string? debugName;
+        public VkStencilOp failOp;
+        public VkStencilOp passOp;
+        public VkStencilOp depthFailOp;
+        public VkCompareOp compareOp;
+        public UInt32 compareMask;
+        public UInt32 writeMask;
+        public UInt32 reference;
     }
 
-    // Shader config descriptor
+    // Graphics pipeline descriptor
     [StructLayout(LayoutKind.Sequential)]
-    public struct VEShaderConfigDesc
+    public struct VEGraphicsPipelineDesc
     {
+        // Shaders
         public VEShader vertexShader;
         public VEShader fragmentShader;
         public VEShader geometryShader;
         public VEShader tessControlShader;
         public VEShader tessEvalShader;
-        public VEShader computeShader;
+        
+        // Vertex input
+        public UInt32 vertexBindingCount;
+        public IntPtr vertexBindings;  // const VEVertexBinding*
+        public UInt32 vertexAttributeCount;
+        public IntPtr vertexAttributes;  // const VEVertexAttribute*
+        
+        // Depth config
+        [MarshalAs(UnmanagedType.U1)]
+        public bool depthTestEnable;
+        [MarshalAs(UnmanagedType.U1)]
+        public bool depthWriteEnable;
+        public VkCompareOp depthCompareOp;
+        [MarshalAs(UnmanagedType.U1)]
+        public bool depthBoundsTestEnable;
+        public float minDepthBounds;
+        public float maxDepthBounds;
+        
+        // Stencil config
+        [MarshalAs(UnmanagedType.U1)]
+        public bool stencilTestEnable;
+        public VEStencilOpState frontStencil;
+        public VEStencilOpState backStencil;
+        
+        // Blend config
+        [MarshalAs(UnmanagedType.U1)]
+        public bool logicOpEnable;
+        public VkLogicOp logicOp;
+        public UInt32 blendAttachmentCount;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
+        public VEBlendAttachment[] blendAttachments;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 4)]
+        public float[] blendConstants;
+        
+        // Rasterization (material-level defaults)
+        public VkCullModeFlags cullMode;
+        public VkFrontFace frontFace;
+        
+        // Multisampling
+        [MarshalAs(UnmanagedType.U1)]
+        public bool sampleShadingEnable;
+        public float minSampleShading;
+        
+        [MarshalAs(UnmanagedType.LPStr)]
+        public string? debugName;
+    }
+
+    // Draw state descriptor
+    [StructLayout(LayoutKind.Sequential)]
+    public struct VEDrawStateDesc
+    {
+        // Geometry interpretation
+        public VkPrimitiveTopology topology;
+        [MarshalAs(UnmanagedType.U1)]
+        public bool primitiveRestartEnable;
+        public UInt32 patchControlPoints;
+        
+        // Rasterization overrides
+        public VkPolygonMode polygonMode;
+        public float lineWidth;
+        public VkCullModeFlags cullMode;
+        public VkFrontFace frontFace;
+        [MarshalAs(UnmanagedType.U1)]
+        public bool rasterizerDiscardEnable;
+        
+        // Depth bias
+        [MarshalAs(UnmanagedType.U1)]
+        public bool depthBiasEnable;
+        public float depthBiasConstantFactor;
+        public float depthBiasClamp;
+        public float depthBiasSlopeFactor;
+        [MarshalAs(UnmanagedType.U1)]
+        public bool depthClampEnable;
+        
+        // Coverage
+        [MarshalAs(UnmanagedType.U1)]
+        public bool alphaToCoverageEnable;
+        [MarshalAs(UnmanagedType.U1)]
+        public bool alphaToOneEnable;
+        
         [MarshalAs(UnmanagedType.LPStr)]
         public string? debugName;
     }
@@ -534,11 +608,11 @@ namespace VulkEase
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public struct VERenderConfigStats
+    public struct VEGraphicsPipelineStats
     {
-        public UInt32 totalConfigs;
-        public UInt32 activeConfigs;
-        public UInt32 configSwitches;
+        public UInt32 totalPipelines;
+        public UInt32 activePipelines;
+        public UInt32 pipelineBinds;
         public UInt32 stateSwitches;
         public UInt32 overrides;
     }

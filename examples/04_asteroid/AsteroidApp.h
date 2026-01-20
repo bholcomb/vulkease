@@ -77,8 +77,7 @@ private:
 
    VEShader *vertexShader_{nullptr};
    VEShader *fragmentShader_{nullptr};
-   VEShaderConfig *shaderConfig_{nullptr};
-   VERenderConfig *renderConfig_{nullptr};
+   VEGraphicsPipeline *pipeline_{nullptr};
    VERenderingInfo renderingInfo_{};
 
    VEBufferAddress vertexBuffer_{VE_INVALID_ADDRESS};

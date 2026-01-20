@@ -24,10 +24,9 @@ namespace VulkEase
         VE_CONFIG_TYPE_DEPTH_STENCIL = 0x4,
         VE_CONFIG_TYPE_COLOR_BLEND = 0x8,
         VE_CONFIG_TYPE_MULTISAMPLE = 0x10,
-        VE_CONFIG_TYPE_SHADERS = 0x20,
         VE_CONFIG_TYPE_VIEWPORT = 0x40,
         VE_CONFIG_TYPE_SCISSOR = 0x80,
-        VE_CONFIG_TYPE_COMPLETE = 0xFF
+        VE_CONFIG_TYPE_COMPLETE = 0xDF
     }
 
     public enum VEMessageSeverity : Int32
@@ -469,9 +468,8 @@ namespace VulkEase
         VE_CONFIG_TYPE_DEPTH_STENCIL = 0x4, // Depth/stencil testing and operations
         VE_CONFIG_TYPE_COLOR_BLEND = 0x8,   // Color blending and write masks
         VE_CONFIG_TYPE_MULTISAMPLE = 0x10,  // MSAA and coverage operations
-        VE_CONFIG_TYPE_SHADERS = 0x20,      // Shader object bindings
         VE_CONFIG_TYPE_VIEWPORT = 0x40,     // Viewport settings
         VE_CONFIG_TYPE_SCISSOR = 0x80,      // Scissor settings
-        VE_CONFIG_TYPE_COMPLETE = 0xFF      // All categories combined
+        VE_CONFIG_TYPE_COMPLETE = 0xDF      // All categories combined
     }
 }

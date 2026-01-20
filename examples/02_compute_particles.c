@@ -65,7 +65,7 @@ static VERenderTarget* g_renderTarget = NULL;
 static VEShader* g_computeShader = NULL;
 static VEShader* g_vertexShader = NULL;
 static VEShader* g_fragmentShader = NULL;
-static VERenderConfig* g_renderConfig = NULL;
+static VEGraphicsPipeline* g_pipeline = NULL;
 static VEBufferAddress g_particleBuffer = VE_INVALID_ADDRESS;
 static VEBufferAddress g_vertexBuffer = VE_INVALID_ADDRESS;
 static VERenderingInfo g_renderingInfo;
@@ -318,10 +318,27 @@ static bool createBuffers() {
     return true;
 }
 
-static bool createRenderConfig() {
-    // Use transparent render config for particles with alpha blending
-    if (veCreateTransparentRenderConfig(g_device, "ParticleRenderConfig", &g_renderConfig) != VE_SUCCESS || !g_renderConfig) {
-        fprintf(stderr, "Failed to create render config\n");
+static bool createPipeline() {
+    // Create a transparent graphics pipeline for particles with alpha blending
+    VEGraphicsPipelineDesc pipelineDesc = veDefaultGraphicsPipelineDesc();
+    pipelineDesc.vertexShader = g_vertexShader;
+    pipelineDesc.fragmentShader = g_fragmentShader;
+    pipelineDesc.debugName = "ParticlePipeline";
+    
+    // Enable alpha blending for particles
+    pipelineDesc.blendAttachments[0].blendEnable = true;
+    pipelineDesc.blendAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    pipelineDesc.blendAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    pipelineDesc.blendAttachments[0].colorBlendOp = VK_BLEND_OP_ADD;
+    pipelineDesc.blendAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    pipelineDesc.blendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    pipelineDesc.blendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
+    
+    // Disable depth write for particles
+    pipelineDesc.depthWriteEnable = false;
+    
+    if (veCreateGraphicsPipeline(g_device, &pipelineDesc, &g_pipeline) != VE_SUCCESS || !g_pipeline) {
+        fprintf(stderr, "Failed to create graphics pipeline\n");
         return false;
     }
     
@@ -373,18 +390,9 @@ static void renderParticles(VECommandBuffer* cmd) {
     // Begin rendering (automatically handles texture transitions)
     veBeginRendering(cmd, &g_renderingInfo);
     
-    // Bind graphics shaders
-    veBindShader(cmd, g_vertexShader);
-    veBindShader(cmd, g_fragmentShader);
-    
-    // Apply render state (with alpha blending, full-screen viewport/scissor)
-    VERenderState renderState = {
-        .shaderConfig = NULL,
-        .renderConfig = g_renderConfig,
-        .viewport = NULL,  // Use full render area
-        .scissor = NULL    // Use full render area
-    };
-    veApplyRenderState(cmd, &renderState);
+    // Bind graphics pipeline and apply state (includes shaders and alpha blending)
+    veBindGraphicsPipeline(cmd, g_pipeline);
+    veApplyGraphicsState(cmd, g_pipeline, NULL, NULL, NULL);
     
     // Set graphics push constants
     GraphicsPushConstants graphicsConstants = {
@@ -451,8 +459,8 @@ static void cleanup() {
         (void)veDestroyBuffer(g_device, g_vertexBuffer);
     }
     
-    if (g_renderConfig) {
-        (void)veDestroyRenderConfig(g_renderConfig);
+    if (g_pipeline) {
+        (void)veDestroyGraphicsPipeline(g_pipeline);
     }
     
     if (g_computeShader) {
@@ -497,7 +505,7 @@ int main() {
     
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
     
-    if (!initVulkEase(window) || !createShaders() || !createBuffers() || !createRenderConfig()) {
+    if (!initVulkEase(window) || !createShaders() || !createBuffers() || !createPipeline()) {
         cleanup();
         glfwTerminate();
         return -1;

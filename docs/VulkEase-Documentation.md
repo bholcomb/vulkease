@@ -30,7 +30,7 @@ VulkEase is a modern graphics API built on Vulkan 1.4+ that provides the power o
 | **Shader Objects** | Hot-reloadable shaders. No pipeline recreation. |
 | **Render Targets** | All rendering goes to offscreen targets, then blits to swapchain. |
 | **Secondary Command Buffers** | Record command buffers in parallel across threads. |
-| **Render Configurations** | Lightweight state objects replace monolithic pipelines. |
+| **Graphics Pipelines** | Shader + material state in one object. Draw state for per-draw overrides. |
 | **Custom Extensions** | Enable additional Vulkan extensions for advanced features. |
 | **Multi-GPU Support** | Enumerate and select specific GPUs. |
 
@@ -226,20 +226,18 @@ veBindShader(cmd, vertexShader);
 veBindShader(cmd, fragmentShader);
 ```
 
-### Shader Configurations
+### Graphics Pipelines
 
-Bundle related shaders together:
+Bundle shaders with material state into a single graphics pipeline:
 
 ```c
-VEShaderConfigDesc desc = {
-    .vertexShader = vertexShader,
-    .fragmentShader = fragmentShader,
-    .debugName = "MyShaderConfig"
-};
-VEShaderConfig* shaderConfig = veCreateShaderConfig(device, &desc);
+// Use helper for common configurations
+VEGraphicsPipeline* pipeline = NULL;
+veCreateOpaquePipeline(device, vertexShader, fragmentShader,
+    NULL, 0, NULL, 0, "MyPipeline", &pipeline);
 
-// Bind entire configuration
-veBindShaderConfig(cmd, shaderConfig);
+// Bind during rendering
+veBindGraphicsPipeline(cmd, pipeline);
 ```
 
 ## Render Targets
@@ -314,78 +312,67 @@ void onResize(uint32_t width, uint32_t height) {
 }
 ```
 
-## Render Configurations
+## Graphics Pipelines and Draw State
 
-Replace graphics pipelines with lightweight **render configurations**.
+VulkEase uses a two-object system for graphics rendering:
+
+- **`VEGraphicsPipeline`**: Combines shaders + vertex input + material state (depth, stencil, blend, rasterization defaults). Created once, rarely changes.
+- **`VEDrawState`**: Per-draw overrides (primitive topology, polygon mode, cull mode, line width, depth bias). Can change every draw.
+
+### Helper Pipelines
 
 ```c
-// Use built-in configurations
-VERenderConfig* opaqueConfig = NULL;
-VERenderConfig* transparentConfig = NULL;
-veCreateOpaqueRenderConfig(device, "Opaque", &opaqueConfig);
-veCreateTransparentRenderConfig(device, "Transparent", &transparentConfig);
+// Use built-in pipelines (no vertex input for bindless rendering)
+VEGraphicsPipeline* opaquePipeline = NULL;
+VEGraphicsPipeline* transparentPipeline = NULL;
+veCreateOpaquePipeline(device, vertexShader, fragmentShader, NULL, 0, NULL, 0, "Opaque", &opaquePipeline);
+veCreateTransparentPipeline(device, vertexShader, fragmentShader, NULL, 0, NULL, 0, "Transparent", &transparentPipeline);
+
+// Bind during rendering
+veBindGraphicsPipeline(cmd, opaquePipeline);
+```
+
+### Custom Pipelines
+
+```c
+VEGraphicsPipelineDesc pipelineDesc = veDefaultGraphicsPipelineDesc();
+pipelineDesc.vertexShader = vertexShader;
+pipelineDesc.fragmentShader = fragmentShader;
+pipelineDesc.depthTestEnable = true;
+pipelineDesc.depthWriteEnable = true;
+pipelineDesc.depthCompareOp = VK_COMPARE_OP_LESS;
+pipelineDesc.cullMode = VK_CULL_MODE_BACK_BIT;
+pipelineDesc.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+pipelineDesc.debugName = "CustomPipeline";
+
+VEGraphicsPipeline* pipeline = NULL;
+veCreateGraphicsPipeline(device, &pipelineDesc, &pipeline);
+```
+
+### Draw State for Per-Draw Overrides
+
+```c
+// Create draw state with custom settings
+VEDrawStateDesc drawStateDesc = veDefaultDrawStateDesc();
+drawStateDesc.polygonMode = VK_POLYGON_MODE_LINE;  // Wireframe
+drawStateDesc.lineWidth = 2.0f;
+
+VEDrawState* wireframeState = NULL;
+veCreateDrawState(device, &drawStateDesc, &wireframeState);
 
 // Apply during rendering
-veApplyRenderConfig(cmd, opaqueConfig);
+veApplyDrawState(cmd, wireframeState);
+
+// Or use individual setters
+veSetPolygonMode(cmd, VK_POLYGON_MODE_LINE);
+veSetLineWidth(cmd, 2.0f);
 ```
 
-### Custom Configurations
+### Convenience Function
 
 ```c
-VEVertexBinding bindings[] = {
-    { .binding = 0, .stride = sizeof(Vertex), .inputRate = VK_VERTEX_INPUT_RATE_VERTEX }
-};
-
-VEVertexAttribute attributes[] = {
-    { .location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = 0 },
-    { .location = 1, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT, .offset = 12 }
-};
-
-VEVertexInputConfig vertexInput = {
-    .bindingCount = 1, .bindings = bindings,
-    .attributeCount = 2, .attributes = attributes,
-    .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
-};
-
-VERenderConfigDesc configDesc = {
-    .configTypes = VE_CONFIG_TYPE_VERTEX_INPUT | VE_CONFIG_TYPE_DEPTH_STENCIL,
-    .vertexInputConfig = &vertexInput
-};
-
-VERenderConfig* config = NULL;
-veCreateRenderConfig(device, &configDesc, &config);
-```
-
-### Defaults and `NULL` behavior (exact)
-
-In `VERenderConfigDesc`, any pointer field can be `NULL` to request defaults:
-
-- `viewportConfig == NULL`: defaults to **render area** (from `veBeginRendering`): `{ x=renderAreaX, y=renderAreaY, width=renderAreaWidth, height=renderAreaHeight, minDepth=0, maxDepth=1 }`
-- `scissorConfig == NULL`: defaults to **render area**: `{ x=renderAreaX, y=renderAreaY, width=renderAreaWidth, height=renderAreaHeight }`
-- `rasterConfig == NULL`: defaults to:
-  - `cullMode = VK_CULL_MODE_BACK_BIT`
-  - `frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE`
-  - `polygonMode = VK_POLYGON_MODE_FILL`
-  - `lineWidth = 1.0f`
-  - depth bias disabled (all bias values 0)
-  - `depthClampEnable = false`, `rasterizerDiscardEnable = false`
-- `depthConfig == NULL`: defaults to:
-  - `depthTestEnable = true`, `depthWriteEnable = true`, `depthCompareOp = VK_COMPARE_OP_LESS`
-  - depth bounds disabled (`min=0`, `max=1`)
-  - stencil disabled; stencil ops are KEEP with compare ALWAYS (masks 0xFF, reference 0)
-- `blendConfig == NULL`: defaults to **opaque** blending:
-  - `logicOpEnable = false`, `logicOp = VK_LOGIC_OP_COPY`
-  - `attachmentCount = 1`
-  - attachment 0: `blendEnable = false`, write mask = RGBA
-  - `blendConstants = {0,0,0,0}`
-- `multisampleConfig == NULL`: defaults to:
-  - `rasterizationSamples = VK_SAMPLE_COUNT_1_BIT`
-  - sample shading disabled, `minSampleShading = 1.0f`
-  - alpha-to-coverage/one disabled
-- `vertexInputConfig == NULL`: defaults to:
-  - no bindings/attributes, `topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST`, `primitiveRestartEnable = false`
-
-**Important**: The default viewport/scissor in render configs now follow the **current render area** when applied during rendering. Applying a render config outside of `veBeginRendering` will result in an error if defaults are needed.
+// Bind pipeline + apply draw state + set viewport/scissor in one call
+veApplyGraphicsState(cmd, pipeline, drawState, NULL, NULL);  // NULL = full render area
 ```
 
 ## The Render Loop
@@ -400,27 +387,25 @@ while (running) {
     // 2. Begin rendering to render target
     veBeginRendering(cmd, &renderingInfo);
     
-    // 3. Apply render state
-    VERenderState renderState = {
-        .shaderConfig = shaderConfig,
-        .renderConfig = renderConfig,
-        .viewport = NULL,  // NULL = full render area
-        .scissor = NULL
-    };
-    veApplyRenderState(cmd, &renderState);
+    // 3. Bind graphics pipeline (shaders + material state)
+    veBindGraphicsPipeline(cmd, pipeline);
     
-    // 4. Push constants and draw
+    // 4. Set viewport and scissor
+    veSetViewport(cmd, 0, 0, width, height, 0.0f, 1.0f);
+    veSetScissor(cmd, 0, 0, width, height);
+    
+    // 5. Push constants and draw
     vePushConstants(cmd, &pushConstants, sizeof(pushConstants), 0);
     veBindIndexBuffer(cmd, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
     veDrawIndexed(cmd, indexCount, 1, 0, 0, 0);
     
-    // 5. End rendering
+    // 6. End rendering
     veEndRendering(cmd);
     
-    // 6. Blit to swapchain
+    // 7. Blit to swapchain
     veBlitToSwapchain(cmd, renderTarget, swapchain, VK_FILTER_LINEAR);
     
-    // 7. Present
+    // 8. Present
     vePresentImage(swapchain, cmd, true);  // true = auto-release cmd
 }
 ```
@@ -463,8 +448,7 @@ typedef struct CubeApp {
     
     VEShader* vertexShader;
     VEShader* fragmentShader;
-    VEShaderConfig* shaderConfig;
-    VERenderConfig* renderConfig;
+    VEGraphicsPipeline* pipeline;  // Shaders + material state
     
     VERenderingInfo renderingInfo;  // Built once, reused every frame
     
@@ -552,12 +536,6 @@ app->vertexShader = veLoadShaderFromFile(app->device,
 app->fragmentShader = veLoadShaderFromFile(app->device,
     "examples/shaders/cube.frag.spv",
     VK_SHADER_STAGE_FRAGMENT_BIT, "main", "CubeFragment");
-
-VEShaderConfigDesc shaderConfigDesc = {
-    .vertexShader = app->vertexShader,
-    .fragmentShader = app->fragmentShader
-};
-app->shaderConfig = veCreateShaderConfig(app->device, &shaderConfigDesc);
 ```
 
 ## Step 7: Create Buffers
@@ -602,9 +580,14 @@ app->texture = veLoadTexture(app->device, "examples/data/testCard.png",
 app->sampler = veCreateLinearSampler(app->device);
 ```
 
-## Step 9: Create Render Configuration
+## Step 9: Create Graphics Pipeline
 
 ```c
+// For bindless rendering (no vertex input needed)
+veCreateOpaquePipeline(app->device, app->vertexShader, app->fragmentShader,
+    NULL, 0, NULL, 0, "CubePipeline", &app->pipeline);
+
+// Or with vertex input:
 VEVertexBinding bindings[] = {
     { .binding = 0, .stride = sizeof(Vertex), .inputRate = VK_VERTEX_INPUT_RATE_VERTEX }
 };
@@ -614,18 +597,8 @@ VEVertexAttribute attributes[] = {
     { .location = 1, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT, .offset = 12 }
 };
 
-VEVertexInputConfig vertexInput = {
-    .bindingCount = 1, .bindings = bindings,
-    .attributeCount = 2, .attributes = attributes,
-    .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
-};
-
-VERenderConfigDesc configDesc = {
-    .configTypes = VE_CONFIG_TYPE_VERTEX_INPUT | VE_CONFIG_TYPE_DEPTH_STENCIL,
-    .vertexInputConfig = &vertexInput
-};
-
-app->renderConfig = veCreateRenderConfig(app->device, &configDesc);
+veCreateOpaquePipeline(app->device, app->vertexShader, app->fragmentShader,
+    bindings, 1, attributes, 2, "CubePipeline", &app->pipeline);
 ```
 
 ## Step 10: Render Loop
@@ -649,13 +622,12 @@ while (!glfwWindowShouldClose(app->window)) {
     
     veBeginRendering(cmd, &app->renderingInfo);
     
-    VERenderState renderState = {
-        .shaderConfig = app->shaderConfig,
-        .renderConfig = app->renderConfig,
-        .viewport = NULL,
-        .scissor = NULL
-    };
-    veApplyRenderState(cmd, &renderState);
+    // Bind graphics pipeline (shaders + material state)
+    veBindGraphicsPipeline(cmd, app->pipeline);
+    
+    // Set viewport and scissor
+    veSetViewport(cmd, 0, 0, width, height, 0.0f, 1.0f);
+    veSetScissor(cmd, 0, 0, width, height);
     
     VEGraphicsPushConstants pushConstants = VE_INIT_GRAPHICS_PUSH_CONSTANTS();
     pushConstants.vertexBuffer = app->vertexBuffer;
@@ -682,8 +654,7 @@ while (!glfwWindowShouldClose(app->window)) {
 ```c
 veDeviceWaitIdle(app->device);
 
-veDestroyRenderConfig(app->renderConfig);
-veDestroyShaderConfig(app->shaderConfig);
+veDestroyGraphicsPipeline(app->pipeline);
 veDestroyShader(app->fragmentShader);
 veDestroyShader(app->vertexShader);
 
@@ -839,13 +810,9 @@ VECommandBuffer* recordChunk(uint32_t chunkIndex) {
     
     // IMPORTANT: Secondary buffers do NOT inherit dynamic state!
     // Each secondary must set ALL required state before drawing.
-    VERenderState renderState = {
-        .shaderConfig = shaderConfig,
-        .renderConfig = renderConfig,
-        .viewport = NULL,
-        .scissor = NULL
-    };
-    veApplyRenderState(cmd, &renderState);
+    veBindGraphicsPipeline(cmd, pipeline);
+    veSetViewport(cmd, 0, 0, width, height, 0.0f, 1.0f);
+    veSetScissor(cmd, 0, 0, width, height);
     
     // Push constants and draw this chunk
     VEGraphicsPushConstants push = VE_INIT_GRAPHICS_PUSH_CONSTANTS();
@@ -914,12 +881,11 @@ vePresentImage(swapchain, primary, true);
 
 With `VK_EXT_shader_object`, **dynamic state is NOT inherited by secondary command buffers**. Each secondary buffer must set:
 
-- Shaders (via `veBindShaderConfig` or `veBindShader`)
-- Render config (via `veApplyRenderConfig`)
-- Viewport and scissor (via `veApplyRenderState` or `veSetViewport`/`veSetScissor`)
+- Graphics pipeline (via `veBindGraphicsPipeline`)
+- Viewport and scissor (via `veSetViewport`/`veSetScissor`)
 - Push constants
 
-The `veApplyRenderState` function handles all of this in one call.
+The `veApplyGraphicsState` function handles pipeline + draw state + viewport/scissor in one call.
 
 ## The releaseCommandBuffers Parameter
 
@@ -1420,62 +1386,108 @@ void veDestroyShader(VEShader* shader);
 
 ---
 
-### veCreateShaderConfig
+## Graphics Pipelines
+
+### veCreateGraphicsPipeline
 
 ```c
-VEShaderConfig* veCreateShaderConfig(VEDevice* device, const VEShaderConfigDesc* desc);
+VEResult veCreateGraphicsPipeline(VEDevice* device, const VEGraphicsPipelineDesc* desc, VEGraphicsPipeline** outPipeline);
 ```
 
-**VEShaderConfigDesc**:
+Creates a graphics pipeline from a descriptor.
+
+---
+
+### veDestroyGraphicsPipeline
+
 ```c
-typedef struct VEShaderConfigDesc {
-    VEShader* vertexShader;
-    VEShader* fragmentShader;
-    VEShader* geometryShader;      // Optional
-    VEShader* tessControlShader;   // Optional
-    VEShader* tessEvalShader;      // Optional
-    VEShader* computeShader;       // For compute dispatches
-    const char* debugName;
-} VEShaderConfigDesc;
+VEResult veDestroyGraphicsPipeline(VEGraphicsPipeline* pipeline);
 ```
 
 ---
 
-### veDestroyShaderConfig
+### veDefaultGraphicsPipelineDesc
 
 ```c
-void veDestroyShaderConfig(VEShaderConfig* config);
+VEGraphicsPipelineDesc veDefaultGraphicsPipelineDesc();
+```
+
+Returns a descriptor with sensible defaults (depth test on, back-face culling, opaque blending).
+
+---
+
+### Pipeline Helper Functions
+
+```c
+VEResult veCreateOpaquePipeline(VEDevice* device, VEShader* vertexShader, VEShader* fragmentShader,
+    const VEVertexBinding* bindings, uint32_t bindingCount,
+    const VEVertexAttribute* attrs, uint32_t attrCount,
+    const char* debugName, VEGraphicsPipeline** outPipeline);
+
+VEResult veCreateTransparentPipeline(VEDevice* device, VEShader* vertexShader, VEShader* fragmentShader,
+    const VEVertexBinding* bindings, uint32_t bindingCount,
+    const VEVertexAttribute* attrs, uint32_t attrCount,
+    const char* debugName, VEGraphicsPipeline** outPipeline);
+
+VEResult veCreateAdditivePipeline(VEDevice* device, VEShader* vertexShader, VEShader* fragmentShader,
+    const VEVertexBinding* bindings, uint32_t bindingCount,
+    const VEVertexAttribute* attrs, uint32_t attrCount,
+    const char* debugName, VEGraphicsPipeline** outPipeline);
+
+VEResult veCreateShadowPipeline(VEDevice* device, VEShader* vertexShader, VEShader* fragmentShader,
+    const VEVertexBinding* bindings, uint32_t bindingCount,
+    const VEVertexAttribute* attrs, uint32_t attrCount,
+    const char* debugName, VEGraphicsPipeline** outPipeline);
+
+VEResult veCreateUIOverlayPipeline(VEDevice* device, VEShader* vertexShader, VEShader* fragmentShader,
+    const VEVertexBinding* bindings, uint32_t bindingCount,
+    const VEVertexAttribute* attrs, uint32_t attrCount,
+    const char* debugName, VEGraphicsPipeline** outPipeline);
+```
+
+Built-in pipeline configurations for common use cases.
+
+---
+
+## Draw State
+
+### veCreateDrawState
+
+```c
+VEResult veCreateDrawState(VEDevice* device, const VEDrawStateDesc* desc, VEDrawState** outDrawState);
+```
+
+Creates a draw state object for per-draw overrides.
+
+---
+
+### veDestroyDrawState
+
+```c
+VEResult veDestroyDrawState(VEDrawState* drawState);
 ```
 
 ---
 
-## Render Configurations
-
-### veCreateRenderConfig
+### veDefaultDrawStateDesc
 
 ```c
-VERenderConfig* veCreateRenderConfig(VEDevice* device, const VERenderConfigDesc* desc);
+VEDrawStateDesc veDefaultDrawStateDesc();
 ```
+
+Returns default draw state (triangles, filled, no depth bias).
 
 ---
 
-### veDestroyRenderConfig
+### Draw State Helper Functions
 
 ```c
-void veDestroyRenderConfig(VERenderConfig* config);
+VEResult veCreateDefaultDrawState(VEDevice* device, VEDrawState** outDrawState);
+VEResult veCreateWireframeDrawState(VEDevice* device, VEDrawState** outDrawState);
+VEResult veCreateShadowDrawState(VEDevice* device, VEDrawState** outDrawState);
 ```
 
----
-
-### veCreateOpaqueRenderConfig / veCreateTransparentRenderConfig / veCreateWireframeRenderConfig
-
-```c
-VERenderConfig* veCreateOpaqueRenderConfig(VEDevice* device, const char* debugName);
-VERenderConfig* veCreateTransparentRenderConfig(VEDevice* device, const char* debugName);
-VERenderConfig* veCreateWireframeRenderConfig(VEDevice* device, const char* debugName);
-```
-
-Built-in configurations for common use cases.
+Built-in draw states for common use cases.
 
 ---
 
@@ -1657,44 +1669,68 @@ void veEndRendering(VECommandBuffer* cmd);
 
 ---
 
-## Render State
+## State Binding
 
-### veApplyRenderState
+### veBindGraphicsPipeline
 
 ```c
-void veApplyRenderState(VECommandBuffer* cmd, const VERenderState* state);
+VEResult veBindGraphicsPipeline(VECommandBuffer* cmd, VEGraphicsPipeline* pipeline);
 ```
 
-Applies shader config, render config, viewport, and scissor in one call. Must be called inside `veBeginRendering`/`veEndRendering`.
-
-**VERenderState**:
-```c
-typedef struct VERenderState {
-    VEShaderConfig* shaderConfig;  // NULL = don't bind
-    VERenderConfig* renderConfig;  // NULL = don't apply
-    const VEViewport* viewport;    // NULL = full render area
-    const VERect2D* scissor;       // NULL = full render area
-} VERenderState;
-```
+Binds a graphics pipeline (shaders + material state).
 
 ---
 
-### veApplyRenderConfig
+### veApplyDrawState
 
 ```c
-void veApplyRenderConfig(VECommandBuffer* cmd, VERenderConfig* config);
+VEResult veApplyDrawState(VECommandBuffer* cmd, VEDrawState* drawState);
 ```
 
-Applies just the render configuration.
+Applies per-draw state overrides.
 
 ---
 
-### veBindShader / veBindShaderConfig
+### veApplyGraphicsState
+
+```c
+VEResult veApplyGraphicsState(VECommandBuffer* cmd, VEGraphicsPipeline* pipeline,
+    VEDrawState* drawState, const VEViewport* viewport, const VERect2D* scissor);
+```
+
+Convenience function that binds pipeline, applies draw state, and sets viewport/scissor in one call. Pass NULL for defaults.
+
+---
+
+### veBindShader
 
 ```c
 void veBindShader(VECommandBuffer* cmd, VEShader* shader);
-void veBindShaderConfig(VECommandBuffer* cmd, VEShaderConfig* config);
 ```
+
+Binds an individual shader. Usually prefer `veBindGraphicsPipeline`.
+
+---
+
+### Individual Dynamic State Setters
+
+```c
+VEResult veSetTopology(VECommandBuffer* cmd, VkPrimitiveTopology topology);
+VEResult veSetPrimitiveRestart(VECommandBuffer* cmd, bool enable);
+VEResult veSetPatchControlPoints(VECommandBuffer* cmd, uint32_t patchControlPoints);
+VEResult veSetPolygonMode(VECommandBuffer* cmd, VkPolygonMode polygonMode);
+VEResult veSetLineWidth(VECommandBuffer* cmd, float lineWidth);
+VEResult veSetCullMode(VECommandBuffer* cmd, VkCullModeFlags cullMode);
+VEResult veSetFrontFace(VECommandBuffer* cmd, VkFrontFace frontFace);
+VEResult veSetRasterizerDiscard(VECommandBuffer* cmd, bool enable);
+VEResult veSetDepthBias(VECommandBuffer* cmd, float constantFactor, float clamp, float slopeFactor);
+VEResult veSetDepthBiasEnable(VECommandBuffer* cmd, bool enable);
+VEResult veSetDepthClampEnable(VECommandBuffer* cmd, bool enable);
+VEResult veSetAlphaToCoverageEnable(VECommandBuffer* cmd, bool enable);
+VEResult veSetAlphaToOneEnable(VECommandBuffer* cmd, bool enable);
+```
+
+Set individual dynamic state values without creating a full `VEDrawState` object.
 
 ---
 

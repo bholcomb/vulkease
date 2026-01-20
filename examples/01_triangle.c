@@ -33,7 +33,7 @@ static VERenderTarget* g_renderTarget = NULL;
 static VEShader* g_vertexShader = NULL;
 static VEShader* g_fragmentShader = NULL;
 static VEBufferAddress g_vertexBuffer = VE_INVALID_ADDRESS;
-static VERenderConfig* g_renderConfig = NULL;
+static VEGraphicsPipeline* g_pipeline = NULL;
 static VERenderingInfo g_renderingInfo;
 
 int win_width = 800;
@@ -203,9 +203,14 @@ static bool createShaders() {
         return false;
     }
 
-    //create a default render config
-    if (veCreateOpaqueRenderConfig(g_device, "opaque render config", &g_renderConfig) != VE_SUCCESS || !g_renderConfig) {
-        fprintf(stderr, "Failed to create render config\n");
+    // Create a graphics pipeline with the shaders
+    VEGraphicsPipelineDesc pipelineDesc = veDefaultGraphicsPipelineDesc();
+    pipelineDesc.vertexShader = g_vertexShader;
+    pipelineDesc.fragmentShader = g_fragmentShader;
+    pipelineDesc.debugName = "TrianglePipeline";
+    
+    if (veCreateGraphicsPipeline(g_device, &pipelineDesc, &g_pipeline) != VE_SUCCESS || !g_pipeline) {
+        fprintf(stderr, "Failed to create graphics pipeline\n");
         return false;
     }
     
@@ -277,19 +282,11 @@ static void render() {
     // Begin rendering (automatically handles texture transitions)
     veBeginRendering(cmd, &g_renderingInfo);
     
-    // Bind shaders
-    veBindShader(cmd, g_vertexShader);
-    veBindShader(cmd, g_fragmentShader);
+    // Bind graphics pipeline (includes shaders and state)
+    veBindGraphicsPipeline(cmd, g_pipeline);
     
-    // Apply render state (NULL shaderConfig since we bind shaders individually, 
-    // NULL viewport/scissor to use full render area)
-    VERenderState renderState = {
-        .shaderConfig = NULL,
-        .renderConfig = g_renderConfig,
-        .viewport = NULL,  // Use full render area
-        .scissor = NULL    // Use full render area
-    };
-    veApplyRenderState(cmd, &renderState);
+    // Apply graphics state (NULL viewport/scissor uses full render area)
+    veApplyGraphicsState(cmd, g_pipeline, NULL, NULL, NULL);
     
     // Set up push constants with the vertex buffer address
     typedef struct {
@@ -336,6 +333,10 @@ static void cleanup() {
     
     if (g_fragmentShader) {
         (void)veDestroyShader(g_fragmentShader);
+    }
+    
+    if (g_pipeline) {
+        (void)veDestroyGraphicsPipeline(g_pipeline);
     }
     
     if (g_renderTarget) {

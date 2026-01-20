@@ -9,6 +9,31 @@
             VulkEase main API class - Modern Vulkan 1.3+ Bindless Graphics API
             </summary>
         </member>
+        <member name="M:VulkEase.VulkEase.CreateOpaquePipeline(VulkEase.VEDevice,VulkEase.VEShader,VulkEase.VEShader,System.String)">
+            <summary>
+            Creates an opaque graphics pipeline with depth testing enabled and no blending.
+            </summary>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateTransparentPipeline(VulkEase.VEDevice,VulkEase.VEShader,VulkEase.VEShader,System.String)">
+            <summary>
+            Creates a transparent graphics pipeline with alpha blending enabled.
+            </summary>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateAdditivePipeline(VulkEase.VEDevice,VulkEase.VEShader,VulkEase.VEShader,System.String)">
+            <summary>
+            Creates an additive blending graphics pipeline.
+            </summary>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateShadowPipeline(VulkEase.VEDevice,VulkEase.VEShader,VulkEase.VEShader,System.String)">
+            <summary>
+            Creates a shadow rendering graphics pipeline (depth-only).
+            </summary>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateUIOverlayPipeline(VulkEase.VEDevice,VulkEase.VEShader,VulkEase.VEShader,System.String)">
+            <summary>
+            Creates a UI overlay graphics pipeline with transparency.
+            </summary>
+        </member>
         <member name="T:VulkEase.VulkEaseDll">
             <summary>
             Dynamic library loader for VulkEase native libraries

@@ -104,10 +104,9 @@ typedef struct CubeApp {
     // Shaders
     VEShader* vertexShader;
     VEShader* fragmentShader;
-    VEShaderConfig* shaderConfig;
     
-    // Render configuration
-    VERenderConfig* renderConfig;
+    // Graphics pipeline (includes shaders and render state)
+    VEGraphicsPipeline* pipeline;
     
     // Cached rendering info (built once, reused every frame)
     VERenderingInfo renderingInfo;
@@ -331,18 +330,6 @@ static bool loadShaders(CubeApp* app) {
         return false;
     }
     
-    // Create shader configuration
-    VEShaderConfigDesc shaderConfigDesc = {
-        .vertexShader = app->vertexShader,
-        .fragmentShader = app->fragmentShader,
-        .debugName = "CubeShaderConfig"
-    };
-    
-    if (veCreateShaderConfig(app->device, &shaderConfigDesc, &app->shaderConfig) != VE_SUCCESS || !app->shaderConfig) {
-        fprintf(stderr, "Failed to create shader config\n");
-        return false;
-    }
-    
     return true;
 }
 
@@ -403,8 +390,8 @@ static bool loadTexture(CubeApp* app) {
     return true;
 }
 
-// Create render configuration
-static bool createRenderConfig(CubeApp* app) {
+// Create graphics pipeline
+static bool createPipeline(CubeApp* app) {
     // Define vertex input layout
     VEVertexBinding bindings[] = {
         {
@@ -430,28 +417,21 @@ static bool createRenderConfig(CubeApp* app) {
         }
     };
     
-    VEVertexInputConfig vertexInput = {
-        .bindingCount = 1,
-        .bindings = bindings,
-        .attributeCount = 2,
-        .attributes = attributes,
-        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-        .primitiveRestartEnable = false
-    };
+    // Create graphics pipeline with default state
+    VEGraphicsPipelineDesc pipelineDesc = veDefaultGraphicsPipelineDesc();
+    pipelineDesc.vertexShader = app->vertexShader;
+    pipelineDesc.fragmentShader = app->fragmentShader;
     
-    // Create render configuration
-    VERenderConfigDesc configDesc = {
-        .configTypes = VE_CONFIG_TYPE_VERTEX_INPUT | VE_CONFIG_TYPE_RASTERIZATION | 
-                      VE_CONFIG_TYPE_DEPTH_STENCIL | VE_CONFIG_TYPE_COLOR_BLEND,
-        .vertexInputConfig = &vertexInput,
-        .rasterConfig = NULL,  // Use defaults
-        .depthConfig = NULL,   // Use defaults
-        .blendConfig = NULL,   // Use defaults
-        .debugName = "CubeRenderConfig"
-    };
+    // Set vertex input
+    pipelineDesc.vertexBindingCount = 1;
+    pipelineDesc.vertexBindings = bindings;
+    pipelineDesc.vertexAttributeCount = 2;
+    pipelineDesc.vertexAttributes = attributes;
     
-    if (veCreateRenderConfig(app->device, &configDesc, &app->renderConfig) != VE_SUCCESS || !app->renderConfig) {
-        fprintf(stderr, "Failed to create render config\n");
+    pipelineDesc.debugName = "CubePipeline";
+    
+    if (veCreateGraphicsPipeline(app->device, &pipelineDesc, &app->pipeline) != VE_SUCCESS || !app->pipeline) {
+        fprintf(stderr, "Failed to create graphics pipeline\n");
         return false;
     }
     
@@ -505,14 +485,9 @@ static void renderFrame(CubeApp* app) {
     // Begin rendering (automatically handles texture transitions)
     veBeginRendering(cmd, &app->renderingInfo);
     
-    // Apply combined render state (shaders, config, full-screen viewport/scissor)
-    VERenderState renderState = {
-        .shaderConfig = app->shaderConfig,
-        .renderConfig = app->renderConfig,
-        .viewport = NULL,  // Use full render area
-        .scissor = NULL    // Use full render area
-    };
-    veApplyRenderState(cmd, &renderState);
+    // Bind graphics pipeline and apply state
+    veBindGraphicsPipeline(cmd, app->pipeline);
+    veApplyGraphicsState(cmd, app->pipeline, NULL, NULL, NULL);
     
     // Set up push constants with bindless resource indices
     VEGraphicsPushConstants pushConstants = VE_INIT_GRAPHICS_PUSH_CONSTANTS();
@@ -593,15 +568,12 @@ static void cleanup(CubeApp* app) {
         veDeviceWaitIdle(app->device);
     }
     
-    // Destroy render config
-    if (app->renderConfig) {
-        (void)veDestroyRenderConfig(app->renderConfig);
+    // Destroy pipeline
+    if (app->pipeline) {
+        (void)veDestroyGraphicsPipeline(app->pipeline);
     }
     
     // Destroy shaders
-    if (app->shaderConfig) {
-        (void)veDestroyShaderConfig(app->shaderConfig);
-    }
     if (app->vertexShader) {
         (void)veDestroyShader(app->vertexShader);
     }
@@ -686,8 +658,8 @@ int main() {
         return EXIT_FAILURE;
     }
     
-    if (!createRenderConfig(&app)) {
-        fprintf(stderr, "Failed to create render config\n");
+    if (!createPipeline(&app)) {
+        fprintf(stderr, "Failed to create graphics pipeline\n");
         cleanup(&app);
         return EXIT_FAILURE;
     }

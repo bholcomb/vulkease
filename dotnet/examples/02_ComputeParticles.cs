@@ -74,7 +74,7 @@ namespace VulkEaseExamples
         private VEShader _computeShader;
         private VEShader _vertexShader;
         private VEShader _fragmentShader;
-        private VERenderConfig _renderConfig;
+        private VEGraphicsPipeline _pipeline;
         private VEBufferAddress _particleBuffer;
         private VEBufferAddress _vertexBuffer;
         private VERenderingInfo _renderingInfo;
@@ -128,7 +128,7 @@ namespace VulkEaseExamples
                 return;
             }
 
-            if (!CreateRenderConfig())
+            if (!CreatePipeline())
             {
                 Close();
                 return;
@@ -412,17 +412,17 @@ namespace VulkEaseExamples
             return particles;
         }
 
-        private bool CreateRenderConfig()
+        private bool CreatePipeline()
         {
             try
             {
-                // Use transparent render config for particles with alpha blending
-                _renderConfig = VulkEase.VulkEase.CreateTransparentRenderConfig(_device, "ParticleRenderConfig");
+                // Use transparent graphics pipeline for particles with alpha blending
+                _pipeline = VulkEase.VulkEase.CreateTransparentPipeline(_device, _vertexShader, _fragmentShader, "ParticlePipeline");
                 return true;
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Failed to create render config: {ex.Message}");
+                Console.Error.WriteLine($"Failed to create graphics pipeline: {ex.Message}");
                 return false;
             }
         }
@@ -478,8 +478,8 @@ namespace VulkEaseExamples
             VulkEase.VulkEase.SetViewport(cmd, 0.0f, 0.0f, width, height, 0.0f, 1.0f);
             VulkEase.VulkEase.SetScissor(cmd, 0, 0, width, height);
 
-            // Apply render configuration (with alpha blending)
-            VulkEase.VulkEase.ApplyRenderConfig(cmd, _renderConfig);
+            // Bind graphics pipeline (with alpha blending)
+            VulkEase.VulkEase.BindGraphicsPipeline(cmd, _pipeline);
 
             // Bind graphics shaders
             VulkEase.VulkEase.BindShader(cmd, _vertexShader);
@@ -573,9 +573,9 @@ namespace VulkEaseExamples
                 VulkEase.VulkEase.DestroyBuffer(_device, _vertexBuffer);
             }
 
-            if (_renderConfig.native != IntPtr.Zero)
+            if (_pipeline.native != IntPtr.Zero)
             {
-                VulkEase.VulkEase.DestroyRenderConfig(_renderConfig);
+                VulkEase.VulkEase.DestroyGraphicsPipeline(_pipeline);
             }
 
             if (_computeShader.native != IntPtr.Zero)

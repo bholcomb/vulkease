@@ -452,20 +452,15 @@ bool AsteroidApp::createAssets()
       return false;
    }
 
-   VEShaderConfigDesc shaderConfigDesc{};
-   shaderConfigDesc.vertexShader = vertexShader_;
-   shaderConfigDesc.fragmentShader = fragmentShader_;
-   shaderConfigDesc.debugName = "AsteroidShaderConfig";
+   // Create graphics pipeline with shaders
+   VEGraphicsPipelineDesc pipelineDesc = veDefaultGraphicsPipelineDesc();
+   pipelineDesc.vertexShader = vertexShader_;
+   pipelineDesc.fragmentShader = fragmentShader_;
+   pipelineDesc.debugName = "AsteroidPipeline";
 
-   if (veCreateShaderConfig(device_, &shaderConfigDesc, &shaderConfig_) != VE_SUCCESS || !shaderConfig_)
+   if (veCreateGraphicsPipeline(device_, &pipelineDesc, &pipeline_) != VE_SUCCESS || !pipeline_)
    {
-      std::fprintf(stderr, "Failed to create shader config\n");
-      return false;
-   }
-
-   if (veCreateOpaqueRenderConfig(device_, "AsteroidRenderConfig", &renderConfig_) != VE_SUCCESS || !renderConfig_)
-   {
-      std::fprintf(stderr, "Failed to create render config\n");
+      std::fprintf(stderr, "Failed to create graphics pipeline\n");
       return false;
    }
 
@@ -568,15 +563,10 @@ void AsteroidApp::destroyAssets()
          (void)veDestroyBuffer(device_, vertexBuffer_);
          vertexBuffer_ = VE_INVALID_ADDRESS;
       }
-      if (renderConfig_)
+      if (pipeline_)
       {
-         (void)veDestroyRenderConfig(renderConfig_);
-         renderConfig_ = nullptr;
-      }
-      if (shaderConfig_)
-      {
-         (void)veDestroyShaderConfig(shaderConfig_);
-         shaderConfig_ = nullptr;
+         (void)veDestroyGraphicsPipeline(pipeline_);
+         pipeline_ = nullptr;
       }
       if (fragmentShader_)
       {
@@ -737,12 +727,8 @@ void AsteroidApp::recordChunks(uint32_t width, uint32_t height, std::vector<Reco
 
       // With VK_EXT_shader_object, dynamic state is NOT inherited by secondary command buffers.
       // Each secondary must set all required state before drawing.
-      VERenderState renderState{};
-      renderState.shaderConfig = shaderConfig_;
-      renderState.renderConfig = renderConfig_;
-      renderState.viewport = nullptr;  // Use full render area from desc
-      renderState.scissor = nullptr;   // Use full render area from desc
-      veApplyRenderState(cmd, &renderState);
+      veBindGraphicsPipeline(cmd, pipeline_);
+      veApplyGraphicsState(cmd, pipeline_, nullptr, nullptr, nullptr);
 
       VEGraphicsPushConstants push = VE_INIT_GRAPHICS_PUSH_CONSTANTS();
       push.vertexBuffer = vertexBuffer_;
@@ -862,12 +848,8 @@ void AsteroidApp::submitFrame(const std::vector<RecordedChunk> &recorded, double
    // Set render state once in the primary buffer - this is inherited by all secondary buffers.
    // Note: With VK_EXT_shader_object, dynamic state is NOT inherited by secondary command buffers,
    // so each secondary must also set state. We set it here for reference/documentation.
-   VERenderState renderState{};
-   renderState.shaderConfig = shaderConfig_;
-   renderState.renderConfig = renderConfig_;
-   renderState.viewport = nullptr;  // Use full render area
-   renderState.scissor = nullptr;   // Use full render area
-   veApplyRenderState(primary, &renderState);
+   veBindGraphicsPipeline(primary, pipeline_);
+   veApplyGraphicsState(primary, pipeline_, nullptr, nullptr, nullptr);
 
    if (!recorded.empty())
    {

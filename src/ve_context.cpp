@@ -1095,23 +1095,17 @@ VEResult veCreateDevice(VEContext *context,
       return VE_ERROR_UNKNOWN;
    }
 
-   // Initialize config arrays
-   device->maxRenderConfigs = VE_MAX_RENDER_CONFIGS;
-   device->renderConfigs =
-       static_cast<VERenderConfigInternal *>(calloc(VE_MAX_RENDER_CONFIGS, sizeof(VERenderConfigInternal)));
-   device->renderConfigCount = 0;
+   // Initialize graphics pipelines
+   device->maxGraphicsPipelines = VE_MAX_GRAPHICS_PIPELINES;
+   device->graphicsPipelines =
+       static_cast<VEGraphicsPipelineInternal *>(calloc(VE_MAX_GRAPHICS_PIPELINES, sizeof(VEGraphicsPipelineInternal)));
+   device->graphicsPipelineCount = 0;
 
-   // initialize vertex configs
-   device->maxVertexConfigs = VE_MAX_VERTEX_CONFIGS;
-   device->vertexConfigs =
-       static_cast<VEVertexConfigInternal *>(calloc(VE_MAX_VERTEX_CONFIGS, sizeof(VEVertexConfigInternal)));
-   device->vertexConfigCount = 0;
-
-   // initialize shader configs
-   device->maxShaderConfigs = VE_MAX_SHADER_CONFIGS;
-   device->shaderConfigs =
-       static_cast<VEShaderConfigInternal *>(calloc(VE_MAX_SHADER_CONFIGS, sizeof(VEShaderConfigInternal)));
-   device->shaderConfigCount = 0;
+   // Initialize draw states
+   device->maxDrawStates = VE_MAX_DRAW_STATES;
+   device->drawStates =
+       static_cast<VEDrawStateInternal *>(calloc(VE_MAX_DRAW_STATES, sizeof(VEDrawStateInternal)));
+   device->drawStateCount = 0;
 
    device->maxShaders = VE_MAX_SHADERS;
    device->shaderCount = 0;
@@ -1199,10 +1193,9 @@ VEResult veDestroyDevice(VEDevice *device)
       internal->deferredDeletionQueue.reset();
    }
 
-   // free internal config buffers
-   free(internal->shaderConfigs);
-   free(internal->vertexConfigs);
-   free(internal->renderConfigs);
+   // free internal pipeline/state buffers
+   free(internal->graphicsPipelines);
+   free(internal->drawStates);
 
    // cleanup the pipeline layouts
    vkDestroyPipelineLayout(internal->device, internal->globalGraphicsPipelineLayout, NULL);

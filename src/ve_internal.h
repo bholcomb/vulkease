@@ -49,9 +49,8 @@ struct VEDeferredDeletionQueue;
 #define VE_MAX_SAMPLERS 4096
 #define VE_MAX_COMMAND_BUFFERS 128
 #define VE_MAX_DEBUG_NAME_LENGTH 256
-#define VE_MAX_RENDER_CONFIGS 1024
-#define VE_MAX_VERTEX_CONFIGS 1024
-#define VE_MAX_SHADER_CONFIGS 1024
+#define VE_MAX_GRAPHICS_PIPELINES 1024
+#define VE_MAX_DRAW_STATES 1024
 #define VE_MAX_SHADERS 4096
 #define VE_MAX_SWAPCHAIN_IMAGES 8
 #define VE_MAX_FRAMES_IN_FLIGHT 3
@@ -308,47 +307,78 @@ struct VEShaderInternal
    VEDeviceInternal *device;
 };
 
-struct VERenderConfigInternal
+struct VEGraphicsPipelineInternal
 {
-   VEViewport viewport;
-   VERect2D scissor;
-   VERasterConfig rasterConfig;
-   VEDepthConfig depthConfig;
-   VEBlendConfig blendConfig;
-   VEMultisampleConfig multisampleConfig;
-   VEVertexInputConfig vertexInputConfig;
-
-   VEConfigTypeFlags configTypes;
-   uint32_t shaderCount;
-   VEShader *shaders[6]; // Max 6 shader stages
-
-   char debugName[VE_MAX_DEBUG_NAME_LENGTH];
-   bool isValid;
-   VEDeviceInternal *device;
-};
-
-struct VEVertexConfigInternal
-{
-   uint32_t bindingCount;
-   VEVertexBinding bindings[16];
-   uint32_t attributeCount;
-   VEVertexAttribute attributes[32];
-   VkPrimitiveTopology topology;
-   bool primitiveRestartEnable;
-
-   char debugName[VE_MAX_DEBUG_NAME_LENGTH];
-   bool isValid;
-   VEDeviceInternal *device;
-};
-
-struct VEShaderConfigInternal
-{
+   // Shaders
    VEShader *vertexShader;
    VEShader *fragmentShader;
    VEShader *geometryShader;
    VEShader *tessControlShader;
    VEShader *tessEvalShader;
-   VEShader *computeShader;
+
+   // Vertex input (stored inline)
+   uint32_t vertexBindingCount;
+   VEVertexBinding vertexBindings[VE_MAX_VERTEX_BINDINGS];
+   uint32_t vertexAttributeCount;
+   VEVertexAttribute vertexAttributes[VE_MAX_VERTEX_ATTRIBUTES];
+
+   // Depth config
+   bool depthTestEnable;
+   bool depthWriteEnable;
+   VkCompareOp depthCompareOp;
+   bool depthBoundsTestEnable;
+   float minDepthBounds;
+   float maxDepthBounds;
+
+   // Stencil config
+   bool stencilTestEnable;
+   VEStencilOpState frontStencil;
+   VEStencilOpState backStencil;
+
+   // Blend config
+   bool logicOpEnable;
+   VkLogicOp logicOp;
+   uint32_t blendAttachmentCount;
+   VEBlendAttachment blendAttachments[VE_MAX_COLOR_ATTACHMENTS];
+   float blendConstants[4];
+
+   // Rasterization (material-level defaults)
+   VkCullModeFlags cullMode;
+   VkFrontFace frontFace;
+
+   // Multisampling
+   bool sampleShadingEnable;
+   float minSampleShading;
+
+   char debugName[VE_MAX_DEBUG_NAME_LENGTH];
+   bool isValid;
+   VEDeviceInternal *device;
+};
+
+struct VEDrawStateInternal
+{
+   // Geometry interpretation
+   VkPrimitiveTopology topology;
+   bool primitiveRestartEnable;
+   uint32_t patchControlPoints;
+
+   // Rasterization overrides
+   VkPolygonMode polygonMode;
+   float lineWidth;
+   VkCullModeFlags cullMode;
+   VkFrontFace frontFace;
+   bool rasterizerDiscardEnable;
+
+   // Depth bias
+   bool depthBiasEnable;
+   float depthBiasConstantFactor;
+   float depthBiasClamp;
+   float depthBiasSlopeFactor;
+   bool depthClampEnable;
+
+   // Coverage
+   bool alphaToCoverageEnable;
+   bool alphaToOneEnable;
 
    char debugName[VE_MAX_DEBUG_NAME_LENGTH];
    bool isValid;
@@ -537,17 +567,13 @@ struct VEDeviceInternal
    uint32_t shaderCount;
    uint32_t maxShaders;
 
-   VERenderConfigInternal *renderConfigs;
-   uint32_t renderConfigCount;
-   uint32_t maxRenderConfigs;
+   VEGraphicsPipelineInternal *graphicsPipelines;
+   uint32_t graphicsPipelineCount;
+   uint32_t maxGraphicsPipelines;
 
-   VEVertexConfigInternal *vertexConfigs;
-   uint32_t vertexConfigCount;
-   uint32_t maxVertexConfigs;
-
-   VEShaderConfigInternal *shaderConfigs;
-   uint32_t shaderConfigCount;
-   uint32_t maxShaderConfigs;
+   VEDrawStateInternal *drawStates;
+   uint32_t drawStateCount;
+   uint32_t maxDrawStates;
 
    VkDescriptorPool descriptorPool;
    VkDescriptorSetLayout textureDescriptorSetLayout;
@@ -561,7 +587,7 @@ struct VEDeviceInternal
    VEPerformanceStats performanceStats;
    VEPerformanceStats frameStats;
    VEMemoryStats memoryStats;
-   VERenderConfigStats renderConfigStats;
+   VEPipelineStats pipelineStats;
    double lastFrameTimestampSeconds{0.0};
 
    std::unique_ptr<VEDeviceQueueLocks> queueLocks;
