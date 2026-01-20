@@ -360,8 +360,8 @@ veCreateRenderConfig(device, &configDesc, &config);
 
 In `VERenderConfigDesc`, any pointer field can be `NULL` to request defaults:
 
-- `viewportConfig == NULL`: defaults to `{ x=0, y=0, width=800, height=600, minDepth=0, maxDepth=1 }`
-- `scissorConfig == NULL`: defaults to `{ x=0, y=0, width=800, height=600 }`
+- `viewportConfig == NULL`: defaults to **render area** (from `veBeginRendering`): `{ x=renderAreaX, y=renderAreaY, width=renderAreaWidth, height=renderAreaHeight, minDepth=0, maxDepth=1 }`
+- `scissorConfig == NULL`: defaults to **render area**: `{ x=renderAreaX, y=renderAreaY, width=renderAreaWidth, height=renderAreaHeight }`
 - `rasterConfig == NULL`: defaults to:
   - `cullMode = VK_CULL_MODE_BACK_BIT`
   - `frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE`
@@ -385,7 +385,7 @@ In `VERenderConfigDesc`, any pointer field can be `NULL` to request defaults:
 - `vertexInputConfig == NULL`: defaults to:
   - no bindings/attributes, `topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST`, `primitiveRestartEnable = false`
 
-**Important**: The default viewport/scissor in render configs are fixed at **800×600**. For most apps, prefer using `veApplyRenderState()` with `viewport=NULL` / `scissor=NULL` (inside a render pass) so they default to the **current render area** instead.
+**Important**: The default viewport/scissor in render configs now follow the **current render area** when applied during rendering. Applying a render config outside of `veBeginRendering` will result in an error if defaults are needed.
 ```
 
 ## The Render Loop
@@ -1062,15 +1062,28 @@ Waits for all GPU work to complete. Call before destroying resources.
 
 ---
 
-### veGetVkInstance / veGetVkDevice / veGetVkPhysicalDevice
+### Vulkan Handle Accessors (escape hatches)
 
 ```c
 VkInstance veGetVkInstance(VEContext* context);
 VkDevice veGetVkDevice(VEDevice* device);
 VkPhysicalDevice veGetVkPhysicalDevice(VEDevice* device);
+VkQueue veGetVkGraphicsQueue(VEDevice* device);
+VkQueue veGetVkComputeQueue(VEDevice* device);
+VkQueue veGetVkTransferQueue(VEDevice* device);
+VkFence veGetVkCommandBufferFence(VECommandBuffer* cmd);
+
+VkBuffer veGetVkBufferFromAddress(VEDevice* device, VEBufferAddress address);
+VkImage veGetVkImageFromTexture(VEDevice* device, VETextureIndex texture);
+VkImageView veGetVkImageViewFromTexture(VEDevice* device, VETextureIndex texture);
+VkSampler veGetVkSamplerFromIndex(VEDevice* device, VESamplerIndex sampler);
+
+VkSwapchainKHR veGetVkSwapchain(VESwapchain* swapchain);
+VkImage veGetVkSwapchainImage(VESwapchain* swapchain, uint32_t imageIndex);
+VkImageView veGetVkSwapchainImageView(VESwapchain* swapchain, uint32_t imageIndex);
 ```
 
-Returns underlying Vulkan handles for custom extension use.
+Returns underlying Vulkan handles for custom extension use. Returned handles are **owned by VulkEase**; do not destroy them directly.
 
 ---
 
@@ -1079,6 +1092,7 @@ Returns underlying Vulkan handles for custom extension use.
 VulkEase no longer exposes a global “last error string” API. For diagnostics:
 
 - Enable Vulkan validation and use the **debug message callback** (`veSetMessageCallback`).
+- Use `veSetMinMessageSeverity` to filter messages globally.
 - Many functions return `VEResult`; convert it to text with `veResultToString`.
 
 ---

@@ -1453,6 +1453,22 @@ VEResult veApplyRenderConfig(VECommandBuffer *cmd, VERenderConfig *config)
       viewport.height = configInternal->viewport.height;
       viewport.minDepth = configInternal->viewport.minDepth;
       viewport.maxDepth = configInternal->viewport.maxDepth;
+
+      if (viewport.width <= 0.0f || viewport.height <= 0.0f)
+      {
+         if (!internal->inRenderPass)
+         {
+            veSetError("veApplyRenderConfig: default viewport requires active rendering");
+            return VE_ERROR_INVALID_PARAMETER;
+         }
+         viewport.x = static_cast<float>(internal->renderAreaX);
+         viewport.y = static_cast<float>(internal->renderAreaY);
+         viewport.width = static_cast<float>(internal->renderAreaWidth);
+         viewport.height = static_cast<float>(internal->renderAreaHeight);
+         viewport.minDepth = 0.0f;
+         viewport.maxDepth = 1.0f;
+      }
+
       vkCmdSetViewportWithCount(vkCmd, 1, &viewport);
    }
 
@@ -1463,6 +1479,19 @@ VEResult veApplyRenderConfig(VECommandBuffer *cmd, VERenderConfig *config)
       scissor.offset.y = configInternal->scissor.y;
       scissor.extent.width = configInternal->scissor.width;
       scissor.extent.height = configInternal->scissor.height;
+
+      if (scissor.extent.width == 0 || scissor.extent.height == 0)
+      {
+         if (!internal->inRenderPass)
+         {
+            veSetError("veApplyRenderConfig: default scissor requires active rendering");
+            return VE_ERROR_INVALID_PARAMETER;
+         }
+         scissor.offset.x = static_cast<int32_t>(internal->renderAreaX);
+         scissor.offset.y = static_cast<int32_t>(internal->renderAreaY);
+         scissor.extent.width = internal->renderAreaWidth;
+         scissor.extent.height = internal->renderAreaHeight;
+      }
 
       vkCmdSetScissorWithCount(vkCmd, 1, &scissor);
    }

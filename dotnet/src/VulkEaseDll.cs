@@ -108,10 +108,10 @@ namespace VulkEase
         }
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veSetMessageCallback(IntPtr context, ref VEMessageCallbackDesc desc);
+        internal static extern VEResult veSetMessageCallback(ref VEMessageCallbackDesc desc);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veSetMinMessageSeverity(IntPtr context, VEMessageSeverity minSeverity);
+        internal static extern VEResult veSetMinMessageSeverity(VEMessageSeverity minSeverity);
 
         // Vulkan handle accessors
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
@@ -418,6 +418,15 @@ namespace VulkEase
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern IntPtr veGetVkSamplerFromIndex(IntPtr device, UInt32 samplerIndex);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr veGetVkSwapchain(IntPtr swapchain);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr veGetVkSwapchainImage(IntPtr swapchain, UInt32 imageIndex);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr veGetVkSwapchainImageView(IntPtr swapchain, UInt32 imageIndex);
 
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
