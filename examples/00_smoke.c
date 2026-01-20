@@ -43,10 +43,10 @@ int main(void)
       return fail("veCreateContext", result);
 
    VEMessageCallbackDesc cb = {.callback = onMessage, .userData = NULL};
-   result = veSetMessageCallback(context, &cb);
+   result = veSetMessageCallback(&cb);
    if (result != VE_SUCCESS)
       return fail("veSetMessageCallback", result);
-   (void)veSetMinMessageSeverity(context, VE_MESSAGE_SEVERITY_VERBOSE);
+   (void)veSetMinMessageSeverity(VE_MESSAGE_SEVERITY_VERBOSE);
 
    result = veCreateDevice(context, VK_NULL_HANDLE, NULL, 0, &device);
    if (result != VE_SUCCESS || !device)
@@ -85,7 +85,7 @@ int main(void)
    }
    // Those errors were intentional; reset so we can detect unexpected errors later.
    atomic_store(&g_errorMessages, 0);
-   fprintf(stderr, "[smoke] Reset error messages\n");
+   
 
    // Texture create + escape hatches + host copy
    VETextureIndex tex = VE_INVALID_TEXTURE_INDEX;

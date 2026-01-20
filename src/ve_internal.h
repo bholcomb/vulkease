@@ -75,10 +75,6 @@ struct VEContextInternal
    bool validationEnabled;
    char applicationName[256];
 
-   // Debug / diagnostic callback (may be NULL)
-   VEMessageCallback messageCallback{nullptr};
-   void *messageCallbackUserData{nullptr};
-   VEMessageSeverity messageCallbackMinSeverity{VE_MESSAGE_SEVERITY_INFO};
 };
 
 struct VEQueueFamilies

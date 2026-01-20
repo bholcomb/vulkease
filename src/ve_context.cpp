@@ -66,24 +66,27 @@ VEFuncs veFuncs;
 // Error Handling
 // =============================================================================
 
-// Best-effort routing target for internal diagnostics (single-context-friendly).
-static std::atomic<VEContextInternal *> g_messageContext{nullptr};
+// Global diagnostic callback routing (pre-context and multi-context friendly).
+static std::atomic<VEMessageCallback> g_messageCallback{nullptr};
+static std::atomic<void *> g_messageCallbackUserData{nullptr};
+static std::atomic<VEMessageSeverity> g_messageMinSeverity{VE_MESSAGE_SEVERITY_INFO};
 
-static void veEmitMessage(VEContextInternal *context, VEMessageSeverity severity, const char *message) noexcept
+static void veEmitMessage(VEMessageSeverity severity, const char *message) noexcept
 {
    if (!message)
       return;
 
-   // Apply severity filtering (if context exists; otherwise treat as error and print).
-   if (context && severity < context->messageCallbackMinSeverity)
+   // Apply severity filtering.
+   if (severity < g_messageMinSeverity.load())
    {
       return;
    }
 
    // Prefer user callback if installed and severity passes the filter.
-   if (context && context->messageCallback)
+   VEMessageCallback callback = g_messageCallback.load();
+   if (callback)
    {
-      context->messageCallback(severity, message, context->messageCallbackUserData);
+      callback(severity, message, g_messageCallbackUserData.load());
       return;
    }
 
@@ -114,7 +117,7 @@ void veSetError(const char *format, ...)
    va_start(args, format);
    vsnprintf(buffer, sizeof(buffer), format, args);
    va_end(args);
-   veEmitMessage(g_messageContext.load(), VE_MESSAGE_SEVERITY_ERROR, buffer);
+   veEmitMessage(VE_MESSAGE_SEVERITY_ERROR, buffer);
 }
 
 const char *getMessageTypeString(VkDebugUtilsMessageTypeFlagsEXT messageType)
@@ -141,8 +144,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityF
                                                     void *pUserData)
 {
    (void)messageType;
-
-   VEContextInternal *context = (VEContextInternal *)pUserData;
+   (void)pUserData;
    VEMessageSeverity sev = VE_MESSAGE_SEVERITY_INFO;
    if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
       sev = VE_MESSAGE_SEVERITY_ERROR;
@@ -155,7 +157,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityF
 
    if (pCallbackData && pCallbackData->pMessage)
    {
-      veEmitMessage(context, sev, pCallbackData->pMessage);
+      veEmitMessage(sev, pCallbackData->pMessage);
    }
    return VK_FALSE;
 }
@@ -776,15 +778,12 @@ VEResult veCreateContext(const char *applicationName,
                                     VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
                                     VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
       debugCreateInfo.pfnUserCallback = debugCallback;
-      debugCreateInfo.pUserData = context;
+      debugCreateInfo.pUserData = NULL;
 
       veFuncs.vkCreateDebugUtilsMessengerEXT(context->instance, &debugCreateInfo, NULL, &context->debugMessenger);
 
       context->validationEnabled = true;
    }
-
-   // Best-effort message routing target for internal diagnostics.
-   g_messageContext.store(context);
 
    *outContext = (VEContext *)context;
    return VE_SUCCESS;
@@ -800,10 +799,6 @@ VEResult veDestroyContext(VEContext *context)
 
    VEContextInternal *internal = (VEContextInternal *)context;
 
-   // Clear message routing if this was the active context.
-   VEContextInternal *expected = internal;
-   (void)g_messageContext.compare_exchange_strong(expected, nullptr);
-
    if (internal->debugMessenger)
    {
       veFuncs.vkDestroyDebugUtilsMessengerEXT(internal->instance, internal->debugMessenger, NULL);
@@ -818,43 +813,29 @@ VEResult veDestroyContext(VEContext *context)
    return VE_SUCCESS;
 }
 
-VEResult veSetMessageCallback(VEContext *context, const VEMessageCallbackDesc *desc)
+VEResult veSetMessageCallback(const VEMessageCallbackDesc *desc)
 {
-   if (!context)
-   {
-      veSetError("Context cannot be NULL");
-      return VE_ERROR_INVALID_PARAMETER;
-   }
-
-   VEContextInternal *internal = (VEContextInternal *)context;
    if (!desc || !desc->callback)
    {
-      internal->messageCallback = nullptr;
-      internal->messageCallbackUserData = nullptr;
+      g_messageCallback.store(nullptr);
+      g_messageCallbackUserData.store(nullptr);
       return VE_SUCCESS;
    }
 
-   internal->messageCallback = desc->callback;
-   internal->messageCallbackUserData = desc->userData;
+   g_messageCallback.store(desc->callback);
+   g_messageCallbackUserData.store(desc->userData);
    return VE_SUCCESS;
 }
 
-VEResult veSetMinMessageSeverity(VEContext *context, VEMessageSeverity minSeverity)
+VEResult veSetMinMessageSeverity(VEMessageSeverity minSeverity)
 {
-   if (!context)
-   {
-      veSetError("Context cannot be NULL");
-      return VE_ERROR_INVALID_PARAMETER;
-   }
-
    if (minSeverity < VE_MESSAGE_SEVERITY_VERBOSE || minSeverity > VE_MESSAGE_SEVERITY_ERROR)
    {
       veSetError("Invalid message severity");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   VEContextInternal *internal = (VEContextInternal *)context;
-   internal->messageCallbackMinSeverity = minSeverity;
+   g_messageMinSeverity.store(minSeverity);
    return VE_SUCCESS;
 }
 

@@ -26,8 +26,8 @@
 #include <stddef.h>
 
 // Window settings
-#define WINDOW_WIDTH 800
-#define WINDOW_HEIGHT 600
+#define WINDOW_WIDTH 1920
+#define WINDOW_HEIGHT 1280
 #define WINDOW_TITLE "VulkEase - Spinning Cube"
 
 #if DEBUG

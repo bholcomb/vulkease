@@ -872,6 +872,54 @@ VkFormat veGetSwapchainFormat(VESwapchain *swapchain)
    return internal->currentFormat();
 }
 
+VkSwapchainKHR veGetVkSwapchain(VESwapchain *swapchain)
+{
+   if (!swapchain)
+   {
+      veSetError("veGetVkSwapchain: swapchain cannot be NULL");
+      return VK_NULL_HANDLE;
+   }
+
+   VESwapchainInternal *internal = reinterpret_cast<VESwapchainInternal *>(swapchain);
+   return internal->swapchain;
+}
+
+VkImage veGetVkSwapchainImage(VESwapchain *swapchain, uint32_t imageIndex)
+{
+   if (!swapchain)
+   {
+      veSetError("veGetVkSwapchainImage: swapchain cannot be NULL");
+      return VK_NULL_HANDLE;
+   }
+
+   VESwapchainInternal *internal = reinterpret_cast<VESwapchainInternal *>(swapchain);
+   if (imageIndex >= internal->imageCount)
+   {
+      veSetError("veGetVkSwapchainImage: imageIndex %u out of range (count=%u)", imageIndex, internal->imageCount);
+      return VK_NULL_HANDLE;
+   }
+
+   return internal->images[imageIndex];
+}
+
+VkImageView veGetVkSwapchainImageView(VESwapchain *swapchain, uint32_t imageIndex)
+{
+   if (!swapchain)
+   {
+      veSetError("veGetVkSwapchainImageView: swapchain cannot be NULL");
+      return VK_NULL_HANDLE;
+   }
+
+   VESwapchainInternal *internal = reinterpret_cast<VESwapchainInternal *>(swapchain);
+   if (imageIndex >= internal->imageCount)
+   {
+      veSetError("veGetVkSwapchainImageView: imageIndex %u out of range (count=%u)", imageIndex, internal->imageCount);
+      return VK_NULL_HANDLE;
+   }
+
+   return internal->imageViews[imageIndex];
+}
+
 // =============================================================================
 // Swapchain Recreation
 // =============================================================================

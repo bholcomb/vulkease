@@ -649,16 +649,16 @@ extern "C"
    VULKEASE_API VkFence veGetVkCommandBufferFence(VECommandBuffer *cmd);
 
    /**
-    * Set a debug / diagnostic message callback for the given context.
+    * Set a global debug / diagnostic message callback.
     * The callback is used for internal diagnostics and (when enabled) Vulkan validation messages.
     */
-   VULKEASE_API VEResult veSetMessageCallback(VEContext *context, const VEMessageCallbackDesc *desc);
+   VULKEASE_API VEResult veSetMessageCallback(const VEMessageCallbackDesc *desc);
 
    /**
-    * Set the minimum message severity that will be emitted.
+    * Set the global minimum message severity that will be emitted.
     * Applies to both the installed callback (if any) and the default stderr fallback.
     */
-   VULKEASE_API VEResult veSetMinMessageSeverity(VEContext *context, VEMessageSeverity minSeverity);
+   VULKEASE_API VEResult veSetMinMessageSeverity(VEMessageSeverity minSeverity);
 
    // =============================================================================
    // Vulkan Escape Hatches (underlying objects)
@@ -668,6 +668,9 @@ extern "C"
    VULKEASE_API VkImage veGetVkImageFromTexture(VEDevice *device, VETextureIndex texture);
    VULKEASE_API VkImageView veGetVkImageViewFromTexture(VEDevice *device, VETextureIndex texture);
    VULKEASE_API VkSampler veGetVkSamplerFromIndex(VEDevice *device, VESamplerIndex sampler);
+   VULKEASE_API VkSwapchainKHR veGetVkSwapchain(VESwapchain *swapchain);
+   VULKEASE_API VkImage veGetVkSwapchainImage(VESwapchain *swapchain, uint32_t imageIndex);
+   VULKEASE_API VkImageView veGetVkSwapchainImageView(VESwapchain *swapchain, uint32_t imageIndex);
 
    // =============================================================================
    // Buffer Management (Buffer Device Address)

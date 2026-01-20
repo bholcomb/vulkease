@@ -159,8 +159,8 @@ VEViewport veDefaultViewportConfig()
    VEViewport config{};
    config.x = 0.0f;
    config.y = 0.0f;
-   config.width = 800.0f;
-   config.height = 600.0f;
+   config.width = 0.0f;
+   config.height = 0.0f;
    config.minDepth = 0.0f;
    config.maxDepth = 1.0f;
    return config;
@@ -171,8 +171,8 @@ VERect2D veDefaultScissorConfig()
    VERect2D config{};
    config.x = 0;
    config.y = 0;
-   config.width = 800;
-   config.height = 600;
+   config.width = 0;
+   config.height = 0;
    return config;
 }
 

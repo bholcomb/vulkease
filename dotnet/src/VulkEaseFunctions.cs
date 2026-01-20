@@ -1102,6 +1102,21 @@ namespace VulkEase
             return VulkEaseDll.veGetVkSamplerFromIndex(device.native, sampler.native);
         }
 
+        public static IntPtr GetVkSwapchain(VESwapchain swapchain)
+        {
+            return VulkEaseDll.veGetVkSwapchain(swapchain.native);
+        }
+
+        public static IntPtr GetVkSwapchainImage(VESwapchain swapchain, uint imageIndex)
+        {
+            return VulkEaseDll.veGetVkSwapchainImage(swapchain.native, imageIndex);
+        }
+
+        public static IntPtr GetVkSwapchainImageView(VESwapchain swapchain, uint imageIndex)
+        {
+            return VulkEaseDll.veGetVkSwapchainImageView(swapchain.native, imageIndex);
+        }
+
         // veSubmitCommandBufferEx was removed from the native API. Use SubmitCommandBuffer(...) instead.
 
         public static VEResult ResetCommandBuffer(VECommandBuffer cmd)
