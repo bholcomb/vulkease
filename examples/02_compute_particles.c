@@ -391,7 +391,6 @@ static void renderParticles(VECommandBuffer* cmd) {
     veBeginRendering(cmd, &g_renderingInfo);
     
     // Bind graphics pipeline and apply state (includes shaders and alpha blending)
-    veBindGraphicsPipeline(cmd, g_pipeline);
     veApplyGraphicsState(cmd, g_pipeline, NULL, NULL, NULL);
     
     // Set graphics push constants
