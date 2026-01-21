@@ -83,8 +83,7 @@ VEResult veApplyGraphicsState(VECommandBuffer *cmd, VEGraphicsPipeline *pipeline
          return r;
    }
 
-   // Apply draw state if provided
-   if (drawState)
+   // Apply draw state (always call - applies defaults if NULL, which is required for shader objects)
    {
       VEResult r = veApplyDrawState(cmd, drawState);
       if (r != VE_SUCCESS)
@@ -185,8 +184,7 @@ VEResult veBindGraphicsPipeline(VECommandBuffer *cmd, VEGraphicsPipeline *pipeli
    if (pipelineInternal->tessControlShader) internal->boundShaders |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
    if (pipelineInternal->tessEvalShader) internal->boundShaders |= VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
 
-   // Set vertex input
-   if (pipelineInternal->vertexBindingCount > 0 || pipelineInternal->vertexAttributeCount > 0)
+   // Set vertex input (always call, even with zero bindings/attributes for shader objects)
    {
       VkVertexInputBindingDescription2EXT bindings[VE_MAX_VERTEX_BINDINGS];
       VkVertexInputAttributeDescription2EXT attrs[VE_MAX_VERTEX_ATTRIBUTES];
@@ -287,11 +285,10 @@ VEResult veBindGraphicsPipeline(VECommandBuffer *cmd, VEGraphicsPipeline *pipeli
    vkCmdSetCullMode(vkCmd, pipelineInternal->cullMode);
    vkCmdSetFrontFace(vkCmd, pipelineInternal->frontFace);
 
-   // Set multisampling
-   if (pipelineInternal->sampleShadingEnable)
-   {
-      // Note: sample shading requires VK_EXT_extended_dynamic_state3
-   }
+   // Set multisampling state (required for shader objects)
+   veFuncs.vkCmdSetRasterizationSamplesEXT(vkCmd, VK_SAMPLE_COUNT_1_BIT);
+   VkSampleMask sampleMask = 0xFFFFFFFF;
+   veFuncs.vkCmdSetSampleMaskEXT(vkCmd, VK_SAMPLE_COUNT_1_BIT, &sampleMask);
 
    return VE_SUCCESS;
 }
