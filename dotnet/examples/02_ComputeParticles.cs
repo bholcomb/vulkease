@@ -478,8 +478,8 @@ namespace VulkEaseExamples
             VulkEase.VulkEase.SetViewport(cmd, 0.0f, 0.0f, width, height, 0.0f, 1.0f);
             VulkEase.VulkEase.SetScissor(cmd, 0, 0, width, height);
 
-            // Bind graphics pipeline (with alpha blending)
-            VulkEase.VulkEase.BindGraphicsPipeline(cmd, _pipeline);
+            // Apply graphics state (sets required dynamic states for shader objects)
+            VulkEase.VulkEase.ApplyGraphicsState(cmd, _pipeline, null, null, null);
 
             // Bind graphics shaders
             VulkEase.VulkEase.BindShader(cmd, _vertexShader);

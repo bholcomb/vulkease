@@ -281,10 +281,7 @@ static void render() {
     
     // Begin rendering (automatically handles texture transitions)
     veBeginRendering(cmd, &g_renderingInfo);
-    
-    // Bind graphics pipeline (includes shaders and state)
-    veBindGraphicsPipeline(cmd, g_pipeline);
-    
+  
     // Apply graphics state (NULL viewport/scissor uses full render area)
     veApplyGraphicsState(cmd, g_pipeline, NULL, NULL, NULL);
     

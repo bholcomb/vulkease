@@ -1401,9 +1401,6 @@ VEResult veEndRendering(VECommandBuffer *cmd)
    return VE_SUCCESS;
 }
 
-// Note: Render state application has been replaced by veBindGraphicsPipeline and veApplyDrawState
-// See ve_draw.cpp for the new implementation
-
 // =============================================================================
 // Shader Binding
 // =============================================================================
@@ -1465,9 +1462,6 @@ VEResult veBindShaders(VECommandBuffer *cmd, uint32_t shaderCount, VEShader *con
    }
    return VE_SUCCESS;
 }
-
-// Note: veBindShaderConfig has been replaced by veBindGraphicsPipeline
-// See ve_draw.cpp for the new implementation
 
 VEResult veUnbindShaderStage(VECommandBuffer *cmd, VkShaderStageFlags stage)
 {

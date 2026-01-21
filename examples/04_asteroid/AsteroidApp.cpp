@@ -727,7 +727,6 @@ void AsteroidApp::recordChunks(uint32_t width, uint32_t height, std::vector<Reco
 
       // With VK_EXT_shader_object, dynamic state is NOT inherited by secondary command buffers.
       // Each secondary must set all required state before drawing.
-      veBindGraphicsPipeline(cmd, pipeline_);
       veApplyGraphicsState(cmd, pipeline_, nullptr, nullptr, nullptr);
 
       VEGraphicsPushConstants push = VE_INIT_GRAPHICS_PUSH_CONSTANTS();

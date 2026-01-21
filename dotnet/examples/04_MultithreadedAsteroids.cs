@@ -823,7 +823,8 @@ namespace VulkEaseExamples
 
             var cmd = BeginSecondaryCommandBuffer(_device, desc);
 
-            BindGraphicsPipeline(cmd, _pipeline);
+            // Apply graphics state (sets required dynamic states for shader objects)
+            ApplyGraphicsState(cmd, _pipeline, null, null, null);
             SetViewport(cmd, 0.0f, 0.0f, ClientSize.X, ClientSize.Y, 0.0f, 1.0f);
             SetScissor(cmd, 0, 0, (uint)ClientSize.X, (uint)ClientSize.Y);
 

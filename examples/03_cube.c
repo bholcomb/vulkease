@@ -486,7 +486,6 @@ static void renderFrame(CubeApp* app) {
     veBeginRendering(cmd, &app->renderingInfo);
     
     // Bind graphics pipeline and apply state
-    veBindGraphicsPipeline(cmd, app->pipeline);
     veApplyGraphicsState(cmd, app->pipeline, NULL, NULL, NULL);
     
     // Set up push constants with bindless resource indices

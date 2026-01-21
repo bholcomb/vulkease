@@ -19,8 +19,8 @@ namespace VulkEaseExamples
     /// </summary>
     public class CubeExample : GameWindow
     {
-        private const int WindowWidth = 800;
-        private const int WindowHeight = 600;
+        private const int WindowWidth = 1920;
+        private const int WindowHeight = 1080;
         private const bool EnableVSync = true;
         private const float PI = MathF.PI;
 
@@ -568,8 +568,8 @@ namespace VulkEaseExamples
                 VE.SetViewport(cmd, 0.0f, 0.0f, width, height, 0.0f, 1.0f);
                 VE.SetScissor(cmd, 0, 0, width, height);
 
-                // Bind graphics pipeline (shaders and render state)
-                VE.BindGraphicsPipeline(cmd, _pipeline);
+                // Apply graphics state (sets required dynamic states for shader objects)
+                VE.ApplyGraphicsState(cmd, _pipeline, null, null, null);
 
                 // Set up push constants with bindless resource indices
                 var pushConstants = new VEGraphicsPushConstants
