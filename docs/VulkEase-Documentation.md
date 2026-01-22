@@ -30,6 +30,7 @@ VulkEase is a modern graphics API built on Vulkan 1.4+ that provides the power o
 | **Render Targets** | All rendering goes to offscreen targets, then blits to swapchain. |
 | **Secondary Command Buffers** | Record command buffers in parallel across threads. |
 | **Graphics Pipelines** | Shader + material state in one object. Draw state for per-draw overrides. |
+| **Mesh Shaders** | Optional support for `VK_EXT_mesh_shader` task and mesh shaders. |
 | **Custom Extensions** | Enable additional Vulkan extensions for advanced features. |
 | **Multi-GPU Support** | Enumerate and select specific GPUs. |
 
@@ -55,6 +56,8 @@ VulkEase replaces all of this with a clean, modern API.
   - `VK_EXT_extended_dynamic_state3`
   - `VK_EXT_vertex_input_dynamic_state`
   - `VK_EXT_host_image_copy`
+- **Optional extensions** (for advanced features):
+  - `VK_EXT_mesh_shader` - Mesh and task shaders (NVIDIA Turing+, AMD RDNA2+, Intel Arc)
 - **Platforms**: Windows, Linux (X11/Wayland), macOS (via MoltenVK)
 
 ---
@@ -224,6 +227,56 @@ VEShader* fragmentShader = veLoadShaderFromFile(device, "shader.frag.spv",
 veBindShader(cmd, vertexShader);
 veBindShader(cmd, fragmentShader);
 ```
+
+### Mesh Shaders (Optional)
+
+VulkEase supports **mesh shaders** via `VK_EXT_mesh_shader` for GPU-driven geometry processing. Mesh shaders replace the traditional vertex/geometry pipeline with a more flexible compute-like approach.
+
+```c
+// Check if mesh shaders are supported
+if (veIsMeshShaderSupported(device)) {
+    // Load mesh shader (and optional task shader)
+    VEShader* meshShader = veLoadShaderFromFile(device, "mesh.mesh.spv",
+        VK_SHADER_STAGE_MESH_BIT_EXT, "main", "MyMeshShader");
+    
+    VEShader* taskShader = veLoadShaderFromFile(device, "mesh.task.spv",
+        VK_SHADER_STAGE_TASK_BIT_EXT, "main", "MyTaskShader");  // Optional
+    
+    VEShader* fragmentShader = veLoadShaderFromFile(device, "mesh.frag.spv",
+        VK_SHADER_STAGE_FRAGMENT_BIT, "main", "MyFragmentShader");
+}
+```
+
+Create a mesh shader pipeline:
+
+```c
+VEGraphicsPipelineDesc desc = veDefaultGraphicsPipelineDesc();
+desc.meshShader = meshShader;       // Required for mesh pipeline
+desc.taskShader = taskShader;       // Optional (amplification shader)
+desc.fragmentShader = fragmentShader;
+desc.debugName = "MeshPipeline";
+
+VEGraphicsPipeline* pipeline = NULL;
+veCreateGraphicsPipeline(device, &desc, &pipeline);
+```
+
+Draw with mesh shaders:
+
+```c
+veBindGraphicsPipeline(cmd, pipeline);
+veSetViewport(cmd, 0, 0, width, height, 0.0f, 1.0f);
+veSetScissor(cmd, 0, 0, width, height);
+
+// Issue mesh shader draw (workgroup counts, not vertex counts)
+veDrawMeshTasks(cmd, groupCountX, groupCountY, groupCountZ);
+
+// Or use indirect drawing for GPU-driven rendering
+veDrawMeshTasksIndirect(cmd, indirectBuffer, offset, drawCount, stride);
+veDrawMeshTasksIndirectCount(cmd, indirectBuffer, indirectOffset,
+                             countBuffer, countOffset, maxDrawCount, stride);
+```
+
+**Note**: When a mesh shader is bound, the vertex input stage is bypassed. Mesh shaders generate primitives directly, so `vertexShader`, `geometryShader`, and tessellation shaders are ignored.
 
 ### Graphics Pipelines
 
@@ -947,7 +1000,7 @@ The header is organized into 41 sections covering all aspects of the API:
 30. Viewport & Scissor Functions
 31. Dynamic State Functions
 32. Push Constants & Buffer Binding
-33. Draw Commands
+33. Draw Commands (including Mesh Shader draws)
 34. Clear Commands
 35. Query Functions
 36. Compute Functions
@@ -956,5 +1009,18 @@ The header is organized into 41 sections covering all aspects of the API:
 39. Render Target Functions
 40. Debug & Profiling Functions
 41. Frame Timing Functions
+
+### Mesh Shader Functions
+
+The following functions are available for mesh shader rendering (requires `VK_EXT_mesh_shader` support):
+
+| Function | Description |
+|----------|-------------|
+| `veIsMeshShaderSupported` | Check if device supports mesh shaders |
+| `veDrawMeshTasks` | Issue mesh shader draw with workgroup counts |
+| `veDrawMeshTasksIndirect` | Indirect mesh shader draw |
+| `veDrawMeshTasksIndirectCount` | Indirect mesh draw with GPU-driven count |
+
+Use `taskShader` and `meshShader` fields in `VEGraphicsPipelineDesc` to create mesh shader pipelines.
 
 To generate HTML documentation from the header, run Doxygen with the provided configuration (if available) or use a tool like `doxygen -g` to generate a config and point it at `src/vulkease.h`.
