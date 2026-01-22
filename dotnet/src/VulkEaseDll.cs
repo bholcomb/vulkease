@@ -194,6 +194,12 @@ namespace VulkEase
         internal static extern VEResult veDestroyTexture(IntPtr device, UInt32 index);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veImportExternalTexture(IntPtr device, ref VEExternalTextureDesc desc, out UInt32 outIndex);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veReleaseExternalTexture(IntPtr device, UInt32 index);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VkExtent3D veGetTextureSize(IntPtr device, UInt32 index);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]

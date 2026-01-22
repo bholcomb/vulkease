@@ -203,6 +203,22 @@ typedef struct VETextureDesc
    const char *debugName; // Debug name (optional)
 } VETextureDesc;
 
+// External texture import descriptor
+// Used to import VkImage handles from external sources (e.g., OpenXR, OpenVR)
+typedef struct VEExternalTextureDesc
+{
+   VkImage image;                  // External VkImage handle (required, NOT owned by VulkEase)
+   VkFormat format;                // Image format (required)
+   uint32_t width;                 // Image width
+   uint32_t height;                // Image height
+   uint32_t depth;                 // Image depth (1 for 2D textures)
+   uint32_t mipLevels;             // Number of mip levels
+   uint32_t arrayLayers;           // Number of array layers
+   VkImageViewType viewType;       // VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_VIEW_TYPE_CUBE, etc.
+   VkImageAspectFlags aspectMask;  // VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, etc.
+   const char *debugName;          // Debug name (optional)
+} VEExternalTextureDesc;
+
 // Sampler creation descriptor
 typedef struct VESamplerDesc
 {
@@ -1851,6 +1867,51 @@ VULKEASE_API VEResult veLoadHDRTexture(VEDevice *device, const char *filename, V
  */
 VULKEASE_API VEResult veLoadCubeTexture(VEDevice *device, const char *filenames[6], VkImageUsageFlags usage,
                                         bool generateMips, VETextureIndex *outIndex);
+
+/**
+ * @brief Import an external VkImage as a VulkEase texture.
+ *
+ * Creates a VulkEase texture wrapper around an externally-owned VkImage.
+ * This is useful for integrating with VR runtimes (OpenXR, OpenVR) or other
+ * Vulkan libraries that provide their own images.
+ *
+ * @param[in] device Valid VulkEase device.
+ * @param[in] desc External texture descriptor with image handle and metadata.
+ * @param[out] outIndex Receives the texture index.
+ *
+ * @return VE_SUCCESS on success, or:
+ *         - VE_ERROR_INVALID_PARAMETER if device, desc, or outIndex is NULL
+ *         - VE_ERROR_INVALID_PARAMETER if desc->image is VK_NULL_HANDLE
+ *         - VE_ERROR_OUT_OF_MEMORY if no free texture slots available
+ *
+ * @note The VkImage is NOT owned by VulkEase. The caller must ensure the image
+ *       remains valid for the lifetime of the imported texture and must destroy
+ *       the VkImage after calling veReleaseExternalTexture().
+ * @note VulkEase creates and owns the VkImageView for the imported image.
+ *
+ * @see VEExternalTextureDesc, veReleaseExternalTexture
+ */
+VULKEASE_API VEResult veImportExternalTexture(VEDevice *device, const VEExternalTextureDesc *desc,
+                                              VETextureIndex *outIndex);
+
+/**
+ * @brief Release an imported external texture.
+ *
+ * Releases the VulkEase resources associated with an imported texture (VkImageView,
+ * descriptor slot) but does NOT destroy the underlying VkImage since it is externally owned.
+ *
+ * @param[in] device Valid VulkEase device.
+ * @param[in] index Texture index of the imported texture. VE_INVALID_TEXTURE_INDEX is a no-op.
+ *
+ * @return VE_SUCCESS on success, or:
+ *         - VE_ERROR_INVALID_PARAMETER if device is NULL or index is invalid
+ *
+ * @note This function is safe to call on non-external textures (will behave like veDestroyTexture).
+ * @note After calling this, the caller is responsible for destroying the external VkImage.
+ *
+ * @see veImportExternalTexture
+ */
+VULKEASE_API VEResult veReleaseExternalTexture(VEDevice *device, VETextureIndex index);
 
 /**
  * @brief Write data to a region of a texture from the CPU.
