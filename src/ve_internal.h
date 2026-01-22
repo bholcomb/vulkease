@@ -282,6 +282,7 @@ struct VETextureInternal
    VkImageLayout currentLayout; // Track current layout for optimized transitions
    char debugName[VE_MAX_DEBUG_NAME_LENGTH];
    bool isValid;
+   bool isExternal; // If true, VkImage is not owned by VulkEase (imported from external source)
    uint32_t index;
 };
 

@@ -951,6 +951,47 @@ namespace VulkEase
         }
 
         /// <summary>
+        /// Import an external VkImage as a VulkEase texture.
+        /// </summary>
+        /// <param name="device">Valid VulkEase device.</param>
+        /// <param name="desc">External texture descriptor with VkImage handle and metadata.</param>
+        /// <returns>Bindless texture index for the imported image.</returns>
+        /// <exception cref="InvalidOperationException">Thrown if import fails.</exception>
+        /// <remarks>
+        /// This is useful for integrating with VR runtimes (OpenXR, OpenVR) or other
+        /// Vulkan libraries that provide their own images.
+        /// 
+        /// The VkImage is NOT owned by VulkEase - the caller must ensure the image
+        /// remains valid for the lifetime of the imported texture and must destroy
+        /// the VkImage after calling ReleaseExternalTexture().
+        /// 
+        /// VulkEase creates and owns the VkImageView for the imported image.
+        /// </remarks>
+        public static VETextureIndex ImportExternalTexture(VEDevice device, VEExternalTextureDesc desc)
+        {
+            VEResult result = VulkEaseDll.veImportExternalTexture(device.native, ref desc, out uint index);
+            if (result != VEResult.VE_SUCCESS)
+                throw new InvalidOperationException($"veImportExternalTexture failed: {result}");
+            return new VETextureIndex { native = index };
+        }
+
+        /// <summary>
+        /// Release an imported external texture.
+        /// </summary>
+        /// <param name="device">Valid VulkEase device.</param>
+        /// <param name="index">Texture index of the imported texture.</param>
+        /// <remarks>
+        /// Releases the VulkEase resources (VkImageView, descriptor slot) but does NOT
+        /// destroy the underlying VkImage since it is externally owned.
+        /// 
+        /// After calling this, the caller is responsible for destroying the external VkImage.
+        /// </remarks>
+        public static void ReleaseExternalTexture(VEDevice device, VETextureIndex index)
+        {
+            _ = VulkEaseDll.veReleaseExternalTexture(device.native, index.native);
+        }
+
+        /// <summary>
         /// Get the dimensions of a texture.
         /// </summary>
         /// <param name="device">Valid VulkEase device.</param>

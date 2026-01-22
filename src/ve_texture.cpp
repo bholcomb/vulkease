@@ -1126,7 +1126,8 @@ void veDestroyTextureImmediate(VEDeviceInternal *deviceInternal, VETextureIndex 
       vkDestroyImageView(deviceInternal->device, texture->imageView, NULL);
    }
 
-   if (texture->image)
+   // Only destroy VkImage and VMA allocation if we own it (not external)
+   if (!texture->isExternal && texture->image)
    {
       vmaDestroyImage(deviceInternal->allocator, texture->image, texture->allocation);
    }
@@ -1560,6 +1561,150 @@ VEResult veLoadCubeTexture(VEDevice *device, const char *filenames[6], VkImageUs
    }
 
    *outIndex = created;
+   return VE_SUCCESS;
+}
+
+// =============================================================================
+// External Texture Import
+// =============================================================================
+
+VEResult veImportExternalTexture(VEDevice *device, const VEExternalTextureDesc *desc, VETextureIndex *outIndex)
+{
+   if (!device || !desc || !outIndex)
+   {
+      veSetError("veImportExternalTexture: NULL parameter");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   if (desc->image == VK_NULL_HANDLE)
+   {
+      veSetError("veImportExternalTexture: desc->image cannot be VK_NULL_HANDLE");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
+
+   // Allocate a texture index
+   uint32_t index = deviceInternal->allocateTextureIndex();
+   if (index == VE_INVALID_TEXTURE_INDEX)
+   {
+      veSetError("veImportExternalTexture: no free texture slots");
+      return VE_ERROR_OUT_OF_MEMORY;
+   }
+
+   VETextureInternal *texture = &deviceInternal->textures[index];
+
+   // Create VkImageView for the external image
+   VkImageViewCreateInfo viewInfo{};
+   viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+   viewInfo.image = desc->image;
+   viewInfo.viewType = desc->viewType;
+   viewInfo.format = desc->format;
+   viewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+   viewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+   viewInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+   viewInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+   viewInfo.subresourceRange.aspectMask = desc->aspectMask;
+   viewInfo.subresourceRange.baseMipLevel = 0;
+   viewInfo.subresourceRange.levelCount = desc->mipLevels > 0 ? desc->mipLevels : 1;
+   viewInfo.subresourceRange.baseArrayLayer = 0;
+   viewInfo.subresourceRange.layerCount = desc->arrayLayers > 0 ? desc->arrayLayers : 1;
+
+   VkResult result = vkCreateImageView(deviceInternal->device, &viewInfo, nullptr, &texture->imageView);
+   if (result != VK_SUCCESS)
+   {
+      deviceInternal->freeTextureIndex(index);
+      veSetError("veImportExternalTexture: failed to create image view (%s)", veVkResultToString(result));
+      return VE_ERROR_UNKNOWN;
+   }
+
+   // Fill in texture metadata
+   texture->image = desc->image;
+   texture->allocation = VK_NULL_HANDLE; // No VMA allocation - external image
+   texture->allocationInfo = {};
+   texture->width = desc->width;
+   texture->height = desc->height;
+   texture->depth = desc->depth > 0 ? desc->depth : 1;
+   texture->mipLevels = desc->mipLevels > 0 ? desc->mipLevels : 1;
+   texture->arrayLayers = desc->arrayLayers > 0 ? desc->arrayLayers : 1;
+   texture->format = desc->format;
+   texture->usage = 0; // Unknown for external images
+   texture->sampleCount = VK_SAMPLE_COUNT_1_BIT;
+   texture->currentLayout = VK_IMAGE_LAYOUT_UNDEFINED; // Unknown initial layout
+   texture->isValid = true;
+   texture->isExternal = true; // Mark as external - do not destroy VkImage
+   texture->index = index;
+
+   if (desc->debugName)
+   {
+      strncpy(texture->debugName, desc->debugName, VE_MAX_DEBUG_NAME_LENGTH - 1);
+      texture->debugName[VE_MAX_DEBUG_NAME_LENGTH - 1] = '\0';
+
+      // Set debug name on the image view
+      VkDebugUtilsObjectNameInfoEXT nameInfo{};
+      nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+      nameInfo.objectType = VK_OBJECT_TYPE_IMAGE_VIEW;
+      nameInfo.objectHandle = reinterpret_cast<uint64_t>(texture->imageView);
+      nameInfo.pObjectName = texture->debugName;
+      if (veFuncs.vkSetDebugUtilsObjectNameEXT)
+      {
+         veFuncs.vkSetDebugUtilsObjectNameEXT(deviceInternal->device, &nameInfo);
+      }
+   }
+   else
+   {
+      texture->debugName[0] = '\0';
+   }
+
+   // Update bindless descriptor set
+   deviceInternal->updateTextureDescriptor(index);
+
+   deviceInternal->textureCount++;
+   *outIndex = index;
+   return VE_SUCCESS;
+}
+
+VEResult veReleaseExternalTexture(VEDevice *device, VETextureIndex index)
+{
+   if (!device)
+   {
+      veSetError("veReleaseExternalTexture: device cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   if (index == VE_INVALID_TEXTURE_INDEX)
+   {
+      return VE_SUCCESS; // No-op for invalid index
+   }
+
+   VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
+   VETextureInternal *texture = deviceInternal->getTexture(index);
+
+   if (!texture || !texture->isValid)
+   {
+      veSetError("veReleaseExternalTexture: invalid texture index %u", index);
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   // Destroy the image view (we created this)
+   if (texture->imageView != VK_NULL_HANDLE)
+   {
+      vkDestroyImageView(deviceInternal->device, texture->imageView, nullptr);
+      texture->imageView = VK_NULL_HANDLE;
+   }
+
+   // Do NOT destroy VkImage - it's externally owned
+   // Do NOT free VMA allocation - there isn't one for external textures
+
+   // Clear the texture slot
+   texture->image = VK_NULL_HANDLE;
+   texture->isValid = false;
+   texture->isExternal = false;
+   texture->debugName[0] = '\0';
+
+   deviceInternal->freeTextureIndex(index);
+   deviceInternal->textureCount--;
+
    return VE_SUCCESS;
 }
 

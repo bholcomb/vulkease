@@ -239,6 +239,26 @@ namespace VulkEase
         VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT = 0x00000080
     }
 
+    public enum VkImageViewType : Int32
+    {
+        VK_IMAGE_VIEW_TYPE_1D = 0,
+        VK_IMAGE_VIEW_TYPE_2D = 1,
+        VK_IMAGE_VIEW_TYPE_3D = 2,
+        VK_IMAGE_VIEW_TYPE_CUBE = 3,
+        VK_IMAGE_VIEW_TYPE_1D_ARRAY = 4,
+        VK_IMAGE_VIEW_TYPE_2D_ARRAY = 5,
+        VK_IMAGE_VIEW_TYPE_CUBE_ARRAY = 6
+    }
+
+    [Flags]
+    public enum VkImageAspectFlags : UInt32
+    {
+        VK_IMAGE_ASPECT_COLOR_BIT = 0x00000001,
+        VK_IMAGE_ASPECT_DEPTH_BIT = 0x00000002,
+        VK_IMAGE_ASPECT_STENCIL_BIT = 0x00000004,
+        VK_IMAGE_ASPECT_METADATA_BIT = 0x00000008
+    }
+
     [Flags]
     public enum VkBufferUsageFlags : UInt32
     {

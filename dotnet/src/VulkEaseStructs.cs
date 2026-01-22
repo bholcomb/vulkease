@@ -253,6 +253,24 @@ namespace VulkEase
         public string? debugName;
     }
 
+    // External texture import descriptor
+    // Used to import VkImage handles from external sources (e.g., OpenXR, OpenVR)
+    [StructLayout(LayoutKind.Sequential)]
+    public struct VEExternalTextureDesc
+    {
+        public IntPtr image;              // VkImage handle (external, NOT owned by VulkEase)
+        public VkFormat format;           // Image format
+        public UInt32 width;              // Image width
+        public UInt32 height;             // Image height
+        public UInt32 depth;              // Image depth (1 for 2D)
+        public UInt32 mipLevels;          // Number of mip levels
+        public UInt32 arrayLayers;        // Number of array layers
+        public VkImageViewType viewType;  // VK_IMAGE_VIEW_TYPE_2D, etc.
+        public VkImageAspectFlags aspectMask; // VK_IMAGE_ASPECT_COLOR_BIT, etc.
+        [MarshalAs(UnmanagedType.LPStr)]
+        public string? debugName;         // Optional debug name
+    }
+
     // Sampler descriptor
     [StructLayout(LayoutKind.Sequential)]
     public struct VESamplerDesc
