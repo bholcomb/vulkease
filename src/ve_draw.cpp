@@ -154,37 +154,91 @@ VEResult veBindGraphicsPipeline(VECommandBuffer *cmd, VEGraphicsPipeline *pipeli
 
    VkCommandBuffer vkCmd = internal->commandBuffer;
 
-   // Bind shaders
-   VkShaderEXT shaders[5] = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
-   VkShaderStageFlagBits stages[5] = {VK_SHADER_STAGE_VERTEX_BIT, VK_SHADER_STAGE_FRAGMENT_BIT,
-                                      VK_SHADER_STAGE_GEOMETRY_BIT, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
-                                      VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT};
-
-   if (pipelineInternal->vertexShader)
-      shaders[0] = ((VEShaderInternal *)pipelineInternal->vertexShader)->shaderObject;
-   if (pipelineInternal->fragmentShader)
-      shaders[1] = ((VEShaderInternal *)pipelineInternal->fragmentShader)->shaderObject;
-   if (pipelineInternal->geometryShader)
-      shaders[2] = ((VEShaderInternal *)pipelineInternal->geometryShader)->shaderObject;
-   if (pipelineInternal->tessControlShader)
-      shaders[3] = ((VEShaderInternal *)pipelineInternal->tessControlShader)->shaderObject;
-   if (pipelineInternal->tessEvalShader)
-      shaders[4] = ((VEShaderInternal *)pipelineInternal->tessEvalShader)->shaderObject;
-
-   veFuncs.vkCmdBindShadersEXT(vkCmd, 5, stages, shaders);
+   // Determine if this is a mesh shader pipeline
+   bool isMeshPipeline = (pipelineInternal->meshShader != nullptr);
 
    // Track bound shader stages
    internal->boundShaders = 0;
-   if (pipelineInternal->vertexShader)
-      internal->boundShaders |= VK_SHADER_STAGE_VERTEX_BIT;
-   if (pipelineInternal->fragmentShader)
-      internal->boundShaders |= VK_SHADER_STAGE_FRAGMENT_BIT;
-   if (pipelineInternal->geometryShader)
-      internal->boundShaders |= VK_SHADER_STAGE_GEOMETRY_BIT;
-   if (pipelineInternal->tessControlShader)
-      internal->boundShaders |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-   if (pipelineInternal->tessEvalShader)
-      internal->boundShaders |= VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+
+   if (isMeshPipeline)
+   {
+      // Mesh shader pipeline: bind task (optional) + mesh + fragment shaders
+      // Must unbind vertex/geometry/tessellation stages
+      VkShaderEXT shaders[7] = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE,
+                                VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
+      VkShaderStageFlagBits stages[7] = {VK_SHADER_STAGE_VERTEX_BIT,
+                                         VK_SHADER_STAGE_GEOMETRY_BIT,
+                                         VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
+                                         VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT,
+                                         VK_SHADER_STAGE_TASK_BIT_EXT,
+                                         VK_SHADER_STAGE_MESH_BIT_EXT,
+                                         VK_SHADER_STAGE_FRAGMENT_BIT};
+
+      // Unbind traditional vertex pipeline stages (indices 0-3 are null)
+
+      // Bind task shader if present
+      if (pipelineInternal->taskShader)
+      {
+         shaders[4] = ((VEShaderInternal *)pipelineInternal->taskShader)->shaderObject;
+         internal->boundShaders |= VK_SHADER_STAGE_TASK_BIT_EXT;
+      }
+
+      // Bind mesh shader (required for mesh pipeline)
+      shaders[5] = ((VEShaderInternal *)pipelineInternal->meshShader)->shaderObject;
+      internal->boundShaders |= VK_SHADER_STAGE_MESH_BIT_EXT;
+
+      // Bind fragment shader
+      if (pipelineInternal->fragmentShader)
+      {
+         shaders[6] = ((VEShaderInternal *)pipelineInternal->fragmentShader)->shaderObject;
+         internal->boundShaders |= VK_SHADER_STAGE_FRAGMENT_BIT;
+      }
+
+      veFuncs.vkCmdBindShadersEXT(vkCmd, 7, stages, shaders);
+   }
+   else
+   {
+      // Traditional vertex pipeline: bind vertex/fragment/geometry/tessellation shaders
+      // Must unbind mesh/task stages if previously bound
+      VkShaderEXT shaders[7] = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE,
+                                VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
+      VkShaderStageFlagBits stages[7] = {VK_SHADER_STAGE_VERTEX_BIT,
+                                         VK_SHADER_STAGE_FRAGMENT_BIT,
+                                         VK_SHADER_STAGE_GEOMETRY_BIT,
+                                         VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
+                                         VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT,
+                                         VK_SHADER_STAGE_TASK_BIT_EXT,
+                                         VK_SHADER_STAGE_MESH_BIT_EXT};
+
+      if (pipelineInternal->vertexShader)
+      {
+         shaders[0] = ((VEShaderInternal *)pipelineInternal->vertexShader)->shaderObject;
+         internal->boundShaders |= VK_SHADER_STAGE_VERTEX_BIT;
+      }
+      if (pipelineInternal->fragmentShader)
+      {
+         shaders[1] = ((VEShaderInternal *)pipelineInternal->fragmentShader)->shaderObject;
+         internal->boundShaders |= VK_SHADER_STAGE_FRAGMENT_BIT;
+      }
+      if (pipelineInternal->geometryShader)
+      {
+         shaders[2] = ((VEShaderInternal *)pipelineInternal->geometryShader)->shaderObject;
+         internal->boundShaders |= VK_SHADER_STAGE_GEOMETRY_BIT;
+      }
+      if (pipelineInternal->tessControlShader)
+      {
+         shaders[3] = ((VEShaderInternal *)pipelineInternal->tessControlShader)->shaderObject;
+         internal->boundShaders |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+      }
+      if (pipelineInternal->tessEvalShader)
+      {
+         shaders[4] = ((VEShaderInternal *)pipelineInternal->tessEvalShader)->shaderObject;
+         internal->boundShaders |= VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+      }
+
+      // Indices 5-6 are null to unbind any previously bound mesh/task shaders
+      veFuncs.vkCmdBindShadersEXT(vkCmd, 7, stages, shaders);
+   }
 
    // Set vertex input (always call, even with zero bindings/attributes for shader objects)
    {
@@ -933,6 +987,105 @@ VEResult veDrawIndexedIndirectCount(VECommandBuffer *cmd, VEBufferAddress indire
 
    vkCmdDrawIndexedIndirectCount(internal->commandBuffer, indirectBuf, indirectOffset, countBuf, countOffset,
                                  maxDrawCount, stride);
+   if (internal->device)
+   {
+      internal->device->frameStats.drawCalls += maxDrawCount;
+   }
+   return VE_SUCCESS;
+}
+
+// =============================================================================
+// Mesh Shader Drawing Commands
+// =============================================================================
+
+VEResult veDrawMeshTasks(VECommandBuffer *cmd, uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ)
+{
+   if (!cmd)
+   {
+      veSetError("veDrawMeshTasks: CommandBuffer cannot be NULL");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+
+   if (!veFuncs.vkCmdDrawMeshTasksEXT)
+   {
+      veSetError("veDrawMeshTasks: Mesh shaders not supported on this device");
+      return VE_ERROR_UNSUPPORTED;
+   }
+
+   veFuncs.vkCmdDrawMeshTasksEXT(internal->commandBuffer, groupCountX, groupCountY, groupCountZ);
+
+   if (internal->device)
+   {
+      internal->device->frameStats.drawCalls += 1;
+   }
+   return VE_SUCCESS;
+}
+
+VEResult veDrawMeshTasksIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t offset,
+                                 uint32_t drawCount, uint32_t stride)
+{
+   if (!cmd || indirectBuffer == VE_INVALID_ADDRESS || drawCount == 0)
+   {
+      veSetError("veDrawMeshTasksIndirect: Invalid parameters");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+
+   if (!veFuncs.vkCmdDrawMeshTasksIndirectEXT)
+   {
+      veSetError("veDrawMeshTasksIndirect: Mesh shaders not supported on this device");
+      return VE_ERROR_UNSUPPORTED;
+   }
+
+   VkBuffer buffer = internal->device->getVkBufferFromAddress(indirectBuffer);
+   if (buffer == VK_NULL_HANDLE)
+   {
+      veSetError("veDrawMeshTasksIndirect: Invalid indirect buffer address");
+      return VE_ERROR_NOT_FOUND;
+   }
+
+   veFuncs.vkCmdDrawMeshTasksIndirectEXT(internal->commandBuffer, buffer, offset, drawCount, stride);
+
+   if (internal->device)
+   {
+      internal->device->frameStats.drawCalls += drawCount;
+   }
+   return VE_SUCCESS;
+}
+
+VEResult veDrawMeshTasksIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t indirectOffset,
+                                      VEBufferAddress countBuffer, uint64_t countOffset, uint32_t maxDrawCount,
+                                      uint32_t stride)
+{
+   if (!cmd || indirectBuffer == VE_INVALID_ADDRESS || countBuffer == VE_INVALID_ADDRESS)
+   {
+      veSetError("veDrawMeshTasksIndirectCount: Invalid parameters");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+
+   if (!veFuncs.vkCmdDrawMeshTasksIndirectCountEXT)
+   {
+      veSetError("veDrawMeshTasksIndirectCount: Mesh shaders not supported on this device");
+      return VE_ERROR_UNSUPPORTED;
+   }
+
+   VkBuffer indirectBuf = internal->device->getVkBufferFromAddress(indirectBuffer);
+   VkBuffer countBuf = internal->device->getVkBufferFromAddress(countBuffer);
+
+   if (indirectBuf == VK_NULL_HANDLE || countBuf == VK_NULL_HANDLE)
+   {
+      veSetError("veDrawMeshTasksIndirectCount: Invalid buffer address");
+      return VE_ERROR_NOT_FOUND;
+   }
+
+   veFuncs.vkCmdDrawMeshTasksIndirectCountEXT(internal->commandBuffer, indirectBuf, indirectOffset, countBuf,
+                                              countOffset, maxDrawCount, stride);
+
    if (internal->device)
    {
       internal->device->frameStats.drawCalls += maxDrawCount;

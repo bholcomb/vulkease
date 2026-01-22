@@ -426,6 +426,8 @@ typedef struct VEGraphicsPipelineDesc
    VEShader *geometryShader;    // Optional
    VEShader *tessControlShader; // Optional
    VEShader *tessEvalShader;    // Optional
+   VEShader *taskShader;        // Optional - task shader (VK_SHADER_STAGE_TASK_BIT_EXT)
+   VEShader *meshShader;        // Optional - mesh shader (VK_SHADER_STAGE_MESH_BIT_EXT)
 
    // === VERTEX INPUT ===
    uint32_t vertexBindingCount;
@@ -1026,6 +1028,21 @@ VULKEASE_API const char *veGetDriverVersion(VEDevice *device);
  * @return Vulkan version encoded as VK_MAKE_API_VERSION(), or 0 if device is invalid.
  */
 VULKEASE_API uint32_t veGetVulkanVersion(VEDevice *device);
+
+/**
+ * @brief Check if mesh shaders are supported.
+ *
+ * Queries whether VK_EXT_mesh_shader is available and enabled on the device.
+ * Mesh shaders replace the traditional vertex/tessellation/geometry pipeline
+ * with a more flexible compute-like model.
+ *
+ * @param[in] device Valid VulkEase device.
+ *
+ * @return true if mesh shaders are available, false otherwise or if device is NULL.
+ *
+ * @see veDrawMeshTasks, veDrawMeshTasksIndirect, veDrawMeshTasksIndirectCount
+ */
+VULKEASE_API bool veIsMeshShaderSupported(VEDevice *device);
 
 // =============================================================================
 // VULKAN HANDLE ACCESS (Escape Hatches)
@@ -3343,6 +3360,69 @@ VULKEASE_API VEResult veDrawIndirectCount(VECommandBuffer *cmd, VEBufferAddress 
 VULKEASE_API VEResult veDrawIndexedIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer,
                                                  uint64_t indirectOffset, VEBufferAddress countBuffer,
                                                  uint64_t countOffset, uint32_t maxDrawCount, uint32_t stride);
+
+// =============================================================================
+// MESH SHADER DRAW COMMANDS
+// =============================================================================
+
+/**
+ * @brief Draw using mesh shaders.
+ *
+ * Dispatches mesh shader workgroups. Used instead of veDraw/veDrawIndexed
+ * when a mesh shader pipeline is bound. Requires VK_EXT_mesh_shader.
+ *
+ * @param[in] cmd Command buffer in recording state.
+ * @param[in] groupCountX Number of local workgroups in X dimension.
+ * @param[in] groupCountY Number of local workgroups in Y dimension.
+ * @param[in] groupCountZ Number of local workgroups in Z dimension.
+ *
+ * @return VE_SUCCESS on success, or:
+ *         - VE_ERROR_INVALID_PARAMETER if cmd is NULL
+ *         - VE_ERROR_FEATURE_NOT_SUPPORTED if mesh shaders are not available
+ */
+VULKEASE_API VEResult veDrawMeshTasks(VECommandBuffer *cmd, uint32_t groupCountX, uint32_t groupCountY,
+                                      uint32_t groupCountZ);
+
+/**
+ * @brief Draw mesh tasks with parameters from a buffer (GPU-driven).
+ *
+ * The workgroup counts are read from the indirect buffer.
+ * Requires VK_EXT_mesh_shader.
+ *
+ * @param[in] cmd Command buffer in recording state.
+ * @param[in] indirectBuffer Buffer containing VkDrawMeshTasksIndirectCommandEXT structures.
+ * @param[in] offset Byte offset into the indirect buffer.
+ * @param[in] drawCount Number of draws to execute.
+ * @param[in] stride Byte stride between draw commands.
+ *
+ * @return VE_SUCCESS on success, or:
+ *         - VE_ERROR_INVALID_PARAMETER if cmd is NULL
+ *         - VE_ERROR_FEATURE_NOT_SUPPORTED if mesh shaders are not available
+ */
+VULKEASE_API VEResult veDrawMeshTasksIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t offset,
+                                              uint32_t drawCount, uint32_t stride);
+
+/**
+ * @brief Draw mesh tasks with GPU-determined draw count.
+ *
+ * The draw count is read from a buffer, allowing the GPU to control
+ * how many mesh shader dispatches are executed. Requires VK_EXT_mesh_shader.
+ *
+ * @param[in] cmd Command buffer in recording state.
+ * @param[in] indirectBuffer Buffer containing draw commands.
+ * @param[in] indirectOffset Byte offset into the indirect buffer.
+ * @param[in] countBuffer Buffer containing the draw count (uint32_t).
+ * @param[in] countOffset Byte offset into the count buffer.
+ * @param[in] maxDrawCount Maximum number of draws (clamped by count buffer value).
+ * @param[in] stride Byte stride between draw commands.
+ *
+ * @return VE_SUCCESS on success, or:
+ *         - VE_ERROR_INVALID_PARAMETER if cmd is NULL
+ *         - VE_ERROR_FEATURE_NOT_SUPPORTED if mesh shaders are not available
+ */
+VULKEASE_API VEResult veDrawMeshTasksIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer,
+                                                   uint64_t indirectOffset, VEBufferAddress countBuffer,
+                                                   uint64_t countOffset, uint32_t maxDrawCount, uint32_t stride);
 
 // =============================================================================
 // CLEAR COMMANDS

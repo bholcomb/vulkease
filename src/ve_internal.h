@@ -119,6 +119,9 @@ struct VEDeviceFeatures
    bool extendedDynamicState3;   // VK_EXT_extended_dynamic_state3
    bool vertexInputDynamicState; // VK_EXT_vertex_input_dynamic_state
    bool shaderObject;            // VK_EXT_shader_object
+
+   // Optional extension features
+   bool meshShader; // VK_EXT_mesh_shader (task and mesh shaders)
 };
 
 // =============================================================================
@@ -313,6 +316,8 @@ struct VEGraphicsPipelineInternal
    VEShader *geometryShader;
    VEShader *tessControlShader;
    VEShader *tessEvalShader;
+   VEShader *taskShader;
+   VEShader *meshShader;
 
    // Vertex input (stored inline)
    uint32_t vertexBindingCount;
@@ -670,6 +675,11 @@ struct VEFuncs
    PFN_vkCopyMemoryToImageEXT vkCopyMemoryToImageEXT;
    PFN_vkCopyImageToMemoryEXT vkCopyImageToMemoryEXT;
    PFN_vkCopyImageToImageEXT vkCopyImageToImageEXT;
+
+   // Mesh Shaders (optional extension - VK_EXT_mesh_shader)
+   PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT;
+   PFN_vkCmdDrawMeshTasksIndirectEXT vkCmdDrawMeshTasksIndirectEXT;
+   PFN_vkCmdDrawMeshTasksIndirectCountEXT vkCmdDrawMeshTasksIndirectCountEXT;
 
    // Instance functions to initialize
    PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;
