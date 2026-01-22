@@ -17,5 +17,5 @@ Upcoming features:
   - Performance.  There are some less than optimal implementations internally that can be improved
   - Better error reporting.
   - Better documentation  This is AI slop.  It needs to be regenerated and then reviewed.
-  - More examples.  the two we have are nice, but we need more to show how to use more features
+  - More examples.  the few we have are nice, but we need more to show how to use all the features
   
