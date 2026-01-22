@@ -25,10 +25,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <cstdint>
-#include <memory>
 #include <atomic>
 #include <condition_variable>
+#include <cstdint>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -73,7 +73,6 @@ struct VEContextInternal
    VkDebugUtilsMessengerEXT debugMessenger;
    bool validationEnabled;
    char applicationName[256];
-
 };
 
 struct VEQueueFamilies
@@ -219,8 +218,7 @@ struct VEThreadCommandPools
    void reclaimInFlight(VEDeviceInternal *device);
    void destroyAll(VEDeviceInternal *device);
 
-   template <typename Callback>
-   void forEach(Callback &&callback)
+   template <typename Callback> void forEach(Callback &&callback)
    {
       // Copy out the pool pointers so callbacks do not hold the mutex while
       // potentially taking other locks inside the pool (avoids lock inversion).
@@ -415,12 +413,13 @@ enum class VEDeferredResourceType
 struct VEDeferredDeletion
 {
    VEDeferredResourceType type;
-   uint64_t frameIndex;  // Frame when deletion was requested
-   union {
+   uint64_t frameIndex; // Frame when deletion was requested
+   union
+   {
       VEBufferAddress bufferAddress;
       VETextureIndex textureIndex;
       VESamplerIndex samplerIndex;
-      VEShader* shader;
+      VEShader *shader;
    };
 };
 
@@ -434,17 +433,17 @@ struct VEDeferredDeletionQueue
    void enqueueBuffer(VEBufferAddress address);
    void enqueueTexture(VETextureIndex index);
    void enqueueSampler(VESamplerIndex index);
-   void enqueueShader(VEShader* shader);
+   void enqueueShader(VEShader *shader);
    void advanceFrame();
-   void processPending(VEDeviceInternal* device);
-   void flush(VEDeviceInternal* device);
+   void processPending(VEDeviceInternal *device);
+   void flush(VEDeviceInternal *device);
 };
 
-void veAdvanceDeferredDeletions(VEDeviceInternal* device);
-void veDestroyBufferImmediate(VEDeviceInternal* device, VEBufferAddress address);
-void veDestroyTextureImmediate(VEDeviceInternal* device, VETextureIndex index);
-void veDestroySamplerImmediate(VEDeviceInternal* device, VESamplerIndex index);
-void veDestroyShaderImmediate(VEShader* shader);
+void veAdvanceDeferredDeletions(VEDeviceInternal *device);
+void veDestroyBufferImmediate(VEDeviceInternal *device, VEBufferAddress address);
+void veDestroyTextureImmediate(VEDeviceInternal *device, VETextureIndex index);
+void veDestroySamplerImmediate(VEDeviceInternal *device, VESamplerIndex index);
+void veDestroyShaderImmediate(VEShader *shader);
 
 struct VESwapchainInternal
 {
@@ -516,22 +515,22 @@ struct VEDeviceInternal
    VmaAllocator allocator;
 
    // Resource management - simplified for address-only API
-   void *bufferMap; // std::unordered_map<VEBufferAddress, VEBufferInternal*>*
-   std::unique_ptr<std::mutex> bufferMapMutex;  // Protects bufferMap access
+   void *bufferMap;                            // std::unordered_map<VEBufferAddress, VEBufferInternal*>*
+   std::unique_ptr<std::mutex> bufferMapMutex; // Protects bufferMap access
 
    VETextureInternal *textures;
    uint32_t *freeTextureIndices;
    std::atomic<uint32_t> freeTextureCount{0};
    std::atomic<uint32_t> textureCount{0};
    uint32_t maxTextures;
-   std::unique_ptr<std::mutex> textureIndexMutex;  // Protects texture index allocation
+   std::unique_ptr<std::mutex> textureIndexMutex; // Protects texture index allocation
 
    VESamplerInternal *samplers;
    uint32_t *freeSamplerIndices;
    std::atomic<uint32_t> freeSamplerCount{0};
    std::atomic<uint32_t> samplerCount{0};
    uint32_t maxSamplers;
-   std::unique_ptr<std::mutex> samplerIndexMutex;  // Protects sampler index allocation
+   std::unique_ptr<std::mutex> samplerIndexMutex; // Protects sampler index allocation
    VESamplerIndex defaultSamplers[VE_DEFAULT_SAMPLER_COUNT]{};
    bool defaultSamplersInitialized{false};
 

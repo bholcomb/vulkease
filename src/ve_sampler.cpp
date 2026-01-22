@@ -20,7 +20,7 @@ uint32_t VEDeviceInternal::allocateSamplerIndex()
    }
 
    std::lock_guard<std::mutex> lock(*samplerIndexMutex);
-   
+
    uint32_t currentFreeCount = freeSamplerCount.load(std::memory_order_relaxed);
    if (currentFreeCount == 0)
    {
@@ -44,7 +44,7 @@ void VEDeviceInternal::freeSamplerIndex(uint32_t index)
    }
 
    std::lock_guard<std::mutex> lock(*samplerIndexMutex);
-   
+
    uint32_t currentFreeCount = freeSamplerCount.load(std::memory_order_relaxed);
    freeSamplerIndices[currentFreeCount] = index;
    freeSamplerCount.store(currentFreeCount + 1, std::memory_order_relaxed);
@@ -326,7 +326,8 @@ static VEResult veInitializeDefaultSamplers(VEDeviceInternal *device)
    nearestDesc.debugName = "DefaultNearestSampler";
 
    VEResult result = veCreateSampler(publicDevice, &nearestDesc, &device->defaultSamplers[VE_DEFAULT_SAMPLER_NEAREST]);
-   if (result != VE_SUCCESS) return result;
+   if (result != VE_SUCCESS)
+      return result;
 
    // VE_DEFAULT_SAMPLER_LINEAR
    VESamplerDesc linearDesc{};
@@ -343,7 +344,8 @@ static VEResult veInitializeDefaultSamplers(VEDeviceInternal *device)
    linearDesc.debugName = "DefaultLinearSampler";
 
    result = veCreateSampler(publicDevice, &linearDesc, &device->defaultSamplers[VE_DEFAULT_SAMPLER_LINEAR]);
-   if (result != VE_SUCCESS) return result;
+   if (result != VE_SUCCESS)
+      return result;
 
    // VE_DEFAULT_SAMPLER_ANISOTROPIC_4X
    VESamplerDesc aniso4xDesc{};
@@ -360,7 +362,8 @@ static VEResult veInitializeDefaultSamplers(VEDeviceInternal *device)
    aniso4xDesc.debugName = "DefaultAnisotropic4xSampler";
 
    result = veCreateSampler(publicDevice, &aniso4xDesc, &device->defaultSamplers[VE_DEFAULT_SAMPLER_ANISOTROPIC_4X]);
-   if (result != VE_SUCCESS) return result;
+   if (result != VE_SUCCESS)
+      return result;
 
    // VE_DEFAULT_SAMPLER_ANISOTROPIC_16X
    VESamplerDesc aniso16xDesc{};
@@ -377,7 +380,8 @@ static VEResult veInitializeDefaultSamplers(VEDeviceInternal *device)
    aniso16xDesc.debugName = "DefaultAnisotropic16xSampler";
 
    result = veCreateSampler(publicDevice, &aniso16xDesc, &device->defaultSamplers[VE_DEFAULT_SAMPLER_ANISOTROPIC_16X]);
-   if (result != VE_SUCCESS) return result;
+   if (result != VE_SUCCESS)
+      return result;
 
    // VE_DEFAULT_SAMPLER_SHADOW
    VESamplerDesc shadowDesc{};
@@ -395,7 +399,8 @@ static VEResult veInitializeDefaultSamplers(VEDeviceInternal *device)
    shadowDesc.debugName = "DefaultShadowSampler";
 
    result = veCreateSampler(publicDevice, &shadowDesc, &device->defaultSamplers[VE_DEFAULT_SAMPLER_SHADOW]);
-   if (result != VE_SUCCESS) return result;
+   if (result != VE_SUCCESS)
+      return result;
 
    device->defaultSamplersInitialized = true;
    return VE_SUCCESS;

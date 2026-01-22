@@ -1,7 +1,7 @@
 /**
  * @file ve_transfer.cpp
  * @brief Buffer and Texture Transfer Operations Implementation
- * 
+ *
  * Implements copy, blit, fill, and update operations for buffers and textures.
  */
 
@@ -11,8 +11,8 @@
 // Buffer Copy Operations
 // =============================================================================
 
-VEResult veCmdCopyBuffer(VECommandBuffer *cmd, VEBufferAddress src, VEBufferAddress dst,
-                         uint64_t srcOffset, uint64_t dstOffset, uint64_t size)
+VEResult veCmdCopyBuffer(VECommandBuffer *cmd, VEBufferAddress src, VEBufferAddress dst, uint64_t srcOffset,
+                         uint64_t dstOffset, uint64_t size)
 {
    if (!cmd || src == VE_INVALID_ADDRESS || dst == VE_INVALID_ADDRESS || size == 0)
    {
@@ -42,8 +42,8 @@ VEResult veCmdCopyBuffer(VECommandBuffer *cmd, VEBufferAddress src, VEBufferAddr
    return VE_SUCCESS;
 }
 
-VEResult veCopyBuffer(VEDevice *device, VEBufferAddress src, VEBufferAddress dst,
-                      uint64_t srcOffset, uint64_t dstOffset, uint64_t size, VkFence fence)
+VEResult veCopyBuffer(VEDevice *device, VEBufferAddress src, VEBufferAddress dst, uint64_t srcOffset,
+                      uint64_t dstOffset, uint64_t size, VkFence fence)
 {
    if (!device || src == VE_INVALID_ADDRESS || dst == VE_INVALID_ADDRESS || size == 0)
    {
@@ -80,7 +80,7 @@ VEResult veCopyBuffer(VEDevice *device, VEBufferAddress src, VEBufferAddress dst
    submitInfo.waitForCompletion = (fence == VK_NULL_HANDLE);
 
    result = veSubmitCommandBuffer(cmd, &submitInfo);
-   
+
    // If async (fence provided), don't release yet - user must manage
    // If sync (blocking), command buffer is released by submit
    if (fence != VK_NULL_HANDLE)
@@ -95,8 +95,7 @@ VEResult veCopyBuffer(VEDevice *device, VEBufferAddress src, VEBufferAddress dst
 // Buffer Fill and Update Operations
 // =============================================================================
 
-VEResult veCmdFillBuffer(VECommandBuffer *cmd, VEBufferAddress dst, uint64_t offset,
-                         uint64_t size, uint32_t data)
+VEResult veCmdFillBuffer(VECommandBuffer *cmd, VEBufferAddress dst, uint64_t offset, uint64_t size, uint32_t data)
 {
    if (!cmd || dst == VE_INVALID_ADDRESS)
    {
@@ -122,8 +121,7 @@ VEResult veCmdFillBuffer(VECommandBuffer *cmd, VEBufferAddress dst, uint64_t off
    return VE_SUCCESS;
 }
 
-VEResult veCmdUpdateBuffer(VECommandBuffer *cmd, VEBufferAddress dst, uint64_t offset,
-                           uint64_t size, const void *data)
+VEResult veCmdUpdateBuffer(VECommandBuffer *cmd, VEBufferAddress dst, uint64_t offset, uint64_t size, const void *data)
 {
    if (!cmd || dst == VE_INVALID_ADDRESS || !data || size == 0)
    {
@@ -179,7 +177,7 @@ VEResult veCmdCopyTexture(VECommandBuffer *cmd, VETextureIndex src, VETextureInd
 
    // Build copy region
    VkImageCopy copyRegion{};
-   
+
    if (region)
    {
       copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -259,10 +257,8 @@ VEResult veCmdCopyTexture(VECommandBuffer *cmd, VETextureIndex src, VETextureInd
    vkCmdPipelineBarrier2(internal->commandBuffer, &depInfo);
 
    // Copy
-   vkCmdCopyImage(internal->commandBuffer,
-                  srcTex->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                  dstTex->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                  1, &copyRegion);
+   vkCmdCopyImage(internal->commandBuffer, srcTex->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstTex->image,
+                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
    // Update tracked layouts
    srcTex->currentLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
@@ -271,8 +267,8 @@ VEResult veCmdCopyTexture(VECommandBuffer *cmd, VETextureIndex src, VETextureInd
    return VE_SUCCESS;
 }
 
-VEResult veCopyTexture(VEDevice *device, VETextureIndex src, VETextureIndex dst,
-                       const VETextureCopyRegion *region, VkFence fence)
+VEResult veCopyTexture(VEDevice *device, VETextureIndex src, VETextureIndex dst, const VETextureCopyRegion *region,
+                       VkFence fence)
 {
    if (!device || src == VE_INVALID_TEXTURE_INDEX || dst == VE_INVALID_TEXTURE_INDEX)
    {
@@ -306,7 +302,7 @@ VEResult veCopyTexture(VEDevice *device, VETextureIndex src, VETextureIndex dst,
    submitInfo.waitForCompletion = (fence == VK_NULL_HANDLE);
 
    result = veSubmitCommandBuffer(cmd, &submitInfo);
-   
+
    if (fence != VK_NULL_HANDLE)
    {
       veReleaseCommandBuffer(cmd);
@@ -342,7 +338,7 @@ VEResult veCmdBlitTexture(VECommandBuffer *cmd, VETextureIndex src, VETextureInd
 
    // Build blit region
    VkImageBlit blitRegion{};
-   
+
    if (region)
    {
       blitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -422,10 +418,8 @@ VEResult veCmdBlitTexture(VECommandBuffer *cmd, VETextureIndex src, VETextureInd
    vkCmdPipelineBarrier2(internal->commandBuffer, &depInfo);
 
    // Blit
-   vkCmdBlitImage(internal->commandBuffer,
-                  srcTex->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                  dstTex->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                  1, &blitRegion, filter);
+   vkCmdBlitImage(internal->commandBuffer, srcTex->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstTex->image,
+                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blitRegion, filter);
 
    // Update tracked layouts
    srcTex->currentLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
@@ -434,8 +428,8 @@ VEResult veCmdBlitTexture(VECommandBuffer *cmd, VETextureIndex src, VETextureInd
    return VE_SUCCESS;
 }
 
-VEResult veBlitTexture(VEDevice *device, VETextureIndex src, VETextureIndex dst,
-                       const VETextureBlitRegion *region, VkFilter filter, VkFence fence)
+VEResult veBlitTexture(VEDevice *device, VETextureIndex src, VETextureIndex dst, const VETextureBlitRegion *region,
+                       VkFilter filter, VkFence fence)
 {
    if (!device || src == VE_INVALID_TEXTURE_INDEX || dst == VE_INVALID_TEXTURE_INDEX)
    {
@@ -469,7 +463,7 @@ VEResult veBlitTexture(VEDevice *device, VETextureIndex src, VETextureIndex dst,
    submitInfo.waitForCompletion = (fence == VK_NULL_HANDLE);
 
    result = veSubmitCommandBuffer(cmd, &submitInfo);
-   
+
    if (fence != VK_NULL_HANDLE)
    {
       veReleaseCommandBuffer(cmd);
@@ -511,7 +505,7 @@ VEResult veCmdCopyBufferToTexture(VECommandBuffer *cmd, VEBufferAddress src, VET
 
    // Build copy region
    VkBufferImageCopy copyRegion{};
-   
+
    if (region)
    {
       copyRegion.bufferOffset = region->bufferOffset;
@@ -521,7 +515,8 @@ VEResult veCmdCopyBufferToTexture(VECommandBuffer *cmd, VEBufferAddress src, VET
       copyRegion.imageSubresource.mipLevel = region->mipLevel;
       copyRegion.imageSubresource.baseArrayLayer = region->arrayLayer;
       copyRegion.imageSubresource.layerCount = region->layerCount > 0 ? region->layerCount : 1;
-      copyRegion.imageOffset = {(int32_t)region->textureOffsetX, (int32_t)region->textureOffsetY, (int32_t)region->textureOffsetZ};
+      copyRegion.imageOffset = {(int32_t)region->textureOffsetX, (int32_t)region->textureOffsetY,
+                                (int32_t)region->textureOffsetZ};
       copyRegion.imageExtent = {region->width, region->height, region->depth > 0 ? region->depth : 1};
    }
    else
@@ -564,8 +559,8 @@ VEResult veCmdCopyBufferToTexture(VECommandBuffer *cmd, VEBufferAddress src, VET
    vkCmdPipelineBarrier2(internal->commandBuffer, &depInfo);
 
    // Copy
-   vkCmdCopyBufferToImage(internal->commandBuffer, srcBuffer, dstTex->image,
-                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+   vkCmdCopyBufferToImage(internal->commandBuffer, srcBuffer, dstTex->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+                          &copyRegion);
 
    dstTex->currentLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 
@@ -601,7 +596,7 @@ VEResult veCmdCopyTextureToBuffer(VECommandBuffer *cmd, VETextureIndex src, VEBu
 
    // Build copy region
    VkBufferImageCopy copyRegion{};
-   
+
    if (region)
    {
       copyRegion.bufferOffset = region->bufferOffset;
@@ -611,7 +606,8 @@ VEResult veCmdCopyTextureToBuffer(VECommandBuffer *cmd, VETextureIndex src, VEBu
       copyRegion.imageSubresource.mipLevel = region->mipLevel;
       copyRegion.imageSubresource.baseArrayLayer = region->arrayLayer;
       copyRegion.imageSubresource.layerCount = region->layerCount > 0 ? region->layerCount : 1;
-      copyRegion.imageOffset = {(int32_t)region->textureOffsetX, (int32_t)region->textureOffsetY, (int32_t)region->textureOffsetZ};
+      copyRegion.imageOffset = {(int32_t)region->textureOffsetX, (int32_t)region->textureOffsetY,
+                                (int32_t)region->textureOffsetZ};
       copyRegion.imageExtent = {region->width, region->height, region->depth > 0 ? region->depth : 1};
    }
    else
@@ -654,8 +650,8 @@ VEResult veCmdCopyTextureToBuffer(VECommandBuffer *cmd, VETextureIndex src, VEBu
    vkCmdPipelineBarrier2(internal->commandBuffer, &depInfo);
 
    // Copy
-   vkCmdCopyImageToBuffer(internal->commandBuffer, srcTex->image,
-                          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstBuffer, 1, &copyRegion);
+   vkCmdCopyImageToBuffer(internal->commandBuffer, srcTex->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstBuffer, 1,
+                          &copyRegion);
 
    srcTex->currentLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 
@@ -697,7 +693,7 @@ VEResult veCopyBufferToTexture(VEDevice *device, VEBufferAddress src, VETextureI
    submitInfo.waitForCompletion = (fence == VK_NULL_HANDLE);
 
    result = veSubmitCommandBuffer(cmd, &submitInfo);
-   
+
    if (fence != VK_NULL_HANDLE)
    {
       veReleaseCommandBuffer(cmd);
@@ -741,7 +737,7 @@ VEResult veCopyTextureToBuffer(VEDevice *device, VETextureIndex src, VEBufferAdd
    submitInfo.waitForCompletion = (fence == VK_NULL_HANDLE);
 
    result = veSubmitCommandBuffer(cmd, &submitInfo);
-   
+
    if (fence != VK_NULL_HANDLE)
    {
       veReleaseCommandBuffer(cmd);
@@ -754,8 +750,8 @@ VEResult veCopyTextureToBuffer(VEDevice *device, VETextureIndex src, VEBufferAdd
 // Clear Operations
 // =============================================================================
 
-VEResult veClearColorAttachment(VECommandBuffer *cmd, uint32_t attachmentIndex,
-                                VEColor clearValue, const VERect2D *rect)
+VEResult veClearColorAttachment(VECommandBuffer *cmd, uint32_t attachmentIndex, VEColor clearValue,
+                                const VERect2D *rect)
 {
    if (!cmd)
    {

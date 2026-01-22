@@ -1,7 +1,7 @@
 /**
  * @file ve_deferred.cpp
  * @brief Deferred Deletion Queue Implementation
- * 
+ *
  * Handles safe resource cleanup by deferring destruction until
  * the GPU is no longer using the resources.
  */
@@ -16,7 +16,7 @@ void VEDeferredDeletionQueue::enqueueBuffer(VEBufferAddress address)
 {
    if (address == VE_INVALID_ADDRESS)
       return;
-      
+
    std::lock_guard<std::mutex> lock(mutex);
    VEDeferredDeletion deletion{};
    deletion.type = VEDeferredResourceType::Buffer;
@@ -29,7 +29,7 @@ void VEDeferredDeletionQueue::enqueueTexture(VETextureIndex index)
 {
    if (index == VE_INVALID_TEXTURE_INDEX)
       return;
-      
+
    std::lock_guard<std::mutex> lock(mutex);
    VEDeferredDeletion deletion{};
    deletion.type = VEDeferredResourceType::Texture;
@@ -42,7 +42,7 @@ void VEDeferredDeletionQueue::enqueueSampler(VESamplerIndex index)
 {
    if (index == VE_INVALID_SAMPLER_INDEX)
       return;
-      
+
    std::lock_guard<std::mutex> lock(mutex);
    VEDeferredDeletion deletion{};
    deletion.type = VEDeferredResourceType::Sampler;
@@ -51,11 +51,11 @@ void VEDeferredDeletionQueue::enqueueSampler(VESamplerIndex index)
    pending.push_back(deletion);
 }
 
-void VEDeferredDeletionQueue::enqueueShader(VEShader* shader)
+void VEDeferredDeletionQueue::enqueueShader(VEShader *shader)
 {
    if (!shader)
       return;
-      
+
    std::lock_guard<std::mutex> lock(mutex);
    VEDeferredDeletion deletion{};
    deletion.type = VEDeferredResourceType::Shader;
@@ -70,16 +70,16 @@ void VEDeferredDeletionQueue::advanceFrame()
    currentFrame++;
 }
 
-void VEDeferredDeletionQueue::processPending(VEDeviceInternal* device)
+void VEDeferredDeletionQueue::processPending(VEDeviceInternal *device)
 {
    if (!device)
       return;
-      
+
    std::vector<VEDeferredDeletion> toDelete;
-   
+
    {
       std::lock_guard<std::mutex> lock(mutex);
-      
+
       // Move items ready for deletion to a separate vector
       auto it = pending.begin();
       while (it != pending.end())
@@ -95,70 +95,70 @@ void VEDeferredDeletionQueue::processPending(VEDeviceInternal* device)
          }
       }
    }
-   
+
    // Delete resources outside the lock
-   for (const auto& deletion : toDelete)
+   for (const auto &deletion : toDelete)
    {
       switch (deletion.type)
       {
-         case VEDeferredResourceType::Buffer:
-            veDestroyBufferImmediate(device, deletion.bufferAddress);
-            break;
-            
-         case VEDeferredResourceType::Texture:
-            veDestroyTextureImmediate(device, deletion.textureIndex);
-            break;
-            
-         case VEDeferredResourceType::Sampler:
-            veDestroySamplerImmediate(device, deletion.samplerIndex);
-            break;
-            
-         case VEDeferredResourceType::Shader:
-            veDestroyShaderImmediate(deletion.shader);
-            break;
+      case VEDeferredResourceType::Buffer:
+         veDestroyBufferImmediate(device, deletion.bufferAddress);
+         break;
+
+      case VEDeferredResourceType::Texture:
+         veDestroyTextureImmediate(device, deletion.textureIndex);
+         break;
+
+      case VEDeferredResourceType::Sampler:
+         veDestroySamplerImmediate(device, deletion.samplerIndex);
+         break;
+
+      case VEDeferredResourceType::Shader:
+         veDestroyShaderImmediate(deletion.shader);
+         break;
       }
    }
 }
 
-void VEDeferredDeletionQueue::flush(VEDeviceInternal* device)
+void VEDeferredDeletionQueue::flush(VEDeviceInternal *device)
 {
    if (!device)
       return;
-      
+
    // Wait for device to be idle before flushing all pending deletions
    if (device->device)
    {
       vkDeviceWaitIdle(device->device);
    }
-   
+
    std::vector<VEDeferredDeletion> toDelete;
-   
+
    {
       std::lock_guard<std::mutex> lock(mutex);
       toDelete = std::move(pending);
       pending.clear();
    }
-   
+
    // Delete all remaining resources
-   for (const auto& deletion : toDelete)
+   for (const auto &deletion : toDelete)
    {
       switch (deletion.type)
       {
-         case VEDeferredResourceType::Buffer:
-            veDestroyBufferImmediate(device, deletion.bufferAddress);
-            break;
-            
-         case VEDeferredResourceType::Texture:
-            veDestroyTextureImmediate(device, deletion.textureIndex);
-            break;
-            
-         case VEDeferredResourceType::Sampler:
-            veDestroySamplerImmediate(device, deletion.samplerIndex);
-            break;
-            
-         case VEDeferredResourceType::Shader:
-            veDestroyShaderImmediate(deletion.shader);
-            break;
+      case VEDeferredResourceType::Buffer:
+         veDestroyBufferImmediate(device, deletion.bufferAddress);
+         break;
+
+      case VEDeferredResourceType::Texture:
+         veDestroyTextureImmediate(device, deletion.textureIndex);
+         break;
+
+      case VEDeferredResourceType::Sampler:
+         veDestroySamplerImmediate(device, deletion.samplerIndex);
+         break;
+
+      case VEDeferredResourceType::Shader:
+         veDestroyShaderImmediate(deletion.shader);
+         break;
       }
    }
 }
@@ -167,12 +167,12 @@ void VEDeferredDeletionQueue::flush(VEDeviceInternal* device)
 // Internal helpers
 // =============================================================================
 
-void veAdvanceDeferredDeletions(VEDeviceInternal* device)
+void veAdvanceDeferredDeletions(VEDeviceInternal *device)
 {
    if (!device)
       return;
 
-   VEDeferredDeletionQueue* queue = device->deferredDeletionQueue.get();
+   VEDeferredDeletionQueue *queue = device->deferredDeletionQueue.get();
    if (!queue)
       return;
 

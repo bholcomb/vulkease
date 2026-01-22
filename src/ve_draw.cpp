@@ -56,9 +56,8 @@ VEResult veSetScissor(VECommandBuffer *cmd, int32_t x, int32_t y, uint32_t width
 // Graphics State Application
 // =============================================================================
 
-VEResult veApplyGraphicsState(VECommandBuffer *cmd, VEGraphicsPipeline *pipeline,
-                              VEDrawState *drawState, const VEViewport *viewport,
-                              const VERect2D *scissor)
+VEResult veApplyGraphicsState(VECommandBuffer *cmd, VEGraphicsPipeline *pipeline, VEDrawState *drawState,
+                              const VEViewport *viewport, const VERect2D *scissor)
 {
    if (!cmd)
    {
@@ -93,15 +92,16 @@ VEResult veApplyGraphicsState(VECommandBuffer *cmd, VEGraphicsPipeline *pipeline
    // Set viewport (use render area if NULL)
    if (viewport)
    {
-      VEResult r = veSetViewport(cmd, viewport->x, viewport->y, viewport->width,
-                                 viewport->height, viewport->minDepth, viewport->maxDepth);
+      VEResult r = veSetViewport(cmd, viewport->x, viewport->y, viewport->width, viewport->height, viewport->minDepth,
+                                 viewport->maxDepth);
       if (r != VE_SUCCESS)
          return r;
    }
    else
    {
-      VEResult r = veSetViewport(cmd, static_cast<float>(internal->renderAreaX), static_cast<float>(internal->renderAreaY),
-                                 static_cast<float>(internal->renderAreaWidth), static_cast<float>(internal->renderAreaHeight), 0.0f, 1.0f);
+      VEResult r = veSetViewport(
+          cmd, static_cast<float>(internal->renderAreaX), static_cast<float>(internal->renderAreaY),
+          static_cast<float>(internal->renderAreaWidth), static_cast<float>(internal->renderAreaHeight), 0.0f, 1.0f);
       if (r != VE_SUCCESS)
          return r;
    }
@@ -115,8 +115,9 @@ VEResult veApplyGraphicsState(VECommandBuffer *cmd, VEGraphicsPipeline *pipeline
    }
    else
    {
-      VEResult r = veSetScissor(cmd, static_cast<int32_t>(internal->renderAreaX), static_cast<int32_t>(internal->renderAreaY),
-                                internal->renderAreaWidth, internal->renderAreaHeight);
+      VEResult r =
+          veSetScissor(cmd, static_cast<int32_t>(internal->renderAreaX), static_cast<int32_t>(internal->renderAreaY),
+                       internal->renderAreaWidth, internal->renderAreaHeight);
       if (r != VE_SUCCESS)
          return r;
    }
@@ -155,14 +156,10 @@ VEResult veBindGraphicsPipeline(VECommandBuffer *cmd, VEGraphicsPipeline *pipeli
 
    // Bind shaders
    VkShaderEXT shaders[5] = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
-   VkShaderStageFlagBits stages[5] = {
-      VK_SHADER_STAGE_VERTEX_BIT,
-      VK_SHADER_STAGE_FRAGMENT_BIT,
-      VK_SHADER_STAGE_GEOMETRY_BIT,
-      VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
-      VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT
-   };
-   
+   VkShaderStageFlagBits stages[5] = {VK_SHADER_STAGE_VERTEX_BIT, VK_SHADER_STAGE_FRAGMENT_BIT,
+                                      VK_SHADER_STAGE_GEOMETRY_BIT, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
+                                      VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT};
+
    if (pipelineInternal->vertexShader)
       shaders[0] = ((VEShaderInternal *)pipelineInternal->vertexShader)->shaderObject;
    if (pipelineInternal->fragmentShader)
@@ -178,11 +175,16 @@ VEResult veBindGraphicsPipeline(VECommandBuffer *cmd, VEGraphicsPipeline *pipeli
 
    // Track bound shader stages
    internal->boundShaders = 0;
-   if (pipelineInternal->vertexShader) internal->boundShaders |= VK_SHADER_STAGE_VERTEX_BIT;
-   if (pipelineInternal->fragmentShader) internal->boundShaders |= VK_SHADER_STAGE_FRAGMENT_BIT;
-   if (pipelineInternal->geometryShader) internal->boundShaders |= VK_SHADER_STAGE_GEOMETRY_BIT;
-   if (pipelineInternal->tessControlShader) internal->boundShaders |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-   if (pipelineInternal->tessEvalShader) internal->boundShaders |= VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+   if (pipelineInternal->vertexShader)
+      internal->boundShaders |= VK_SHADER_STAGE_VERTEX_BIT;
+   if (pipelineInternal->fragmentShader)
+      internal->boundShaders |= VK_SHADER_STAGE_FRAGMENT_BIT;
+   if (pipelineInternal->geometryShader)
+      internal->boundShaders |= VK_SHADER_STAGE_GEOMETRY_BIT;
+   if (pipelineInternal->tessControlShader)
+      internal->boundShaders |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+   if (pipelineInternal->tessEvalShader)
+      internal->boundShaders |= VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
 
    // Set vertex input (always call, even with zero bindings/attributes for shader objects)
    {
@@ -196,8 +198,8 @@ VEResult veBindGraphicsPipeline(VECommandBuffer *cmd, VEGraphicsPipeline *pipeli
          bindings[i].binding = pipelineInternal->vertexBindings[i].binding;
          bindings[i].stride = pipelineInternal->vertexBindings[i].stride;
          bindings[i].inputRate = pipelineInternal->vertexBindings[i].inputRate;
-         bindings[i].divisor = pipelineInternal->vertexBindings[i].divisor > 0 ? 
-                               pipelineInternal->vertexBindings[i].divisor : 1;
+         bindings[i].divisor =
+             pipelineInternal->vertexBindings[i].divisor > 0 ? pipelineInternal->vertexBindings[i].divisor : 1;
       }
 
       for (uint32_t i = 0; i < pipelineInternal->vertexAttributeCount; i++)
@@ -228,19 +230,15 @@ VEResult veBindGraphicsPipeline(VECommandBuffer *cmd, VEGraphicsPipeline *pipeli
    vkCmdSetStencilTestEnable(vkCmd, pipelineInternal->stencilTestEnable ? VK_TRUE : VK_FALSE);
    if (pipelineInternal->stencilTestEnable)
    {
-      vkCmdSetStencilOp(vkCmd, VK_STENCIL_FACE_FRONT_BIT,
-                        pipelineInternal->frontStencil.failOp,
-                        pipelineInternal->frontStencil.passOp,
-                        pipelineInternal->frontStencil.depthFailOp,
+      vkCmdSetStencilOp(vkCmd, VK_STENCIL_FACE_FRONT_BIT, pipelineInternal->frontStencil.failOp,
+                        pipelineInternal->frontStencil.passOp, pipelineInternal->frontStencil.depthFailOp,
                         pipelineInternal->frontStencil.compareOp);
       vkCmdSetStencilCompareMask(vkCmd, VK_STENCIL_FACE_FRONT_BIT, pipelineInternal->frontStencil.compareMask);
       vkCmdSetStencilWriteMask(vkCmd, VK_STENCIL_FACE_FRONT_BIT, pipelineInternal->frontStencil.writeMask);
       vkCmdSetStencilReference(vkCmd, VK_STENCIL_FACE_FRONT_BIT, pipelineInternal->frontStencil.reference);
 
-      vkCmdSetStencilOp(vkCmd, VK_STENCIL_FACE_BACK_BIT,
-                        pipelineInternal->backStencil.failOp,
-                        pipelineInternal->backStencil.passOp,
-                        pipelineInternal->backStencil.depthFailOp,
+      vkCmdSetStencilOp(vkCmd, VK_STENCIL_FACE_BACK_BIT, pipelineInternal->backStencil.failOp,
+                        pipelineInternal->backStencil.passOp, pipelineInternal->backStencil.depthFailOp,
                         pipelineInternal->backStencil.compareOp);
       vkCmdSetStencilCompareMask(vkCmd, VK_STENCIL_FACE_BACK_BIT, pipelineInternal->backStencil.compareMask);
       vkCmdSetStencilWriteMask(vkCmd, VK_STENCIL_FACE_BACK_BIT, pipelineInternal->backStencil.writeMask);
@@ -263,7 +261,7 @@ VEResult veBindGraphicsPipeline(VECommandBuffer *cmd, VEGraphicsPipeline *pipeli
       for (uint32_t i = 0; i < pipelineInternal->blendAttachmentCount; i++)
       {
          colorBlendEnables[i] = pipelineInternal->blendAttachments[i].blendEnable ? VK_TRUE : VK_FALSE;
-         
+
          equations[i] = {};
          equations[i].srcColorBlendFactor = pipelineInternal->blendAttachments[i].srcColorBlendFactor;
          equations[i].dstColorBlendFactor = pipelineInternal->blendAttachments[i].dstColorBlendFactor;
@@ -271,7 +269,7 @@ VEResult veBindGraphicsPipeline(VECommandBuffer *cmd, VEGraphicsPipeline *pipeli
          equations[i].srcAlphaBlendFactor = pipelineInternal->blendAttachments[i].srcAlphaBlendFactor;
          equations[i].dstAlphaBlendFactor = pipelineInternal->blendAttachments[i].dstAlphaBlendFactor;
          equations[i].alphaBlendOp = pipelineInternal->blendAttachments[i].alphaBlendOp;
-         
+
          writeMasks[i] = pipelineInternal->blendAttachments[i].colorWriteMask;
       }
 
@@ -307,7 +305,7 @@ VEResult veApplyDrawState(VECommandBuffer *cmd, VEDrawState *drawState)
    // If drawState is NULL, apply defaults
    VEDrawStateDesc defaults;
    VEDrawStateInternal *stateInternal;
-   
+
    if (drawState)
    {
       stateInternal = (VEDrawStateInternal *)drawState;
@@ -360,8 +358,8 @@ VEResult veApplyDrawState(VECommandBuffer *cmd, VEDrawState *drawState)
    vkCmdSetDepthBiasEnable(vkCmd, stateInternal->depthBiasEnable ? VK_TRUE : VK_FALSE);
    if (stateInternal->depthBiasEnable)
    {
-      vkCmdSetDepthBias(vkCmd, stateInternal->depthBiasConstantFactor,
-                        stateInternal->depthBiasClamp, stateInternal->depthBiasSlopeFactor);
+      vkCmdSetDepthBias(vkCmd, stateInternal->depthBiasConstantFactor, stateInternal->depthBiasClamp,
+                        stateInternal->depthBiasSlopeFactor);
    }
 
    // Set depth clamp
@@ -594,8 +592,8 @@ VEResult veSetStencilTest(VECommandBuffer *cmd, bool enable)
    return VE_SUCCESS;
 }
 
-VEResult veSetStencilOp(VECommandBuffer *cmd, VkStencilFaceFlags faceMask, VkStencilOp failOp,
-                        VkStencilOp passOp, VkStencilOp depthFailOp, VkCompareOp compareOp)
+VEResult veSetStencilOp(VECommandBuffer *cmd, VkStencilFaceFlags faceMask, VkStencilOp failOp, VkStencilOp passOp,
+                        VkStencilOp depthFailOp, VkCompareOp compareOp)
 {
    if (!cmd)
    {
@@ -962,8 +960,8 @@ VEResult veBarrier(VECommandBuffer *cmd, const VEBarrierDesc *desc)
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   if ((desc->memoryBarrierCount > 0 && !desc->memoryBarriers) || (desc->bufferBarrierCount > 0 && !desc->bufferBarriers) ||
-       (desc->imageBarrierCount > 0 && !desc->imageBarriers))
+   if ((desc->memoryBarrierCount > 0 && !desc->memoryBarriers) ||
+       (desc->bufferBarrierCount > 0 && !desc->bufferBarriers) || (desc->imageBarrierCount > 0 && !desc->imageBarriers))
    {
       veSetError("Barrier arrays cannot be NULL when their counts are > 0");
       return VE_ERROR_INVALID_PARAMETER;
@@ -1156,7 +1154,7 @@ VEResult veBarrierGraphicsToPresent(VECommandBuffer *cmd)
 }
 
 VEResult veTransitionTexture(VECommandBuffer *cmd, VETextureIndex texture, VkImageLayout oldLayout,
-                            VkImageLayout newLayout)
+                             VkImageLayout newLayout)
 {
    if (!cmd || texture == VE_INVALID_TEXTURE_INDEX)
    {
@@ -1329,7 +1327,8 @@ VEResult veTransitionTextureForColorAttachment(VECommandBuffer *cmd, VETextureIn
 
 VEResult veTransitionTextureForDepthAttachment(VECommandBuffer *cmd, VETextureIndex texture)
 {
-   return veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+   return veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_UNDEFINED,
+                              VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 }
 
 VEResult veTransitionTextureForTransferSrc(VECommandBuffer *cmd, VETextureIndex texture)
