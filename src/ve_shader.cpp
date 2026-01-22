@@ -7,18 +7,18 @@
 
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <cctype>
+#include <chrono>
 #include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <mutex>
 #include <new>
 #include <sys/stat.h>
 #include <thread>
 #include <vector>
-#include <limits>
 
 // VEShaderHotReloadState is now defined in ve_internal.h
 
@@ -66,9 +66,8 @@ static void shaderHotReloadThread(VEShaderHotReloadState *state)
    {
       if (!state->enabled || state->trackedShaders.empty())
       {
-         state->cv.wait(lock, [&] {
-            return state->stopRequested || (state->enabled && !state->trackedShaders.empty());
-         });
+         state->cv.wait(lock,
+                        [&] { return state->stopRequested || (state->enabled && !state->trackedShaders.empty()); });
          continue;
       }
 
@@ -547,9 +546,8 @@ VEResult veLoadShaderFromBuffer(VEDevice *device, VkShaderStageFlags stage, cons
    }
 
    const uint32_t *codeWords = static_cast<const uint32_t *>(code);
-   shader->shaderObject =
-       createShaderObject(deviceInternal, stage, codeWords, static_cast<uint64_t>(codeSize), entryPoint,
-                          shader->debugName);
+   shader->shaderObject = createShaderObject(deviceInternal, stage, codeWords, static_cast<uint64_t>(codeSize),
+                                             entryPoint, shader->debugName);
    if (shader->shaderObject == VK_NULL_HANDLE)
    {
       delete shader;
@@ -569,8 +567,8 @@ VEResult veLoadShaderFromBuffer(VEDevice *device, VkShaderStageFlags stage, cons
    return VE_SUCCESS;
 }
 
-VEResult veLoadShaderFromFile(VEDevice *device, const char *filename, VkShaderStageFlags stage,
-                              const char *entryPoint, const char *debugName, VEShader **outShader)
+VEResult veLoadShaderFromFile(VEDevice *device, const char *filename, VkShaderStageFlags stage, const char *entryPoint,
+                              const char *debugName, VEShader **outShader)
 {
    if (!outShader)
    {
@@ -598,8 +596,8 @@ VEResult veLoadShaderFromFile(VEDevice *device, const char *filename, VkShaderSt
          return VE_ERROR_UNKNOWN;
       }
 
-      loadResult =
-          veLoadShaderFromBuffer(device, stage, code.data(), static_cast<size_t>(codeSize), entryPoint, debugName, &shader);
+      loadResult = veLoadShaderFromBuffer(device, stage, code.data(), static_cast<size_t>(codeSize), entryPoint,
+                                          debugName, &shader);
    }
    else
    {
@@ -616,8 +614,8 @@ VEResult veLoadShaderFromFile(VEDevice *device, const char *filename, VkShaderSt
          return VE_ERROR_UNKNOWN;
       }
 
-      loadResult =
-          veLoadShaderFromBuffer(device, stage, compiledCode, static_cast<size_t>(compiledSize), entryPoint, debugName, &shader);
+      loadResult = veLoadShaderFromBuffer(device, stage, compiledCode, static_cast<size_t>(compiledSize), entryPoint,
+                                          debugName, &shader);
       free(compiledCode);
    }
 

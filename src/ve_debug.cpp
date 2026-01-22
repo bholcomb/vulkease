@@ -645,7 +645,8 @@ VEResult vePrintDebugInfo(VEDevice *device)
    printf("  Textures: %u / %u\n", deviceInternal->textureCount.load(), deviceInternal->maxTextures);
    printf("  Samplers: %u / %u\n", deviceInternal->samplerCount.load(), deviceInternal->maxSamplers);
    printf("  Shaders: %u / %u\n", deviceInternal->shaderCount, deviceInternal->maxShaders);
-   printf("  Graphics Pipelines: %u / %u\n", deviceInternal->graphicsPipelineCount, deviceInternal->maxGraphicsPipelines);
+   printf("  Graphics Pipelines: %u / %u\n", deviceInternal->graphicsPipelineCount,
+          deviceInternal->maxGraphicsPipelines);
    printf("  Draw States: %u / %u\n", deviceInternal->drawStateCount, deviceInternal->maxDrawStates);
 
    // Memory information
@@ -687,7 +688,8 @@ VEResult vePrintProfileInfo(VEDevice *device)
    printf("  Textures: %u / %u\n", deviceInternal->textureCount.load(), deviceInternal->maxTextures);
    printf("  Samplers: %u / %u\n", deviceInternal->samplerCount.load(), deviceInternal->maxSamplers);
    printf("  Shaders: %u / %u\n", deviceInternal->shaderCount, deviceInternal->maxShaders);
-   printf("  Graphics Pipelines: %u / %u\n", deviceInternal->graphicsPipelineCount, deviceInternal->maxGraphicsPipelines);
+   printf("  Graphics Pipelines: %u / %u\n", deviceInternal->graphicsPipelineCount,
+          deviceInternal->maxGraphicsPipelines);
    printf("  Draw States: %u / %u\n", deviceInternal->drawStateCount, deviceInternal->maxDrawStates);
 
    // Memory information
@@ -740,15 +742,15 @@ VEResult vePrintGraphicsPipeline(VEGraphicsPipeline *pipeline)
       printf("  - Geometry: %s\n", pipelineInternal->geometryShader ? "Present" : "None");
       printf("  - Tess Control: %s\n", pipelineInternal->tessControlShader ? "Present" : "None");
       printf("  - Tess Eval: %s\n", pipelineInternal->tessEvalShader ? "Present" : "None");
-      
+
       printf("Vertex Input:\n");
       printf("  - Bindings: %u\n", pipelineInternal->vertexBindingCount);
       printf("  - Attributes: %u\n", pipelineInternal->vertexAttributeCount);
-      
+
       printf("Depth Config:\n");
       printf("  - Test Enable: %s\n", pipelineInternal->depthTestEnable ? "Yes" : "No");
       printf("  - Write Enable: %s\n", pipelineInternal->depthWriteEnable ? "Yes" : "No");
-      
+
       printf("Blend Config:\n");
       printf("  - Attachment Count: %u\n", pipelineInternal->blendAttachmentCount);
    }
@@ -890,8 +892,10 @@ VEResult veEndFrame(VEDevice *device, VEFrameTimingInfo *outTiming)
       {
          double t = deviceInternal->frameTimingHistory[i];
          sum += t;
-         if (t < minTime) minTime = t;
-         if (t > maxTime) maxTime = t;
+         if (t < minTime)
+            minTime = t;
+         if (t > maxTime)
+            maxTime = t;
       }
 
       double avgFrameTimeMs = (sampleCount > 0) ? (sum / sampleCount) : 0.0;

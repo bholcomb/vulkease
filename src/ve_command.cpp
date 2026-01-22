@@ -5,10 +5,10 @@
 
 #include "ve_internal.h"
 
-#include <mutex>
-#include <vector>
-#include <thread>
 #include <functional>
+#include <mutex>
+#include <thread>
+#include <vector>
 
 VECommandPool *VEThreadCommandPools::acquire(VEDeviceInternal *device, VECommandPoolKind kind)
 {
@@ -207,8 +207,8 @@ VEResult veEnsureCommandBufferLevel(VECommandBufferInternal *cmd, VkCommandBuffe
    {
       const size_t threadHash = std::hash<std::thread::id>{}(std::this_thread::get_id());
       veSetError("Attempt to reallocate in-flight command buffer (cb=%p index=%u pool=%p fence=%p thread=%zu)",
-                 (void *)cmd->commandBuffer, cmd->index, (void *)cmd->commandPool,
-                 (void *)cmd->currentFence(), threadHash);
+                 (void *)cmd->commandBuffer, cmd->index, (void *)cmd->commandPool, (void *)cmd->currentFence(),
+                 threadHash);
       return VE_ERROR_INVALID_PARAMETER;
    }
 
@@ -294,9 +294,9 @@ VEResult veBeginCommandBuffer(VEDevice *device, VECommandBuffer **outCmd)
    {
       VkFence fence = cmd->currentFence();
       VkResult fenceStatus = fence ? vkGetFenceStatus(cmd->device->device, fence) : VK_SUCCESS;
-      veSetError("Failed to reset primary command buffer (VkResult: %d) cb=%p index=%u fence=%p fenceStatus=%d fenceActive=%d",
-                 resetResult, (void *)cmd->commandBuffer, cmd->index, (void *)fence, fenceStatus,
-                 cmd->fenceActive ? 1 : 0);
+      veSetError(
+          "Failed to reset primary command buffer (VkResult: %d) cb=%p index=%u fence=%p fenceStatus=%d fenceActive=%d",
+          resetResult, (void *)cmd->commandBuffer, cmd->index, (void *)fence, fenceStatus, cmd->fenceActive ? 1 : 0);
       veFreeCommandBuffer(cmd);
       return VE_ERROR_UNKNOWN;
    }
@@ -598,8 +598,7 @@ extern "C" VEResult veReleaseCommandBuffer(VECommandBuffer *cmd)
    return VE_SUCCESS;
 }
 
-extern "C" VEResult vePopulateSecondaryDescFromRenderTarget(VEDevice *device,
-                                                            const VERenderTarget *renderTarget,
+extern "C" VEResult vePopulateSecondaryDescFromRenderTarget(VEDevice *device, const VERenderTarget *renderTarget,
                                                             VESecondaryCommandBufferDesc *desc)
 {
    if (!device || !renderTarget || !desc)
@@ -617,9 +616,9 @@ extern "C" VEResult vePopulateSecondaryDescFromRenderTarget(VEDevice *device,
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
    VkSampleCountFlags sampleMask = 0;
 
-   auto setSamples = [&](VkSampleCountFlags samples) -> bool {
-      VkSampleCountFlagBits resolved =
-          samples ? static_cast<VkSampleCountFlagBits>(samples) : VK_SAMPLE_COUNT_1_BIT;
+   auto setSamples = [&](VkSampleCountFlags samples) -> bool
+   {
+      VkSampleCountFlagBits resolved = samples ? static_cast<VkSampleCountFlagBits>(samples) : VK_SAMPLE_COUNT_1_BIT;
       if (sampleMask == 0)
       {
          sampleMask = resolved;
@@ -633,7 +632,8 @@ extern "C" VEResult vePopulateSecondaryDescFromRenderTarget(VEDevice *device,
       return true;
    };
 
-   auto formatHasStencil = [](VkFormat format) -> bool {
+   auto formatHasStencil = [](VkFormat format) -> bool
+   {
       return format == VK_FORMAT_S8_UINT || format == VK_FORMAT_D16_UNORM_S8_UINT ||
              format == VK_FORMAT_D24_UNORM_S8_UINT || format == VK_FORMAT_D32_SFLOAT_S8_UINT;
    };
@@ -711,8 +711,7 @@ extern "C" VEResult vePopulateSecondaryDescFromRenderTarget(VEDevice *device,
 
    if (desc->usageFlags == 0)
    {
-      desc->usageFlags =
-          VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+      desc->usageFlags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
    }
 
    // Copy render area for veApplyRenderState defaults
@@ -803,8 +802,7 @@ extern "C" VEResult veBeginSecondaryRecording(VECommandBuffer *cmd, const VESeco
          veSetError("veBeginSecondaryRecording: colorAttachmentFormats must be provided when colorAttachmentCount > 0");
          return VE_ERROR_INVALID_PARAMETER;
       }
-      derivedColorFormats.assign(desc->colorAttachmentFormats,
-                                 desc->colorAttachmentFormats + colorAttachmentCount);
+      derivedColorFormats.assign(desc->colorAttachmentFormats, desc->colorAttachmentFormats + colorAttachmentCount);
       colorFormatsPtr = derivedColorFormats.data();
    }
 
@@ -830,7 +828,8 @@ extern "C" VEResult veBeginSecondaryRecording(VECommandBuffer *cmd, const VESeco
    {
       VkFence fence = internal->currentFence();
       VkResult fenceStatus = fence ? vkGetFenceStatus(internal->device->device, fence) : VK_SUCCESS;
-      veSetError("veBeginSecondaryRecording: failed to reset command buffer (VkResult: %d) cb=%p fence=%p fenceStatus=%d fenceActive=%d",
+      veSetError("veBeginSecondaryRecording: failed to reset command buffer (VkResult: %d) cb=%p fence=%p "
+                 "fenceStatus=%d fenceActive=%d",
                  resetResult, (void *)internal->commandBuffer, (void *)fence, fenceStatus,
                  internal->fenceActive ? 1 : 0);
       return VE_ERROR_UNKNOWN;
@@ -850,7 +849,8 @@ extern "C" VEResult veBeginSecondaryRecording(VECommandBuffer *cmd, const VESeco
    return VE_SUCCESS;
 }
 
-VEResult veBeginSecondaryCommandBuffer(VEDevice *device, const VESecondaryCommandBufferDesc *desc, VECommandBuffer **outCmd)
+VEResult veBeginSecondaryCommandBuffer(VEDevice *device, const VESecondaryCommandBufferDesc *desc,
+                                       VECommandBuffer **outCmd)
 {
    if (!outCmd)
    {
@@ -940,8 +940,7 @@ VEResult veBeginSecondaryCommandBuffer(VEDevice *device, const VESecondaryComman
          veFreeCommandBuffer(cmd);
          return VE_ERROR_INVALID_PARAMETER;
       }
-      derivedColorFormats.assign(desc->colorAttachmentFormats,
-                                 desc->colorAttachmentFormats + colorAttachmentCount);
+      derivedColorFormats.assign(desc->colorAttachmentFormats, desc->colorAttachmentFormats + colorAttachmentCount);
       colorFormatsPtr = derivedColorFormats.data();
    }
 
@@ -968,7 +967,8 @@ VEResult veBeginSecondaryCommandBuffer(VEDevice *device, const VESecondaryComman
       {
          VkFence fence = cmd->currentFence();
          VkResult fenceStatus = fence ? vkGetFenceStatus(cmd->device->device, fence) : VK_SUCCESS;
-         veSetError("Failed to reset secondary command buffer (VkResult: %d) cb=%p index=%u fence=%p fenceStatus=%d fenceActive=%d",
+         veSetError("Failed to reset secondary command buffer (VkResult: %d) cb=%p index=%u fence=%p fenceStatus=%d "
+                    "fenceActive=%d",
                     resetResult, (void *)cmd->commandBuffer, cmd->index, (void *)fence, fenceStatus,
                     cmd->fenceActive ? 1 : 0);
          veFreeCommandBuffer(cmd);
@@ -997,7 +997,7 @@ VEResult veBeginSecondaryCommandBuffer(VEDevice *device, const VESecondaryComman
    // Track render area from desc for veApplyRenderState defaults
    if (desc && (desc->renderAreaWidth > 0 || desc->renderAreaHeight > 0))
    {
-      cmd->inRenderPass = true;  // Secondary buffers will be executed inside a render pass
+      cmd->inRenderPass = true; // Secondary buffers will be executed inside a render pass
       cmd->renderAreaX = static_cast<uint32_t>(desc->renderAreaX >= 0 ? desc->renderAreaX : 0);
       cmd->renderAreaY = static_cast<uint32_t>(desc->renderAreaY >= 0 ? desc->renderAreaY : 0);
       cmd->renderAreaWidth = desc->renderAreaWidth;
@@ -1009,8 +1009,7 @@ VEResult veBeginSecondaryCommandBuffer(VEDevice *device, const VESecondaryComman
 }
 
 VEResult veExecuteSecondaryCommandBuffers(VECommandBuffer *primaryCmd, uint32_t count,
-                                          VECommandBuffer *const *secondaryCmds,
-                                          bool releaseCommandBuffers)
+                                          VECommandBuffer *const *secondaryCmds, bool releaseCommandBuffers)
 {
    if (!primaryCmd || !secondaryCmds || count == 0)
    {
@@ -1119,8 +1118,9 @@ VEResult veRenderTargetAddColorAttachment(VERenderTarget *target, VETextureIndex
    return VE_SUCCESS;
 }
 
-VEResult veRenderTargetAddColorAttachmentResolve(VERenderTarget *target, VETextureIndex texture, VETextureIndex resolveTexture,
-                                                 VkAttachmentLoadOp loadOp, VEColor clearValue)
+VEResult veRenderTargetAddColorAttachmentResolve(VERenderTarget *target, VETextureIndex texture,
+                                                 VETextureIndex resolveTexture, VkAttachmentLoadOp loadOp,
+                                                 VEColor clearValue)
 {
    if (!target || target->colorAttachmentCount >= VE_MAX_COLOR_ATTACHMENTS)
    {
@@ -1266,12 +1266,11 @@ VEResult veBeginRendering(VECommandBuffer *cmd, const VERenderTarget *renderTarg
       // Handle resolve attachment if present
       if (colorAttachments[i].resolveTexture != VE_INVALID_TEXTURE_INDEX)
       {
-         VkImageView resolveImageView =
-             internal->device->getImageViewFromTexture(colorAttachments[i].resolveTexture);
+         VkImageView resolveImageView = internal->device->getImageViewFromTexture(colorAttachments[i].resolveTexture);
          if (resolveImageView == VK_NULL_HANDLE)
          {
-            veSetError("Invalid resolve texture index %u for color attachment %u",
-                       colorAttachments[i].resolveTexture, i);
+            veSetError("Invalid resolve texture index %u for color attachment %u", colorAttachments[i].resolveTexture,
+                       i);
             return VE_ERROR_NOT_FOUND;
          }
          vkColorAttachments[i].resolveImageView = resolveImageView;
@@ -1307,12 +1306,10 @@ VEResult veBeginRendering(VECommandBuffer *cmd, const VERenderTarget *renderTarg
       // Handle resolve attachment if present
       if (depthAttachment->resolveTexture != VE_INVALID_TEXTURE_INDEX)
       {
-         VkImageView resolveImageView =
-             internal->device->getImageViewFromTexture(depthAttachment->resolveTexture);
+         VkImageView resolveImageView = internal->device->getImageViewFromTexture(depthAttachment->resolveTexture);
          if (resolveImageView == VK_NULL_HANDLE)
          {
-            veSetError("Invalid resolve texture index %u for depth attachment",
-                       depthAttachment->resolveTexture);
+            veSetError("Invalid resolve texture index %u for depth attachment", depthAttachment->resolveTexture);
             return VE_ERROR_NOT_FOUND;
          }
          vkDepthAttachment.resolveImageView = resolveImageView;
@@ -1329,8 +1326,7 @@ VEResult veBeginRendering(VECommandBuffer *cmd, const VERenderTarget *renderTarg
       vkStencilAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
 
       // Get image view from texture index
-      VkImageView stencilImageView =
-          internal->device->getImageViewFromTexture(stencilAttachment->texture);
+      VkImageView stencilImageView = internal->device->getImageViewFromTexture(stencilAttachment->texture);
       if (stencilImageView == VK_NULL_HANDLE)
       {
          veSetError("Invalid texture index %u for stencil attachment", stencilAttachment->texture);
@@ -1348,12 +1344,10 @@ VEResult veBeginRendering(VECommandBuffer *cmd, const VERenderTarget *renderTarg
       // Handle resolve attachment if present
       if (stencilAttachment->resolveTexture != VE_INVALID_TEXTURE_INDEX)
       {
-         VkImageView resolveImageView =
-             internal->device->getImageViewFromTexture(stencilAttachment->resolveTexture);
+         VkImageView resolveImageView = internal->device->getImageViewFromTexture(stencilAttachment->resolveTexture);
          if (resolveImageView == VK_NULL_HANDLE)
          {
-            veSetError("Invalid resolve texture index %u for stencil attachment",
-                       stencilAttachment->resolveTexture);
+            veSetError("Invalid resolve texture index %u for stencil attachment", stencilAttachment->resolveTexture);
             return VE_ERROR_NOT_FOUND;
          }
          vkStencilAttachment.resolveImageView = resolveImageView;

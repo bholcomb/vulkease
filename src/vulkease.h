@@ -51,7 +51,7 @@ extern "C"
 #define VULKEASE_VERSION_MINOR 0
 #define VULKEASE_VERSION_PATCH 0
 
-#define VE_MAKE_VERSION(major, minor, patch) \
+#define VE_MAKE_VERSION(major, minor, patch)                                                                           \
    ((((uint32_t)(major)) << 22) | (((uint32_t)(minor)) << 12) | ((uint32_t)(patch)))
 
 #define VULKEASE_API_VERSION_2_0 VE_MAKE_VERSION(2, 0, 0)
@@ -181,10 +181,10 @@ typedef struct VEBufferDesc
 {
    uint64_t size;
    VkBufferUsageFlags usage;
-   const void *initialData;  // Optional initial data
+   const void *initialData; // Optional initial data
    uint64_t initialDataSize;
-   bool persistentlyMapped;  // Keep CPU-mapped for frequent updates
-   const char *debugName;    // Debug name (optional)
+   bool persistentlyMapped; // Keep CPU-mapped for frequent updates
+   const char *debugName;   // Debug name (optional)
 } VEBufferDesc;
 
 // Texture creation descriptor
@@ -192,15 +192,15 @@ typedef struct VETextureDesc
 {
    uint32_t width;
    uint32_t height;
-   uint32_t depth;                  // 1 for 2D textures
-   uint32_t mipLevels;              // 0 = auto-generate all mips
-   uint32_t arrayLayers;            // 1 for single texture
+   uint32_t depth;       // 1 for 2D textures
+   uint32_t mipLevels;   // 0 = auto-generate all mips
+   uint32_t arrayLayers; // 1 for single texture
    VkFormat format;
    VkImageUsageFlags usage;
-   VkSampleCountFlags sampleCount;  // For multisampled textures
-   const void *initialData;         // Optional initial data
+   VkSampleCountFlags sampleCount; // For multisampled textures
+   const void *initialData;        // Optional initial data
    uint64_t initialDataSize;
-   const char *debugName;           // Debug name (optional)
+   const char *debugName; // Debug name (optional)
 } VETextureDesc;
 
 // Sampler creation descriptor
@@ -212,12 +212,12 @@ typedef struct VESamplerDesc
    VkSamplerAddressMode addressModeU;
    VkSamplerAddressMode addressModeV;
    VkSamplerAddressMode addressModeW;
-   float maxAnisotropy;     // 1.0 = no anisotropy
-   bool compareEnable;      // For shadow mapping
+   float maxAnisotropy; // 1.0 = no anisotropy
+   bool compareEnable;  // For shadow mapping
    VkCompareOp compareOp;
    float minLod;
    float maxLod;
-   const char *debugName;   // Debug name (optional)
+   const char *debugName; // Debug name (optional)
 } VESamplerDesc;
 
 // =============================================================================
@@ -238,10 +238,10 @@ typedef struct VETextureCopyRegion
 // Region for texture blit (supports scaling and format conversion)
 typedef struct VETextureBlitRegion
 {
-   int32_t srcOffsetX0, srcOffsetY0, srcOffsetZ0;  // Source min corner
-   int32_t srcOffsetX1, srcOffsetY1, srcOffsetZ1;  // Source max corner
-   int32_t dstOffsetX0, dstOffsetY0, dstOffsetZ0;  // Dest min corner
-   int32_t dstOffsetX1, dstOffsetY1, dstOffsetZ1;  // Dest max corner
+   int32_t srcOffsetX0, srcOffsetY0, srcOffsetZ0; // Source min corner
+   int32_t srcOffsetX1, srcOffsetY1, srcOffsetZ1; // Source max corner
+   int32_t dstOffsetX0, dstOffsetY0, dstOffsetZ0; // Dest min corner
+   int32_t dstOffsetX1, dstOffsetY1, dstOffsetZ1; // Dest max corner
    uint32_t srcMipLevel, dstMipLevel;
    uint32_t srcArrayLayer, dstArrayLayer;
    uint32_t layerCount;
@@ -251,8 +251,8 @@ typedef struct VETextureBlitRegion
 typedef struct VEBufferTextureCopyRegion
 {
    uint64_t bufferOffset;
-   uint32_t bufferRowLength;    // 0 = tightly packed
-   uint32_t bufferImageHeight;  // 0 = tightly packed
+   uint32_t bufferRowLength;   // 0 = tightly packed
+   uint32_t bufferImageHeight; // 0 = tightly packed
    uint32_t textureOffsetX, textureOffsetY, textureOffsetZ;
    uint32_t width, height, depth;
    uint32_t mipLevel;
@@ -275,7 +275,7 @@ typedef struct VEQueryPoolDesc
 {
    VEQueryType type;
    uint32_t queryCount;
-   VkQueryPipelineStatisticFlags pipelineStatistics;  // For PIPELINE_STATISTICS type
+   VkQueryPipelineStatisticFlags pipelineStatistics; // For PIPELINE_STATISTICS type
    const char *debugName;
 } VEQueryPoolDesc;
 
@@ -285,13 +285,13 @@ typedef struct VEQueryPoolDesc
 
 typedef struct VEFrameTimingInfo
 {
-   double frameTimeMs;     // Last frame time in milliseconds
-   double avgFrameTimeMs;  // Rolling average (last N frames)
-   double minFrameTimeMs;  // Min in rolling window
-   double maxFrameTimeMs;  // Max in rolling window
-   uint64_t frameNumber;   // Total frames rendered
-   double fps;             // Instantaneous FPS
-   double avgFps;          // Average FPS
+   double frameTimeMs;    // Last frame time in milliseconds
+   double avgFrameTimeMs; // Rolling average (last N frames)
+   double minFrameTimeMs; // Min in rolling window
+   double maxFrameTimeMs; // Max in rolling window
+   uint64_t frameNumber;  // Total frames rendered
+   double fps;            // Instantaneous FPS
+   double avgFps;         // Average FPS
 } VEFrameTimingInfo;
 
 // =============================================================================
@@ -301,11 +301,11 @@ typedef struct VEFrameTimingInfo
 // Platform surface types
 typedef enum VESurfaceType
 {
-   VE_SURFACE_TYPE_WIN32,    // Windows: HWND
-   VE_SURFACE_TYPE_XLIB,     // Linux X11: Display* + Window
-   VE_SURFACE_TYPE_WAYLAND,  // Linux Wayland: wl_display* + wl_surface*
-   VE_SURFACE_TYPE_COCOA,    // macOS: NSWindow* (CAMetalLayer internally)
-   VE_SURFACE_TYPE_ANDROID   // Android: ANativeWindow*
+   VE_SURFACE_TYPE_WIN32,   // Windows: HWND
+   VE_SURFACE_TYPE_XLIB,    // Linux X11: Display* + Window
+   VE_SURFACE_TYPE_WAYLAND, // Linux Wayland: wl_display* + wl_surface*
+   VE_SURFACE_TYPE_COCOA,   // macOS: NSWindow* (CAMetalLayer internally)
+   VE_SURFACE_TYPE_ANDROID  // Android: ANativeWindow*
 } VESurfaceType;
 
 // Platform-specific surface descriptor
@@ -316,25 +316,25 @@ typedef struct VESurfaceDesc
    {
       struct
       {
-         void *hwnd;  // HWND
+         void *hwnd; // HWND
       } win32;
       struct
       {
-         void *display;         // Display*
-         unsigned long window;  // Window (XID is unsigned long)
+         void *display;        // Display*
+         unsigned long window; // Window (XID is unsigned long)
       } xlib;
       struct
       {
-         void *display;  // wl_display*
-         void *surface;  // wl_surface*
+         void *display; // wl_display*
+         void *surface; // wl_surface*
       } wayland;
       struct
       {
-         void *window;  // NSWindow* or CAMetalLayer*
+         void *window; // NSWindow* or CAMetalLayer*
       } cocoa;
       struct
       {
-         void *nativeWindow;  // ANativeWindow*
+         void *nativeWindow; // ANativeWindow*
       } android;
    };
 } VESurfaceDesc;
@@ -347,7 +347,7 @@ typedef struct VESwapchainDesc
    uint32_t height;
    VkFormat colorFormat;
    bool vsync;
-   const char *debugName;  // Debug name (optional)
+   const char *debugName; // Debug name (optional)
 } VESwapchainDesc;
 
 // Default sampler types
@@ -374,7 +374,7 @@ typedef struct VEVertexBinding
    uint32_t binding;
    uint32_t stride;
    VkVertexInputRate inputRate;
-   uint32_t divisor;  // For instanced rendering
+   uint32_t divisor; // For instanced rendering
 } VEVertexBinding;
 
 typedef struct VEVertexAttribute
@@ -423,9 +423,9 @@ typedef struct VEGraphicsPipelineDesc
    // === SHADERS ===
    VEShader *vertexShader;
    VEShader *fragmentShader;
-   VEShader *geometryShader;     // Optional
-   VEShader *tessControlShader;  // Optional
-   VEShader *tessEvalShader;     // Optional
+   VEShader *geometryShader;    // Optional
+   VEShader *tessControlShader; // Optional
+   VEShader *tessEvalShader;    // Optional
 
    // === VERTEX INPUT ===
    uint32_t vertexBindingCount;
@@ -477,13 +477,13 @@ typedef struct VEDrawStateDesc
    // === GEOMETRY INTERPRETATION ===
    VkPrimitiveTopology topology;
    bool primitiveRestartEnable;
-   uint32_t patchControlPoints;  // For tessellation
+   uint32_t patchControlPoints; // For tessellation
 
    // === RASTERIZATION OVERRIDES ===
-   VkPolygonMode polygonMode;     // Fill, line, point
+   VkPolygonMode polygonMode; // Fill, line, point
    float lineWidth;
-   VkCullModeFlags cullMode;      // Override pipeline default (VK_CULL_MODE_FLAG_BITS_MAX_ENUM = use pipeline)
-   VkFrontFace frontFace;         // Override pipeline default
+   VkCullModeFlags cullMode; // Override pipeline default (VK_CULL_MODE_FLAG_BITS_MAX_ENUM = use pipeline)
+   VkFrontFace frontFace;    // Override pipeline default
    bool rasterizerDiscardEnable;
 
    // === DEPTH BIAS (polygon offset) ===
@@ -515,11 +515,11 @@ typedef struct VEDrawStateDesc
 // Render target attachment (for dynamic rendering)
 typedef struct VERenderTargetAttachment
 {
-   VETextureIndex texture;         // Texture to render to
+   VETextureIndex texture; // Texture to render to
    VkAttachmentLoadOp loadOp;
    VkAttachmentStoreOp storeOp;
-   VEColor clearValue;             // Used if loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR
-   VETextureIndex resolveTexture;  // For MSAA resolve (optional)
+   VEColor clearValue;            // Used if loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR
+   VETextureIndex resolveTexture; // For MSAA resolve (optional)
 } VERenderTargetAttachment;
 
 // Render target configuration (replaces render passes)
@@ -597,36 +597,36 @@ typedef struct VEBarrierDesc
 // Submission info for advanced synchronization
 typedef struct VESubmitInfo
 {
-   const VkSemaphore *waitSemaphores;            // Semaphores to wait on (optional)
-   const uint64_t *waitSemaphoreValues;          // Timeline semaphore wait values (optional)
-   const VkPipelineStageFlags2 *waitStageMasks;  // Pipeline stages for each wait semaphore
+   const VkSemaphore *waitSemaphores;           // Semaphores to wait on (optional)
+   const uint64_t *waitSemaphoreValues;         // Timeline semaphore wait values (optional)
+   const VkPipelineStageFlags2 *waitStageMasks; // Pipeline stages for each wait semaphore
    uint32_t waitSemaphoreCount;
 
-   const VkSemaphore *signalSemaphores;          // Semaphores to signal (optional)
-   const uint64_t *signalSemaphoreValues;        // Timeline semaphore signal values (optional)
+   const VkSemaphore *signalSemaphores;   // Semaphores to signal (optional)
+   const uint64_t *signalSemaphoreValues; // Timeline semaphore signal values (optional)
    uint32_t signalSemaphoreCount;
 
-   VkFence fence;            // Fence to signal on completion (optional)
-   bool waitForCompletion;   // True to block until GPU work completes
+   VkFence fence;          // Fence to signal on completion (optional)
+   bool waitForCompletion; // True to block until GPU work completes
 } VESubmitInfo;
 
 // Secondary command buffer descriptor
 typedef struct VESecondaryCommandBufferDesc
 {
-   VkCommandBufferUsageFlags usageFlags;     // VK_COMMAND_BUFFER_USAGE_*
-   uint32_t colorAttachmentCount;            // Up to 8 color attachments
-   VkFormat colorAttachmentFormats[8];       // Color formats for inheritance
-   VkFormat depthAttachmentFormat;           // Depth format (VK_FORMAT_UNDEFINED if none)
-   VkFormat stencilAttachmentFormat;         // Stencil format (VK_FORMAT_UNDEFINED if none)
-   VkSampleCountFlags rasterizationSamples;  // Sample count (0 defaults to 1)
-   uint32_t viewMask;                        // Multiview mask (0 disables multiview)
-   bool occlusionQueryEnable;                // Enable occlusion queries for this secondary
-   VkQueryControlFlags occlusionQueryFlags;  // VkQueryControlFlags
-   bool beginRecording;                      // Begin recording automatically when true
-   int32_t renderAreaX;                      // Render area X offset
-   int32_t renderAreaY;                      // Render area Y offset
-   uint32_t renderAreaWidth;                 // Render area width
-   uint32_t renderAreaHeight;                // Render area height
+   VkCommandBufferUsageFlags usageFlags;    // VK_COMMAND_BUFFER_USAGE_*
+   uint32_t colorAttachmentCount;           // Up to 8 color attachments
+   VkFormat colorAttachmentFormats[8];      // Color formats for inheritance
+   VkFormat depthAttachmentFormat;          // Depth format (VK_FORMAT_UNDEFINED if none)
+   VkFormat stencilAttachmentFormat;        // Stencil format (VK_FORMAT_UNDEFINED if none)
+   VkSampleCountFlags rasterizationSamples; // Sample count (0 defaults to 1)
+   uint32_t viewMask;                       // Multiview mask (0 disables multiview)
+   bool occlusionQueryEnable;               // Enable occlusion queries for this secondary
+   VkQueryControlFlags occlusionQueryFlags; // VkQueryControlFlags
+   bool beginRecording;                     // Begin recording automatically when true
+   int32_t renderAreaX;                     // Render area X offset
+   int32_t renderAreaY;                     // Render area Y offset
+   uint32_t renderAreaWidth;                // Render area width
+   uint32_t renderAreaHeight;               // Render area height
 } VESecondaryCommandBufferDesc;
 
 // =============================================================================
@@ -636,23 +636,23 @@ typedef struct VESecondaryCommandBufferDesc
 // Performance statistics
 typedef struct VEPerformanceStats
 {
-   uint64_t frameTime;          // GPU time in nanoseconds
+   uint64_t frameTime; // GPU time in nanoseconds
    uint32_t drawCalls;
    uint32_t computeDispatches;
    uint64_t verticesRendered;
    uint64_t trianglesRendered;
-   uint32_t pipelineBinds;      // For legacy compatibility
-   uint32_t descriptorBinds;    // For legacy compatibility
+   uint32_t pipelineBinds;   // For legacy compatibility
+   uint32_t descriptorBinds; // For legacy compatibility
 } VEPerformanceStats;
 
 // Memory statistics
 typedef struct VEMemoryStats
 {
-   uint64_t totalAllocated;  // Total VMA allocations in bytes
-   uint64_t totalUsed;       // Actually used memory in bytes
-   uint32_t bufferCount;     // Number of active buffers
-   uint32_t textureCount;    // Number of active textures
-   uint32_t samplerCount;    // Number of active samplers
+   uint64_t totalAllocated; // Total VMA allocations in bytes
+   uint64_t totalUsed;      // Actually used memory in bytes
+   uint32_t bufferCount;    // Number of active buffers
+   uint32_t textureCount;   // Number of active textures
+   uint32_t samplerCount;   // Number of active samplers
 
    // Per-heap statistics
    struct
@@ -689,17 +689,17 @@ typedef struct VEPipelineStats
  */
 typedef struct VEGraphicsPushConstants
 {
-   VEBufferAddress vertexBuffer;       // 8 bytes - vertex data address
-   VEBufferAddress indexBuffer;        // 8 bytes - index data address (optional)
-   VEBufferAddress uniformBuffers[8];  // 64 bytes - up to 8 uniform buffer addresses
-   VETextureIndex textures[16];        // 64 bytes - up to 16 bindless texture indices
-   VESamplerIndex samplers[16];        // 64 bytes - up to 16 bindless sampler indices
-   float objectScale;                  // 4 bytes - per-object scale
-   uint32_t activeTextureCount;        // 4 bytes - number of active textures (0-16)
-   uint32_t activeSamplerCount;        // 4 bytes - number of active samplers (0-16)
-   uint32_t activeUniformCount;        // 4 bytes - number of active uniform buffers (0-8)
-   uint32_t reserved[7];               // 28 bytes - reserved for future use
-} VEGraphicsPushConstants;             // Total: 256 bytes
+   VEBufferAddress vertexBuffer;      // 8 bytes - vertex data address
+   VEBufferAddress indexBuffer;       // 8 bytes - index data address (optional)
+   VEBufferAddress uniformBuffers[8]; // 64 bytes - up to 8 uniform buffer addresses
+   VETextureIndex textures[16];       // 64 bytes - up to 16 bindless texture indices
+   VESamplerIndex samplers[16];       // 64 bytes - up to 16 bindless sampler indices
+   float objectScale;                 // 4 bytes - per-object scale
+   uint32_t activeTextureCount;       // 4 bytes - number of active textures (0-16)
+   uint32_t activeSamplerCount;       // 4 bytes - number of active samplers (0-16)
+   uint32_t activeUniformCount;       // 4 bytes - number of active uniform buffers (0-8)
+   uint32_t reserved[7];              // 28 bytes - reserved for future use
+} VEGraphicsPushConstants;            // Total: 256 bytes
 
 /**
  * @brief Example push constants structure for compute shaders - 256 bytes.
@@ -709,41 +709,47 @@ typedef struct VEGraphicsPushConstants
  */
 typedef struct VEComputePushConstants
 {
-   VEBufferAddress buffers[16];   // 128 bytes - up to 16 buffer addresses
-   VETextureIndex textures[16];   // 64 bytes - up to 16 texture indices
-   VESamplerIndex samplers[8];    // 32 bytes - up to 8 sampler indices
-   uint32_t elementCount;         // 4 bytes - number of elements to process
-   uint32_t activeBufferCount;    // 4 bytes - number of active buffers (0-16)
-   uint32_t activeTextureCount;   // 4 bytes - number of active textures (0-16)
-   uint32_t activeSamplerCount;   // 4 bytes - number of active samplers (0-8)
-   uint32_t reserved[4];          // 16 bytes - reserved for future use
-} VEComputePushConstants;         // Total: 256 bytes
+   VEBufferAddress buffers[16]; // 128 bytes - up to 16 buffer addresses
+   VETextureIndex textures[16]; // 64 bytes - up to 16 texture indices
+   VESamplerIndex samplers[8];  // 32 bytes - up to 8 sampler indices
+   uint32_t elementCount;       // 4 bytes - number of elements to process
+   uint32_t activeBufferCount;  // 4 bytes - number of active buffers (0-16)
+   uint32_t activeTextureCount; // 4 bytes - number of active textures (0-16)
+   uint32_t activeSamplerCount; // 4 bytes - number of active samplers (0-8)
+   uint32_t reserved[4];        // 16 bytes - reserved for future use
+} VEComputePushConstants;       // Total: 256 bytes
 
 /**
  * @brief Initialize VEGraphicsPushConstants with safe defaults.
  *
  * Example macro for use with the example VEGraphicsPushConstants structure.
  */
-#define VE_INIT_GRAPHICS_PUSH_CONSTANTS()                                                      \
-   {                                                                                           \
-      .vertexBuffer = VE_INVALID_ADDRESS, .indexBuffer = VE_INVALID_ADDRESS,                   \
-      .uniformBuffers = {VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,           \
-                         VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,           \
-                         VE_INVALID_ADDRESS, VE_INVALID_ADDRESS},                              \
-      .textures = {VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, \
-                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, \
-                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, \
-                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, \
-                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, \
-                   VE_INVALID_TEXTURE_INDEX},                                                  \
-      .samplers = {VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, \
-                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, \
-                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, \
-                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, \
-                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, \
-                   VE_INVALID_SAMPLER_INDEX},                                                  \
-      .objectScale = 1.0f, .activeTextureCount = 0, .activeSamplerCount = 0,                   \
-      .activeUniformCount = 0, .reserved = {0, 0, 0, 0, 0, 0, 0}                               \
+#define VE_INIT_GRAPHICS_PUSH_CONSTANTS()                                                                              \
+   {                                                                                                                   \
+      .vertexBuffer = VE_INVALID_ADDRESS, .indexBuffer = VE_INVALID_ADDRESS,                                           \
+      .uniformBuffers = {VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,               \
+                         VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS},              \
+      .textures = {VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
+                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
+                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
+                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
+                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
+                   VE_INVALID_TEXTURE_INDEX},                                                                          \
+      .samplers = {VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
+                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
+                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
+                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
+                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
+                   VE_INVALID_SAMPLER_INDEX},                                                                          \
+      .objectScale = 1.0f, .activeTextureCount = 0, .activeSamplerCount = 0, .activeUniformCount = 0, .reserved = {    \
+         0,                                                                                                            \
+         0,                                                                                                            \
+         0,                                                                                                            \
+         0,                                                                                                            \
+         0,                                                                                                            \
+         0,                                                                                                            \
+         0                                                                                                             \
+      }                                                                                                                \
    }
 
 /**
@@ -751,23 +757,27 @@ typedef struct VEComputePushConstants
  *
  * Example macro for use with the example VEComputePushConstants structure.
  */
-#define VE_INIT_COMPUTE_PUSH_CONSTANTS()                                                       \
-   {                                                                                           \
-      .buffers = {VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, \
-                  VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, \
-                  VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, \
-                  VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS}, \
-      .textures = {VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, \
-                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, \
-                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, \
-                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, \
-                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, \
-                   VE_INVALID_TEXTURE_INDEX},                                                  \
-      .samplers = {VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, \
-                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, \
-                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX},                        \
-      .elementCount = 0, .activeBufferCount = 0, .activeTextureCount = 0,                      \
-      .activeSamplerCount = 0, .reserved = {0, 0, 0, 0}                                        \
+#define VE_INIT_COMPUTE_PUSH_CONSTANTS()                                                                               \
+   {                                                                                                                   \
+      .buffers = {VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,                      \
+                  VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,                      \
+                  VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,                      \
+                  VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS},                     \
+      .textures = {VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
+                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
+                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
+                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
+                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
+                   VE_INVALID_TEXTURE_INDEX},                                                                          \
+      .samplers = {VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
+                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
+                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX},                                                \
+      .elementCount = 0, .activeBufferCount = 0, .activeTextureCount = 0, .activeSamplerCount = 0, .reserved = {       \
+         0,                                                                                                            \
+         0,                                                                                                            \
+         0,                                                                                                            \
+         0                                                                                                             \
+      }                                                                                                                \
    }
 
 // =============================================================================
@@ -777,38 +787,38 @@ typedef struct VEComputePushConstants
 // debug visualization, and UI elements. All colors use full opacity (alpha=1.0).
 
 // --- Primary colors ---
-#define VE_COLOR_BLACK   ((VEColor){0.0f, 0.0f, 0.0f, 1.0f})
-#define VE_COLOR_WHITE   ((VEColor){1.0f, 1.0f, 1.0f, 1.0f})
-#define VE_COLOR_RED     ((VEColor){1.0f, 0.0f, 0.0f, 1.0f})
-#define VE_COLOR_GREEN   ((VEColor){0.0f, 1.0f, 0.0f, 1.0f})
-#define VE_COLOR_BLUE    ((VEColor){0.0f, 0.0f, 1.0f, 1.0f})
+#define VE_COLOR_BLACK ((VEColor){0.0f, 0.0f, 0.0f, 1.0f})
+#define VE_COLOR_WHITE ((VEColor){1.0f, 1.0f, 1.0f, 1.0f})
+#define VE_COLOR_RED ((VEColor){1.0f, 0.0f, 0.0f, 1.0f})
+#define VE_COLOR_GREEN ((VEColor){0.0f, 1.0f, 0.0f, 1.0f})
+#define VE_COLOR_BLUE ((VEColor){0.0f, 0.0f, 1.0f, 1.0f})
 
 // --- Secondary colors ---
-#define VE_COLOR_YELLOW  ((VEColor){1.0f, 1.0f, 0.0f, 1.0f})
-#define VE_COLOR_CYAN    ((VEColor){0.0f, 1.0f, 1.0f, 1.0f})
+#define VE_COLOR_YELLOW ((VEColor){1.0f, 1.0f, 0.0f, 1.0f})
+#define VE_COLOR_CYAN ((VEColor){0.0f, 1.0f, 1.0f, 1.0f})
 #define VE_COLOR_MAGENTA ((VEColor){1.0f, 0.0f, 1.0f, 1.0f})
 
 // --- Extended colors ---
-#define VE_COLOR_ORANGE  ((VEColor){1.0f, 0.5f, 0.0f, 1.0f})
-#define VE_COLOR_PURPLE  ((VEColor){0.5f, 0.0f, 1.0f, 1.0f})
-#define VE_COLOR_PINK    ((VEColor){1.0f, 0.4f, 0.7f, 1.0f})
-#define VE_COLOR_BROWN   ((VEColor){0.6f, 0.3f, 0.1f, 1.0f})
-#define VE_COLOR_LIME    ((VEColor){0.5f, 1.0f, 0.0f, 1.0f})
-#define VE_COLOR_TEAL    ((VEColor){0.0f, 0.5f, 0.5f, 1.0f})
-#define VE_COLOR_NAVY    ((VEColor){0.0f, 0.0f, 0.5f, 1.0f})
-#define VE_COLOR_MAROON  ((VEColor){0.5f, 0.0f, 0.0f, 1.0f})
+#define VE_COLOR_ORANGE ((VEColor){1.0f, 0.5f, 0.0f, 1.0f})
+#define VE_COLOR_PURPLE ((VEColor){0.5f, 0.0f, 1.0f, 1.0f})
+#define VE_COLOR_PINK ((VEColor){1.0f, 0.4f, 0.7f, 1.0f})
+#define VE_COLOR_BROWN ((VEColor){0.6f, 0.3f, 0.1f, 1.0f})
+#define VE_COLOR_LIME ((VEColor){0.5f, 1.0f, 0.0f, 1.0f})
+#define VE_COLOR_TEAL ((VEColor){0.0f, 0.5f, 0.5f, 1.0f})
+#define VE_COLOR_NAVY ((VEColor){0.0f, 0.0f, 0.5f, 1.0f})
+#define VE_COLOR_MAROON ((VEColor){0.5f, 0.0f, 0.0f, 1.0f})
 
 // --- Grayscale ---
-#define VE_COLOR_GRAY_DARK  ((VEColor){0.25f, 0.25f, 0.25f, 1.0f})
-#define VE_COLOR_GRAY       ((VEColor){0.5f, 0.5f, 0.5f, 1.0f})
+#define VE_COLOR_GRAY_DARK ((VEColor){0.25f, 0.25f, 0.25f, 1.0f})
+#define VE_COLOR_GRAY ((VEColor){0.5f, 0.5f, 0.5f, 1.0f})
 #define VE_COLOR_GRAY_LIGHT ((VEColor){0.75f, 0.75f, 0.75f, 1.0f})
 
 // --- Transparent ---
 #define VE_COLOR_TRANSPARENT ((VEColor){0.0f, 0.0f, 0.0f, 0.0f})
 
 // --- Common clear colors ---
-#define VE_COLOR_CORNFLOWER_BLUE ((VEColor){0.392f, 0.584f, 0.929f, 1.0f})  // Classic XNA/DirectX clear color
-#define VE_COLOR_DARK_GRAY       ((VEColor){0.1f, 0.1f, 0.1f, 1.0f})        // Good for dark themes
+#define VE_COLOR_CORNFLOWER_BLUE ((VEColor){0.392f, 0.584f, 0.929f, 1.0f}) // Classic XNA/DirectX clear color
+#define VE_COLOR_DARK_GRAY ((VEColor){0.1f, 0.1f, 0.1f, 1.0f})             // Good for dark themes
 
 // =============================================================================
 // =============================================================================
@@ -853,10 +863,8 @@ VULKEASE_API uint32_t veGetVersion(void);
  * @note Call veDestroyContext() when done, after destroying all child devices.
  * @see veDestroyContext, veCreateDevice
  */
-VULKEASE_API VEResult veCreateContext(const char *applicationName,
-                                      const char *const *additionalInstanceExtensions,
-                                      uint32_t additionalInstanceExtensionCount,
-                                      VEContext **outContext);
+VULKEASE_API VEResult veCreateContext(const char *applicationName, const char *const *additionalInstanceExtensions,
+                                      uint32_t additionalInstanceExtensionCount, VEContext **outContext);
 
 /**
  * @brief Destroy a VulkEase context and release all associated resources.
@@ -907,8 +915,7 @@ VULKEASE_API VEResult veEnumeratePhysicalDevices(VEContext *context, uint32_t *c
  * @see veEnumeratePhysicalDevices, veCreateDevice
  */
 VULKEASE_API VEResult veGetPhysicalDeviceInfo(VEContext *context, uint32_t deviceIndex,
-                                              VkPhysicalDevice *physicalDevice,
-                                              char *deviceName,
+                                              VkPhysicalDevice *physicalDevice, char *deviceName,
                                               VkPhysicalDeviceType *deviceType);
 
 /**
@@ -933,11 +940,9 @@ VULKEASE_API VEResult veGetPhysicalDeviceInfo(VEContext *context, uint32_t devic
  * @note Call veDestroyDevice() when done, before destroying the context.
  * @see veDestroyDevice, veEnumeratePhysicalDevices
  */
-VULKEASE_API VEResult veCreateDevice(VEContext *context,
-                                     VkPhysicalDevice preferredDevice,
+VULKEASE_API VEResult veCreateDevice(VEContext *context, VkPhysicalDevice preferredDevice,
                                      const char *const *additionalDeviceExtensions,
-                                     uint32_t additionalDeviceExtensionCount,
-                                     VEDevice **outDevice);
+                                     uint32_t additionalDeviceExtensionCount, VEDevice **outDevice);
 
 /**
  * @brief Destroy a VulkEase device and release all associated resources.
@@ -1402,8 +1407,8 @@ VULKEASE_API VEResult veUnmapBuffer(VEDevice *device, VEBufferAddress address);
  *
  * @see veMapBuffer
  */
-VULKEASE_API VEResult veUpdateBuffer(VEDevice *device, VEBufferAddress address, const void *data,
-                                     uint64_t size, uint64_t offset);
+VULKEASE_API VEResult veUpdateBuffer(VEDevice *device, VEBufferAddress address, const void *data, uint64_t size,
+                                     uint64_t offset);
 
 /**
  * @brief Get the size of a buffer in bytes.
@@ -1441,8 +1446,8 @@ VULKEASE_API VkBufferUsageFlags veGetBufferUsage(VEDevice *device, VEBufferAddre
  *
  * @see veCreateBuffer, veDestroyBuffer
  */
-VULKEASE_API VEResult veCreateVertexBuffer(VEDevice *device, const void *vertices, uint64_t size,
-                                           const char *debugName, VEBufferAddress *outAddress);
+VULKEASE_API VEResult veCreateVertexBuffer(VEDevice *device, const void *vertices, uint64_t size, const char *debugName,
+                                           VEBufferAddress *outAddress);
 
 /**
  * @brief Create an index buffer with initial data.
@@ -1460,8 +1465,8 @@ VULKEASE_API VEResult veCreateVertexBuffer(VEDevice *device, const void *vertice
  *
  * @see veCreateBuffer, veDestroyBuffer
  */
-VULKEASE_API VEResult veCreateIndexBuffer(VEDevice *device, const void *indices, uint64_t size,
-                                          const char *debugName, VEBufferAddress *outAddress);
+VULKEASE_API VEResult veCreateIndexBuffer(VEDevice *device, const void *indices, uint64_t size, const char *debugName,
+                                          VEBufferAddress *outAddress);
 
 /**
  * @brief Create a uniform buffer.
@@ -1555,8 +1560,8 @@ VULKEASE_API VEResult veCmdCopyBuffer(VECommandBuffer *cmd, VEBufferAddress src,
  *
  * @see veCmdCopyBuffer
  */
-VULKEASE_API VEResult veCopyBuffer(VEDevice *device, VEBufferAddress src, VEBufferAddress dst,
-                                   uint64_t srcOffset, uint64_t dstOffset, uint64_t size, VkFence fence);
+VULKEASE_API VEResult veCopyBuffer(VEDevice *device, VEBufferAddress src, VEBufferAddress dst, uint64_t srcOffset,
+                                   uint64_t dstOffset, uint64_t size, VkFence fence);
 
 /**
  * @brief Fill a buffer with a 32-bit value.
@@ -1572,8 +1577,8 @@ VULKEASE_API VEResult veCopyBuffer(VEDevice *device, VEBufferAddress src, VEBuff
  * @return VE_SUCCESS on success, or:
  *         - VE_ERROR_INVALID_PARAMETER if cmd is NULL or offset/size alignment is wrong
  */
-VULKEASE_API VEResult veCmdFillBuffer(VECommandBuffer *cmd, VEBufferAddress dst, uint64_t offset,
-                                      uint64_t size, uint32_t data);
+VULKEASE_API VEResult veCmdFillBuffer(VECommandBuffer *cmd, VEBufferAddress dst, uint64_t offset, uint64_t size,
+                                      uint32_t data);
 
 /**
  * @brief Update buffer with inline data during command buffer recording.
@@ -1591,8 +1596,8 @@ VULKEASE_API VEResult veCmdFillBuffer(VECommandBuffer *cmd, VEBufferAddress dst,
  *         - VE_ERROR_INVALID_PARAMETER if cmd or data is NULL
  *         - VE_ERROR_INVALID_PARAMETER if size exceeds 65536 bytes
  */
-VULKEASE_API VEResult veCmdUpdateBuffer(VECommandBuffer *cmd, VEBufferAddress dst, uint64_t offset,
-                                        uint64_t size, const void *data);
+VULKEASE_API VEResult veCmdUpdateBuffer(VECommandBuffer *cmd, VEBufferAddress dst, uint64_t offset, uint64_t size,
+                                        const void *data);
 
 // =============================================================================
 // TEXTURE FUNCTIONS
@@ -1666,9 +1671,8 @@ VULKEASE_API VkFormat veGetTextureFormat(VEDevice *device, VETextureIndex index)
  *
  * @see veCreateTexture, veDestroyTexture
  */
-VULKEASE_API VEResult veCreateTexture1D(VEDevice *device, uint32_t width, VkFormat format,
-                                        VkImageUsageFlags usage, const char *debugName,
-                                        VETextureIndex *outIndex);
+VULKEASE_API VEResult veCreateTexture1D(VEDevice *device, uint32_t width, VkFormat format, VkImageUsageFlags usage,
+                                        const char *debugName, VETextureIndex *outIndex);
 
 /**
  * @brief Create a 2D texture.
@@ -1687,9 +1691,8 @@ VULKEASE_API VEResult veCreateTexture1D(VEDevice *device, uint32_t width, VkForm
  *
  * @see veCreateTexture, veDestroyTexture
  */
-VULKEASE_API VEResult veCreateTexture2D(VEDevice *device, uint32_t width, uint32_t height,
-                                        VkFormat format, VkImageUsageFlags usage,
-                                        const char *debugName, VETextureIndex *outIndex);
+VULKEASE_API VEResult veCreateTexture2D(VEDevice *device, uint32_t width, uint32_t height, VkFormat format,
+                                        VkImageUsageFlags usage, const char *debugName, VETextureIndex *outIndex);
 
 /**
  * @brief Create a 3D texture.
@@ -1709,9 +1712,9 @@ VULKEASE_API VEResult veCreateTexture2D(VEDevice *device, uint32_t width, uint32
  *
  * @see veCreateTexture, veDestroyTexture
  */
-VULKEASE_API VEResult veCreateTexture3D(VEDevice *device, uint32_t width, uint32_t height,
-                                        uint32_t depth, VkFormat format, VkImageUsageFlags usage,
-                                        const char *debugName, VETextureIndex *outIndex);
+VULKEASE_API VEResult veCreateTexture3D(VEDevice *device, uint32_t width, uint32_t height, uint32_t depth,
+                                        VkFormat format, VkImageUsageFlags usage, const char *debugName,
+                                        VETextureIndex *outIndex);
 
 /**
  * @brief Create a 2D texture array.
@@ -1731,9 +1734,9 @@ VULKEASE_API VEResult veCreateTexture3D(VEDevice *device, uint32_t width, uint32
  *
  * @see veCreateTexture, veDestroyTexture
  */
-VULKEASE_API VEResult veCreateTexture2DArray(VEDevice *device, uint32_t width, uint32_t height,
-                                             uint32_t layers, VkFormat format, VkImageUsageFlags usage,
-                                             const char *debugName, VETextureIndex *outIndex);
+VULKEASE_API VEResult veCreateTexture2DArray(VEDevice *device, uint32_t width, uint32_t height, uint32_t layers,
+                                             VkFormat format, VkImageUsageFlags usage, const char *debugName,
+                                             VETextureIndex *outIndex);
 
 /**
  * @brief Create a cube map texture.
@@ -1751,9 +1754,8 @@ VULKEASE_API VEResult veCreateTexture2DArray(VEDevice *device, uint32_t width, u
  *
  * @see veCreateTexture, veDestroyTexture
  */
-VULKEASE_API VEResult veCreateTextureCube(VEDevice *device, uint32_t size, VkFormat format,
-                                          VkImageUsageFlags usage, const char *debugName,
-                                          VETextureIndex *outIndex);
+VULKEASE_API VEResult veCreateTextureCube(VEDevice *device, uint32_t size, VkFormat format, VkImageUsageFlags usage,
+                                          const char *debugName, VETextureIndex *outIndex);
 
 /**
  * @brief Create a multisampled 2D texture.
@@ -1773,10 +1775,9 @@ VULKEASE_API VEResult veCreateTextureCube(VEDevice *device, uint32_t size, VkFor
  *
  * @see veCreateTexture, veDestroyTexture
  */
-VULKEASE_API VEResult veCreateTexture2DMultisample(VEDevice *device, uint32_t width, uint32_t height,
-                                                   VkFormat format, VkSampleCountFlags sampleCount,
-                                                   VkImageUsageFlags usage, const char *debugName,
-                                                   VETextureIndex *outIndex);
+VULKEASE_API VEResult veCreateTexture2DMultisample(VEDevice *device, uint32_t width, uint32_t height, VkFormat format,
+                                                   VkSampleCountFlags sampleCount, VkImageUsageFlags usage,
+                                                   const char *debugName, VETextureIndex *outIndex);
 
 /**
  * @brief Load a texture from an image file.
@@ -1795,8 +1796,8 @@ VULKEASE_API VEResult veCreateTexture2DMultisample(VEDevice *device, uint32_t wi
  *
  * @see veDestroyTexture
  */
-VULKEASE_API VEResult veLoadTexture(VEDevice *device, const char *filename, VkImageUsageFlags usage,
-                                    bool generateMips, VETextureIndex *outIndex);
+VULKEASE_API VEResult veLoadTexture(VEDevice *device, const char *filename, VkImageUsageFlags usage, bool generateMips,
+                                    VETextureIndex *outIndex);
 
 /**
  * @brief Load an HDR texture from a file.
@@ -1831,9 +1832,8 @@ VULKEASE_API VEResult veLoadHDRTexture(VEDevice *device, const char *filename, V
  *
  * @see veDestroyTexture
  */
-VULKEASE_API VEResult veLoadCubeTexture(VEDevice *device, const char *filenames[6],
-                                        VkImageUsageFlags usage, bool generateMips,
-                                        VETextureIndex *outIndex);
+VULKEASE_API VEResult veLoadCubeTexture(VEDevice *device, const char *filenames[6], VkImageUsageFlags usage,
+                                        bool generateMips, VETextureIndex *outIndex);
 
 /**
  * @brief Write data to a region of a texture from the CPU.
@@ -1856,9 +1856,8 @@ VULKEASE_API VEResult veLoadCubeTexture(VEDevice *device, const char *filenames[
  *
  * @see veHostWriteTexture
  */
-VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETextureIndex textureIndex,
-                                               const void *srcData, size_t dataSize,
-                                               uint32_t offsetX, uint32_t offsetY, uint32_t offsetZ,
+VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETextureIndex textureIndex, const void *srcData,
+                                               size_t dataSize, uint32_t offsetX, uint32_t offsetY, uint32_t offsetZ,
                                                uint32_t width, uint32_t height, uint32_t depth);
 
 /**
@@ -1881,9 +1880,8 @@ VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETextureIndex 
  *
  * @see veHostReadTexture
  */
-VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETextureIndex textureIndex,
-                                              void *dstData, size_t dataSize,
-                                              uint32_t offsetX, uint32_t offsetY, uint32_t offsetZ,
+VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETextureIndex textureIndex, void *dstData,
+                                              size_t dataSize, uint32_t offsetX, uint32_t offsetY, uint32_t offsetZ,
                                               uint32_t width, uint32_t height, uint32_t depth);
 
 /**
@@ -1900,8 +1898,8 @@ VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETextureIndex t
  *
  * @see veHostWriteTextureRegion
  */
-VULKEASE_API VEResult veHostWriteTexture(VEDevice *device, VETextureIndex textureIndex,
-                                         const void *srcData, size_t dataSize);
+VULKEASE_API VEResult veHostWriteTexture(VEDevice *device, VETextureIndex textureIndex, const void *srcData,
+                                         size_t dataSize);
 
 /**
  * @brief Read data from an entire texture to the CPU.
@@ -1917,8 +1915,7 @@ VULKEASE_API VEResult veHostWriteTexture(VEDevice *device, VETextureIndex textur
  *
  * @see veHostReadTextureRegion
  */
-VULKEASE_API VEResult veHostReadTexture(VEDevice *device, VETextureIndex textureIndex,
-                                        void *dstData, size_t dataSize);
+VULKEASE_API VEResult veHostReadTexture(VEDevice *device, VETextureIndex textureIndex, void *dstData, size_t dataSize);
 
 /**
  * @brief Generate mipmaps for a texture (deferred/command buffer version).
@@ -2049,8 +2046,8 @@ VULKEASE_API VEResult veBlitTexture(VEDevice *device, VETextureIndex src, VEText
  *
  * @see VEBufferTextureCopyRegion, veCopyBufferToTexture
  */
-VULKEASE_API VEResult veCmdCopyBufferToTexture(VECommandBuffer *cmd, VEBufferAddress src,
-                                               VETextureIndex dst, const VEBufferTextureCopyRegion *region);
+VULKEASE_API VEResult veCmdCopyBufferToTexture(VECommandBuffer *cmd, VEBufferAddress src, VETextureIndex dst,
+                                               const VEBufferTextureCopyRegion *region);
 
 /**
  * @brief Copy buffer to texture (immediate version).
@@ -2084,8 +2081,8 @@ VULKEASE_API VEResult veCopyBufferToTexture(VEDevice *device, VEBufferAddress sr
  *
  * @see VEBufferTextureCopyRegion, veCopyTextureToBuffer
  */
-VULKEASE_API VEResult veCmdCopyTextureToBuffer(VECommandBuffer *cmd, VETextureIndex src,
-                                               VEBufferAddress dst, const VEBufferTextureCopyRegion *region);
+VULKEASE_API VEResult veCmdCopyTextureToBuffer(VECommandBuffer *cmd, VETextureIndex src, VEBufferAddress dst,
+                                               const VEBufferTextureCopyRegion *region);
 
 /**
  * @brief Copy texture to buffer (immediate version).
@@ -2241,9 +2238,8 @@ VULKEASE_API VESamplerIndex veGetDefaultSampler(VEDevice *device, VEDefaultSampl
  *
  * @see veLoadShaderFromFile, veDestroyShader
  */
-VULKEASE_API VEResult veLoadShaderFromBuffer(VEDevice *device, VkShaderStageFlags stage,
-                                             const void *code, size_t codeSize,
-                                             const char *entryPoint, const char *debugName,
+VULKEASE_API VEResult veLoadShaderFromBuffer(VEDevice *device, VkShaderStageFlags stage, const void *code,
+                                             size_t codeSize, const char *entryPoint, const char *debugName,
                                              VEShader **outShader);
 
 /**
@@ -2264,9 +2260,8 @@ VULKEASE_API VEResult veLoadShaderFromBuffer(VEDevice *device, VkShaderStageFlag
  *
  * @see veLoadShaderFromBuffer, veDestroyShader
  */
-VULKEASE_API VEResult veLoadShaderFromFile(VEDevice *device, const char *filename,
-                                           VkShaderStageFlags stage, const char *entryPoint,
-                                           const char *debugName, VEShader **outShader);
+VULKEASE_API VEResult veLoadShaderFromFile(VEDevice *device, const char *filename, VkShaderStageFlags stage,
+                                           const char *entryPoint, const char *debugName, VEShader **outShader);
 
 /**
  * @brief Destroy a shader object.
@@ -2381,11 +2376,10 @@ VULKEASE_API VEResult veDestroyGraphicsPipeline(VEGraphicsPipeline *pipeline);
  *
  * @see veCreateGraphicsPipeline, veDestroyGraphicsPipeline
  */
-VULKEASE_API VEResult veCreateOpaquePipeline(VEDevice *device, VEShader *vertexShader,
-                                             VEShader *fragmentShader,
+VULKEASE_API VEResult veCreateOpaquePipeline(VEDevice *device, VEShader *vertexShader, VEShader *fragmentShader,
                                              const VEVertexBinding *bindings, uint32_t bindingCount,
-                                             const VEVertexAttribute *attrs, uint32_t attrCount,
-                                             const char *debugName, VEGraphicsPipeline **outPipeline);
+                                             const VEVertexAttribute *attrs, uint32_t attrCount, const char *debugName,
+                                             VEGraphicsPipeline **outPipeline);
 
 /**
  * @brief Create a transparent rendering pipeline.
@@ -2407,8 +2401,7 @@ VULKEASE_API VEResult veCreateOpaquePipeline(VEDevice *device, VEShader *vertexS
  *
  * @see veCreateGraphicsPipeline, veDestroyGraphicsPipeline
  */
-VULKEASE_API VEResult veCreateTransparentPipeline(VEDevice *device, VEShader *vertexShader,
-                                                  VEShader *fragmentShader,
+VULKEASE_API VEResult veCreateTransparentPipeline(VEDevice *device, VEShader *vertexShader, VEShader *fragmentShader,
                                                   const VEVertexBinding *bindings, uint32_t bindingCount,
                                                   const VEVertexAttribute *attrs, uint32_t attrCount,
                                                   const char *debugName, VEGraphicsPipeline **outPipeline);
@@ -2433,8 +2426,7 @@ VULKEASE_API VEResult veCreateTransparentPipeline(VEDevice *device, VEShader *ve
  *
  * @see veCreateGraphicsPipeline, veDestroyGraphicsPipeline
  */
-VULKEASE_API VEResult veCreateAdditivePipeline(VEDevice *device, VEShader *vertexShader,
-                                               VEShader *fragmentShader,
+VULKEASE_API VEResult veCreateAdditivePipeline(VEDevice *device, VEShader *vertexShader, VEShader *fragmentShader,
                                                const VEVertexBinding *bindings, uint32_t bindingCount,
                                                const VEVertexAttribute *attrs, uint32_t attrCount,
                                                const char *debugName, VEGraphicsPipeline **outPipeline);
@@ -2459,11 +2451,10 @@ VULKEASE_API VEResult veCreateAdditivePipeline(VEDevice *device, VEShader *verte
  *
  * @see veCreateGraphicsPipeline, veDestroyGraphicsPipeline
  */
-VULKEASE_API VEResult veCreateShadowPipeline(VEDevice *device, VEShader *vertexShader,
-                                             VEShader *fragmentShader,
+VULKEASE_API VEResult veCreateShadowPipeline(VEDevice *device, VEShader *vertexShader, VEShader *fragmentShader,
                                              const VEVertexBinding *bindings, uint32_t bindingCount,
-                                             const VEVertexAttribute *attrs, uint32_t attrCount,
-                                             const char *debugName, VEGraphicsPipeline **outPipeline);
+                                             const VEVertexAttribute *attrs, uint32_t attrCount, const char *debugName,
+                                             VEGraphicsPipeline **outPipeline);
 
 /**
  * @brief Create a UI overlay rendering pipeline.
@@ -2485,8 +2476,7 @@ VULKEASE_API VEResult veCreateShadowPipeline(VEDevice *device, VEShader *vertexS
  *
  * @see veCreateGraphicsPipeline, veDestroyGraphicsPipeline
  */
-VULKEASE_API VEResult veCreateUIOverlayPipeline(VEDevice *device, VEShader *vertexShader,
-                                                VEShader *fragmentShader,
+VULKEASE_API VEResult veCreateUIOverlayPipeline(VEDevice *device, VEShader *vertexShader, VEShader *fragmentShader,
                                                 const VEVertexBinding *bindings, uint32_t bindingCount,
                                                 const VEVertexAttribute *attrs, uint32_t attrCount,
                                                 const char *debugName, VEGraphicsPipeline **outPipeline);
@@ -2523,8 +2513,7 @@ VULKEASE_API VEGraphicsPipelineDesc veDefaultGraphicsPipelineDesc(void);
  *
  * @see VEDrawStateDesc, veDestroyDrawState, veApplyDrawState
  */
-VULKEASE_API VEResult veCreateDrawState(VEDevice *device, const VEDrawStateDesc *desc,
-                                        VEDrawState **outDrawState);
+VULKEASE_API VEResult veCreateDrawState(VEDevice *device, const VEDrawStateDesc *desc, VEDrawState **outDrawState);
 
 /**
  * @brief Destroy a draw state.
@@ -2694,8 +2683,7 @@ VULKEASE_API VEResult veReleaseCommandBuffer(VECommandBuffer *cmd);
  *
  * @see VESecondaryCommandBufferDesc, veBeginSecondaryCommandBuffer
  */
-VULKEASE_API VEResult vePopulateSecondaryDescFromRenderTarget(VEDevice *device,
-                                                              const VERenderTarget *renderTarget,
+VULKEASE_API VEResult vePopulateSecondaryDescFromRenderTarget(VEDevice *device, const VERenderTarget *renderTarget,
                                                               VESecondaryCommandBufferDesc *desc);
 
 /**
@@ -2714,8 +2702,7 @@ VULKEASE_API VEResult vePopulateSecondaryDescFromRenderTarget(VEDevice *device,
  * @note Each secondary buffer should be recorded from a single thread only.
  * @see veBeginSecondaryRecording, veExecuteSecondaryCommandBuffers
  */
-VULKEASE_API VEResult veBeginSecondaryCommandBuffer(VEDevice *device,
-                                                    const VESecondaryCommandBufferDesc *desc,
+VULKEASE_API VEResult veBeginSecondaryCommandBuffer(VEDevice *device, const VESecondaryCommandBufferDesc *desc,
                                                     VECommandBuffer **outCmd);
 
 /**
@@ -2731,8 +2718,7 @@ VULKEASE_API VEResult veBeginSecondaryCommandBuffer(VEDevice *device,
  *
  * @see veBeginSecondaryCommandBuffer
  */
-VULKEASE_API VEResult veBeginSecondaryRecording(VECommandBuffer *cmd,
-                                                const VESecondaryCommandBufferDesc *desc);
+VULKEASE_API VEResult veBeginSecondaryRecording(VECommandBuffer *cmd, const VESecondaryCommandBufferDesc *desc);
 
 /**
  * @brief Execute secondary command buffers within a primary command buffer.
@@ -2788,8 +2774,7 @@ VULKEASE_API VERenderTarget veCreateRenderTarget(uint32_t width, uint32_t height
  *
  * @see veCreateRenderTarget, veBeginRendering
  */
-VULKEASE_API VERenderTarget veCreateRenderTargetWithOffset(int32_t x, int32_t y,
-                                                           uint32_t width, uint32_t height);
+VULKEASE_API VERenderTarget veCreateRenderTargetWithOffset(int32_t x, int32_t y, uint32_t width, uint32_t height);
 
 /**
  * @brief Add a color attachment to the render target.
@@ -2828,8 +2813,8 @@ VULKEASE_API VEResult veRenderTargetAddColorAttachment(VERenderTarget *target, V
  * @see veRenderTargetAddColorAttachment, veBeginRendering
  */
 VULKEASE_API VEResult veRenderTargetAddColorAttachmentResolve(VERenderTarget *target, VETextureIndex texture,
-                                                              VETextureIndex resolveTexture,
-                                                              VkAttachmentLoadOp loadOp, VEColor clearValue);
+                                                              VETextureIndex resolveTexture, VkAttachmentLoadOp loadOp,
+                                                              VEColor clearValue);
 
 /**
  * @brief Set the depth attachment for rendering.
@@ -2881,8 +2866,7 @@ VULKEASE_API VEResult veRenderTargetSetStencilAttachment(VERenderTarget *target,
  *
  * @return VE_SUCCESS on success.
  */
-VULKEASE_API VEResult veResizeRenderTarget(VEDevice *device, VERenderTarget *target,
-                                           uint32_t width, uint32_t height);
+VULKEASE_API VEResult veResizeRenderTarget(VEDevice *device, VERenderTarget *target, uint32_t width, uint32_t height);
 
 /**
  * @brief Create a simple render target with color and optional depth.
@@ -2903,9 +2887,8 @@ VULKEASE_API VEResult veResizeRenderTarget(VEDevice *device, VERenderTarget *tar
  * @return Configured VERenderTarget structure.
  */
 VULKEASE_API VERenderTarget veCreateSimpleRenderTarget(VEDevice *device, uint32_t width, uint32_t height,
-                                                       VkFormat colorFormat, VkFormat depthFormat,
-                                                       VEColor clearColor, float clearDepth,
-                                                       VETextureIndex *outColorTexture,
+                                                       VkFormat colorFormat, VkFormat depthFormat, VEColor clearColor,
+                                                       float clearDepth, VETextureIndex *outColorTexture,
                                                        VETextureIndex *outDepthTexture);
 
 /**
@@ -2921,8 +2904,8 @@ VULKEASE_API VERenderTarget veCreateSimpleRenderTarget(VEDevice *device, uint32_
  *
  * @return VE_SUCCESS on success, or VE_ERROR_SWAPCHAIN_OUT_OF_DATE if resize needed.
  */
-VULKEASE_API VEResult veBlitTextureToSwapchain(VECommandBuffer *cmd, VETextureIndex texture,
-                                               VESwapchain *swapchain, VkFilter filter);
+VULKEASE_API VEResult veBlitTextureToSwapchain(VECommandBuffer *cmd, VETextureIndex texture, VESwapchain *swapchain,
+                                               VkFilter filter);
 
 /**
  * @brief Begin dynamic rendering.
@@ -3008,9 +2991,8 @@ VULKEASE_API VEResult veApplyDrawState(VECommandBuffer *cmd, VEDrawState *drawSt
  *
  * @see veBindGraphicsPipeline, veApplyDrawState, veSetViewport, veSetScissor
  */
-VULKEASE_API VEResult veApplyGraphicsState(VECommandBuffer *cmd, VEGraphicsPipeline *pipeline,
-                                           VEDrawState *drawState, const VEViewport *viewport,
-                                           const VERect2D *scissor);
+VULKEASE_API VEResult veApplyGraphicsState(VECommandBuffer *cmd, VEGraphicsPipeline *pipeline, VEDrawState *drawState,
+                                           const VEViewport *viewport, const VERect2D *scissor);
 
 /**
  * @brief Bind a single shader.
@@ -3082,8 +3064,8 @@ VULKEASE_API VEResult veUnbindShaderStage(VECommandBuffer *cmd, VkShaderStageFla
  *
  * @see veSetScissor
  */
-VULKEASE_API VEResult veSetViewport(VECommandBuffer *cmd, float x, float y, float width, float height,
-                                    float minDepth, float maxDepth);
+VULKEASE_API VEResult veSetViewport(VECommandBuffer *cmd, float x, float y, float width, float height, float minDepth,
+                                    float maxDepth);
 
 /**
  * @brief Set the scissor rectangle.
@@ -3101,8 +3083,7 @@ VULKEASE_API VEResult veSetViewport(VECommandBuffer *cmd, float x, float y, floa
  *
  * @see veSetViewport
  */
-VULKEASE_API VEResult veSetScissor(VECommandBuffer *cmd, int32_t x, int32_t y,
-                                   uint32_t width, uint32_t height);
+VULKEASE_API VEResult veSetScissor(VECommandBuffer *cmd, int32_t x, int32_t y, uint32_t width, uint32_t height);
 
 // =============================================================================
 // DYNAMIC STATE FUNCTIONS
@@ -3149,8 +3130,8 @@ VULKEASE_API VEResult veSetRasterizerDiscard(VECommandBuffer *cmd, bool enable);
  * @param[in] clamp Maximum (or minimum if negative) depth bias.
  * @param[in] slopeFactor Slope-dependent depth bias factor.
  */
-VULKEASE_API VEResult veSetDepthBias(VECommandBuffer *cmd, bool enable, float constantFactor,
-                                     float clamp, float slopeFactor);
+VULKEASE_API VEResult veSetDepthBias(VECommandBuffer *cmd, bool enable, float constantFactor, float clamp,
+                                     float slopeFactor);
 
 /** @brief Enable or disable depth value clamping. */
 VULKEASE_API VEResult veSetDepthClamp(VECommandBuffer *cmd, bool enable);
@@ -3187,9 +3168,8 @@ VULKEASE_API VEResult veSetStencilTest(VECommandBuffer *cmd, bool enable);
  * @param[in] depthFailOp Operation on stencil pass but depth test fail.
  * @param[in] compareOp Stencil comparison operation.
  */
-VULKEASE_API VEResult veSetStencilOp(VECommandBuffer *cmd, VkStencilFaceFlags faceMask,
-                                     VkStencilOp failOp, VkStencilOp passOp,
-                                     VkStencilOp depthFailOp, VkCompareOp compareOp);
+VULKEASE_API VEResult veSetStencilOp(VECommandBuffer *cmd, VkStencilFaceFlags faceMask, VkStencilOp failOp,
+                                     VkStencilOp passOp, VkStencilOp depthFailOp, VkCompareOp compareOp);
 
 /**
  * @brief Set the stencil reference value.
@@ -3198,8 +3178,7 @@ VULKEASE_API VEResult veSetStencilOp(VECommandBuffer *cmd, VkStencilFaceFlags fa
  * @param[in] faceMask Which faces to affect.
  * @param[in] reference Reference value for stencil comparison.
  */
-VULKEASE_API VEResult veSetStencilReference(VECommandBuffer *cmd, VkStencilFaceFlags faceMask,
-                                            uint32_t reference);
+VULKEASE_API VEResult veSetStencilReference(VECommandBuffer *cmd, VkStencilFaceFlags faceMask, uint32_t reference);
 
 // --- Convenience toggles ---
 
@@ -3250,8 +3229,8 @@ VULKEASE_API VEResult vePushConstants(VECommandBuffer *cmd, const void *data, ui
  * @return VE_SUCCESS on success, or:
  *         - VE_ERROR_INVALID_PARAMETER if cmd is NULL
  */
-VULKEASE_API VEResult veBindVertexBuffer(VECommandBuffer *cmd, uint32_t binding,
-                                         VEBufferAddress vertexBuffer, uint64_t offset);
+VULKEASE_API VEResult veBindVertexBuffer(VECommandBuffer *cmd, uint32_t binding, VEBufferAddress vertexBuffer,
+                                         uint64_t offset);
 
 /**
  * @brief Bind an index buffer for indexed drawing.
@@ -3264,8 +3243,8 @@ VULKEASE_API VEResult veBindVertexBuffer(VECommandBuffer *cmd, uint32_t binding,
  * @return VE_SUCCESS on success, or:
  *         - VE_ERROR_INVALID_PARAMETER if cmd is NULL
  */
-VULKEASE_API VEResult veBindIndexBuffer(VECommandBuffer *cmd, VEBufferAddress indexBuffer,
-                                        uint64_t offset, VkIndexType format);
+VULKEASE_API VEResult veBindIndexBuffer(VECommandBuffer *cmd, VEBufferAddress indexBuffer, uint64_t offset,
+                                        VkIndexType format);
 
 // =============================================================================
 // DRAW COMMANDS
@@ -3282,8 +3261,8 @@ VULKEASE_API VEResult veBindIndexBuffer(VECommandBuffer *cmd, VEBufferAddress in
  *
  * @return VE_SUCCESS on success.
  */
-VULKEASE_API VEResult veDraw(VECommandBuffer *cmd, uint32_t vertexCount, uint32_t instanceCount,
-                             uint32_t firstVertex, uint32_t firstInstance);
+VULKEASE_API VEResult veDraw(VECommandBuffer *cmd, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
+                             uint32_t firstInstance);
 
 /**
  * @brief Draw indexed primitives.
@@ -3311,8 +3290,8 @@ VULKEASE_API VEResult veDrawIndexed(VECommandBuffer *cmd, uint32_t indexCount, u
  *
  * @return VE_SUCCESS on success.
  */
-VULKEASE_API VEResult veDrawIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer,
-                                     uint64_t offset, uint32_t drawCount, uint32_t stride);
+VULKEASE_API VEResult veDrawIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t offset,
+                                     uint32_t drawCount, uint32_t stride);
 
 /**
  * @brief Draw indexed primitives with parameters from a buffer (GPU-driven).
@@ -3325,8 +3304,8 @@ VULKEASE_API VEResult veDrawIndirect(VECommandBuffer *cmd, VEBufferAddress indir
  *
  * @return VE_SUCCESS on success.
  */
-VULKEASE_API VEResult veDrawIndexedIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer,
-                                            uint64_t offset, uint32_t drawCount, uint32_t stride);
+VULKEASE_API VEResult veDrawIndexedIndirect(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t offset,
+                                            uint32_t drawCount, uint32_t stride);
 
 /**
  * @brief Draw with GPU-determined draw count.
@@ -3344,9 +3323,9 @@ VULKEASE_API VEResult veDrawIndexedIndirect(VECommandBuffer *cmd, VEBufferAddres
  *
  * @return VE_SUCCESS on success.
  */
-VULKEASE_API VEResult veDrawIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer,
-                                          uint64_t indirectOffset, VEBufferAddress countBuffer,
-                                          uint64_t countOffset, uint32_t maxDrawCount, uint32_t stride);
+VULKEASE_API VEResult veDrawIndirectCount(VECommandBuffer *cmd, VEBufferAddress indirectBuffer, uint64_t indirectOffset,
+                                          VEBufferAddress countBuffer, uint64_t countOffset, uint32_t maxDrawCount,
+                                          uint32_t stride);
 
 /**
  * @brief Draw indexed with GPU-determined draw count.
@@ -3383,8 +3362,8 @@ VULKEASE_API VEResult veDrawIndexedIndirectCount(VECommandBuffer *cmd, VEBufferA
  * @return VE_SUCCESS on success, or:
  *         - VE_ERROR_INVALID_PARAMETER if cmd is NULL
  */
-VULKEASE_API VEResult veClearColorAttachment(VECommandBuffer *cmd, uint32_t attachmentIndex,
-                                             VEColor clearValue, const VERect2D *rect);
+VULKEASE_API VEResult veClearColorAttachment(VECommandBuffer *cmd, uint32_t attachmentIndex, VEColor clearValue,
+                                             const VERect2D *rect);
 
 /**
  * @brief Clear depth and/or stencil attachment during rendering.
@@ -3450,8 +3429,8 @@ VULKEASE_API VEResult veDestroyQueryPool(VEQueryPool *pool);
  *
  * @return VE_SUCCESS on success.
  */
-VULKEASE_API VEResult veCmdResetQueryPool(VECommandBuffer *cmd, VEQueryPool *pool,
-                                          uint32_t firstQuery, uint32_t queryCount);
+VULKEASE_API VEResult veCmdResetQueryPool(VECommandBuffer *cmd, VEQueryPool *pool, uint32_t firstQuery,
+                                          uint32_t queryCount);
 
 /**
  * @brief Begin an occlusion or pipeline statistics query.
@@ -3511,9 +3490,8 @@ VULKEASE_API VEResult veCmdWriteTimestamp(VECommandBuffer *cmd, VEQueryPool *poo
  *
  * @return VE_SUCCESS on success, VE_ERROR_NOT_READY if results not available.
  */
-VULKEASE_API VEResult veGetQueryResults(VEDevice *device, VEQueryPool *pool, uint32_t firstQuery,
-                                        uint32_t queryCount, void *data, uint64_t dataSize,
-                                        uint64_t stride, VkQueryResultFlags flags);
+VULKEASE_API VEResult veGetQueryResults(VEDevice *device, VEQueryPool *pool, uint32_t firstQuery, uint32_t queryCount,
+                                        void *data, uint64_t dataSize, uint64_t stride, VkQueryResultFlags flags);
 
 // =============================================================================
 // COMPUTE FUNCTIONS
@@ -3531,8 +3509,8 @@ VULKEASE_API VEResult veGetQueryResults(VEDevice *device, VEQueryPool *pool, uin
  *
  * @return VE_SUCCESS on success.
  */
-VULKEASE_API VEResult veDispatch(VECommandBuffer *cmd, uint32_t groupCountX,
-                                 uint32_t groupCountY, uint32_t groupCountZ);
+VULKEASE_API VEResult veDispatch(VECommandBuffer *cmd, uint32_t groupCountX, uint32_t groupCountY,
+                                 uint32_t groupCountZ);
 
 /**
  * @brief Dispatch compute with parameters from a buffer (GPU-driven).
@@ -3589,8 +3567,8 @@ VULKEASE_API VEResult veBarrier(VECommandBuffer *cmd, const VEBarrierDesc *desc)
  *
  * @return VE_SUCCESS on success.
  */
-VULKEASE_API VEResult veTransitionTexture(VECommandBuffer *cmd, VETextureIndex texture,
-                                          VkImageLayout oldLayout, VkImageLayout newLayout);
+VULKEASE_API VEResult veTransitionTexture(VECommandBuffer *cmd, VETextureIndex texture, VkImageLayout oldLayout,
+                                          VkImageLayout newLayout);
 
 /** @brief Transition texture for shader read access. */
 VULKEASE_API VEResult veTransitionTextureForShaderRead(VECommandBuffer *cmd, VETextureIndex texture);
@@ -3644,8 +3622,7 @@ VULKEASE_API VEResult veTransitionTextureToLayout(VECommandBuffer *cmd, VETextur
  *
  * @see VESwapchainDesc, veDestroySwapchain, vePresentImage
  */
-VULKEASE_API VEResult veCreateSwapchain(VEDevice *device, const VESwapchainDesc *desc,
-                                        VESwapchain **outSwapchain);
+VULKEASE_API VEResult veCreateSwapchain(VEDevice *device, const VESwapchainDesc *desc, VESwapchain **outSwapchain);
 
 /**
  * @brief Destroy a swapchain.

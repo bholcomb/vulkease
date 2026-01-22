@@ -185,11 +185,9 @@ VEResult veResizeRenderTarget(VEDevice *device, VERenderTarget *target, uint32_t
 // Simple Render Target Creation
 // =============================================================================
 
-VERenderTarget veCreateSimpleRenderTarget(VEDevice *device, uint32_t width, uint32_t height,
-                                          VkFormat colorFormat, VkFormat depthFormat,
-                                          VEColor clearColor, float clearDepth,
-                                          VETextureIndex *outColorTexture,
-                                          VETextureIndex *outDepthTexture)
+VERenderTarget veCreateSimpleRenderTarget(VEDevice *device, uint32_t width, uint32_t height, VkFormat colorFormat,
+                                          VkFormat depthFormat, VEColor clearColor, float clearDepth,
+                                          VETextureIndex *outColorTexture, VETextureIndex *outDepthTexture)
 {
    VERenderTarget target = veCreateRenderTarget(width, height);
 
@@ -204,8 +202,7 @@ VERenderTarget veCreateSimpleRenderTarget(VEDevice *device, uint32_t width, uint
    {
       VETextureIndex colorTex = VE_INVALID_TEXTURE_INDEX;
       VEResult result = veCreateTexture2D(device, width, height, colorFormat,
-                                          VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                              VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                          VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                               VK_IMAGE_USAGE_SAMPLED_BIT,
                                           "SimpleRT_Color", &colorTex);
       if (result == VE_SUCCESS && colorTex != VE_INVALID_TEXTURE_INDEX)
@@ -223,8 +220,7 @@ VERenderTarget veCreateSimpleRenderTarget(VEDevice *device, uint32_t width, uint
    {
       VETextureIndex depthTex = VE_INVALID_TEXTURE_INDEX;
       VEResult result = veCreateTexture2D(device, width, height, depthFormat,
-                                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-                                              VK_IMAGE_USAGE_SAMPLED_BIT,
+                                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                                           "SimpleRT_Depth", &depthTex);
       if (result == VE_SUCCESS && depthTex != VE_INVALID_TEXTURE_INDEX)
       {
@@ -243,8 +239,7 @@ VERenderTarget veCreateSimpleRenderTarget(VEDevice *device, uint32_t width, uint
 // Blit Texture to Swapchain
 // =============================================================================
 
-VEResult veBlitTextureToSwapchain(VECommandBuffer *cmd, VETextureIndex texture,
-                                  VESwapchain *swapchain, VkFilter filter)
+VEResult veBlitTextureToSwapchain(VECommandBuffer *cmd, VETextureIndex texture, VESwapchain *swapchain, VkFilter filter)
 {
    if (!cmd || texture == VE_INVALID_TEXTURE_INDEX || !swapchain)
    {
@@ -293,9 +288,7 @@ VEResult veBlitTextureToSwapchain(VECommandBuffer *cmd, VETextureIndex texture,
    dstBarrier.subresourceRange.baseArrayLayer = 0;
    dstBarrier.subresourceRange.layerCount = 1;
 
-   vkCmdPipelineBarrier(cmdInternal->commandBuffer,
-                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+   vkCmdPipelineBarrier(cmdInternal->commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
                         0, 0, nullptr, 0, nullptr, 1, &dstBarrier);
 
    // Blit from source texture to swapchain
@@ -305,21 +298,18 @@ VEResult veBlitTextureToSwapchain(VECommandBuffer *cmd, VETextureIndex texture,
    blitRegion.srcSubresource.baseArrayLayer = 0;
    blitRegion.srcSubresource.layerCount = 1;
    blitRegion.srcOffsets[0] = {0, 0, 0};
-   blitRegion.srcOffsets[1] = {static_cast<int32_t>(srcTex->width),
-                               static_cast<int32_t>(srcTex->height), 1};
+   blitRegion.srcOffsets[1] = {static_cast<int32_t>(srcTex->width), static_cast<int32_t>(srcTex->height), 1};
 
    blitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
    blitRegion.dstSubresource.mipLevel = 0;
    blitRegion.dstSubresource.baseArrayLayer = 0;
    blitRegion.dstSubresource.layerCount = 1;
    blitRegion.dstOffsets[0] = {0, 0, 0};
-   blitRegion.dstOffsets[1] = {static_cast<int32_t>(swapInternal->width),
-                               static_cast<int32_t>(swapInternal->height), 1};
+   blitRegion.dstOffsets[1] = {static_cast<int32_t>(swapInternal->width), static_cast<int32_t>(swapInternal->height),
+                               1};
 
-   vkCmdBlitImage(cmdInternal->commandBuffer,
-                  srcTex->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                  dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                  1, &blitRegion, filter);
+   vkCmdBlitImage(cmdInternal->commandBuffer, srcTex->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstImage,
+                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blitRegion, filter);
 
    // Transition destination to present
    VkImageMemoryBarrier presentBarrier{};
@@ -337,10 +327,8 @@ VEResult veBlitTextureToSwapchain(VECommandBuffer *cmd, VETextureIndex texture,
    presentBarrier.subresourceRange.baseArrayLayer = 0;
    presentBarrier.subresourceRange.layerCount = 1;
 
-   vkCmdPipelineBarrier(cmdInternal->commandBuffer,
-                        VK_PIPELINE_STAGE_TRANSFER_BIT,
-                        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                        0, 0, nullptr, 0, nullptr, 1, &presentBarrier);
+   vkCmdPipelineBarrier(cmdInternal->commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &presentBarrier);
 
    return VE_SUCCESS;
 }

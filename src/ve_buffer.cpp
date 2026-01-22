@@ -60,7 +60,7 @@ VEResult VEDeviceInternal::initializeVma()
    if (!bufferMapMutex)
    {
       veSetError("Failed to allocate buffer map mutex");
-      delete static_cast<BufferMap*>(bufferMap);
+      delete static_cast<BufferMap *>(bufferMap);
       bufferMap = nullptr;
       vmaDestroyAllocator(allocator);
       allocator = VK_NULL_HANDLE;
@@ -145,9 +145,9 @@ bool VEDeviceInternal::validateBufferAddress(VEBufferAddress address) const
    {
       return false;
    }
-   
+
    std::lock_guard<std::mutex> lock(*bufferMapMutex);
-   BufferMap *map = getBufferMap(const_cast<VEDeviceInternal*>(this));
+   BufferMap *map = getBufferMap(const_cast<VEDeviceInternal *>(this));
    auto it = map->find(address);
    return it != map->end() && it->second && it->second->isValid;
 }
@@ -158,9 +158,9 @@ VkBuffer VEDeviceInternal::getVkBufferFromAddress(VEBufferAddress address) const
    {
       return VK_NULL_HANDLE;
    }
-   
+
    std::lock_guard<std::mutex> lock(*bufferMapMutex);
-   BufferMap *map = getBufferMap(const_cast<VEDeviceInternal*>(this));
+   BufferMap *map = getBufferMap(const_cast<VEDeviceInternal *>(this));
    auto it = map->find(address);
    if (it != map->end() && it->second && it->second->isValid)
    {
@@ -213,7 +213,8 @@ VECommandBufferInternal *VEDeviceInternal::beginTransferCommandBuffer()
    {
       VkFence fence = cmd->currentFence();
       VkResult fenceStatus = fence ? vkGetFenceStatus(device, fence) : VK_SUCCESS;
-      veSetError("Failed to reset transfer command buffer (VkResult: %d) cb=%p index=%u fence=%p fenceStatus=%d fenceActive=%d",
+      veSetError("Failed to reset transfer command buffer (VkResult: %d) cb=%p index=%u fence=%p fenceStatus=%d "
+                 "fenceActive=%d",
                  resetResult, (void *)cmd->commandBuffer, cmd->index, (void *)fence, fenceStatus,
                  cmd->fenceActive ? 1 : 0);
       pool->release(*cmd);
@@ -474,10 +475,10 @@ void veDestroyBufferImmediate(VEDeviceInternal *deviceInternal, VEBufferAddress 
    }
 
    std::unique_ptr<VEBufferInternal> bufferToDestroy;
-   
+
    {
       std::lock_guard<std::mutex> lock(*deviceInternal->bufferMapMutex);
-      
+
       auto it = bufferMap->find(address);
       if (it == bufferMap->end())
       {
@@ -494,7 +495,7 @@ void veDestroyBufferImmediate(VEDeviceInternal *deviceInternal, VEBufferAddress 
       bufferToDestroy = std::move(it->second);
       bufferMap->erase(it);
    }
-   
+
    // Destroy outside the lock to minimize contention
    if (bufferToDestroy)
    {
@@ -780,8 +781,8 @@ extern "C" VkBufferUsageFlags veGetBufferUsage(VEDevice *device, VEBufferAddress
 // Convenience Buffer Creation Functions
 // =============================================================================
 
-extern "C" VEResult veCreateVertexBuffer(VEDevice *device, const void *vertices, uint64_t size,
-                                         const char *debugName, VEBufferAddress *outAddress)
+extern "C" VEResult veCreateVertexBuffer(VEDevice *device, const void *vertices, uint64_t size, const char *debugName,
+                                         VEBufferAddress *outAddress)
 {
    VEBufferDesc desc = {.size = size,
                         .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
@@ -793,8 +794,8 @@ extern "C" VEResult veCreateVertexBuffer(VEDevice *device, const void *vertices,
    return veCreateBuffer(device, &desc, outAddress);
 }
 
-extern "C" VEResult veCreateIndexBuffer(VEDevice *device, const void *indices, uint64_t size,
-                                        const char *debugName, VEBufferAddress *outAddress)
+extern "C" VEResult veCreateIndexBuffer(VEDevice *device, const void *indices, uint64_t size, const char *debugName,
+                                        VEBufferAddress *outAddress)
 {
    VEBufferDesc desc = {.size = size,
                         .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
@@ -807,7 +808,7 @@ extern "C" VEResult veCreateIndexBuffer(VEDevice *device, const void *indices, u
 }
 
 extern "C" VEResult veCreateUniformBuffer(VEDevice *device, uint64_t size, bool persistentlyMapped,
-                                         const char *debugName, VEBufferAddress *outAddress)
+                                          const char *debugName, VEBufferAddress *outAddress)
 {
    VEBufferDesc desc = {.size = size,
                         .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -820,7 +821,7 @@ extern "C" VEResult veCreateUniformBuffer(VEDevice *device, uint64_t size, bool 
 }
 
 extern "C" VEResult veCreateStorageBuffer(VEDevice *device, uint64_t size, const char *debugName,
-                                         VEBufferAddress *outAddress)
+                                          VEBufferAddress *outAddress)
 {
    VEBufferDesc desc = {.size = size,
                         .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -833,7 +834,7 @@ extern "C" VEResult veCreateStorageBuffer(VEDevice *device, uint64_t size, const
 }
 
 extern "C" VEResult veCreateIndirectBuffer(VEDevice *device, uint64_t size, const char *debugName,
-                                          VEBufferAddress *outAddress)
+                                           VEBufferAddress *outAddress)
 {
    VEBufferDesc desc = {.size = size,
                         .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,

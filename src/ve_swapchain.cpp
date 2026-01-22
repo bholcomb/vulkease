@@ -80,7 +80,8 @@ VETextureIndex VESwapchainInternal::acquireNextImage()
          return VE_INVALID_TEXTURE_INDEX;
       }
       // Try to acquire again after recreation
-      result = vkAcquireNextImageKHR(device->device, swapchain, UINT64_MAX, acquireSemaphore, VK_NULL_HANDLE, &imageIndex);
+      result =
+          vkAcquireNextImageKHR(device->device, swapchain, UINT64_MAX, acquireSemaphore, VK_NULL_HANDLE, &imageIndex);
       if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
       {
          veSetError("Failed to acquire swapchain image after recreation (VkResult: %d)", result);
@@ -643,7 +644,8 @@ VEResult veCreateSwapchain(VEDevice *device, const VESwapchainDesc *desc, VESwap
    swapchain->format = surfaceFormat.format;
 
    // Choose present mode
-   VkPresentModeKHR presentMode = chooseSwapPresentMode(deviceInternal->physicalDevice, swapchain->surface, desc->vsync);
+   VkPresentModeKHR presentMode =
+       chooseSwapPresentMode(deviceInternal->physicalDevice, swapchain->surface, desc->vsync);
 
    // Choose extent
    VkExtent2D extent = chooseSwapExtent(&capabilities, desc->width, desc->height);
@@ -671,7 +673,8 @@ VEResult veCreateSwapchain(VEDevice *device, const VESwapchainDesc *desc, VESwap
    createInfo.imageColorSpace = surfaceFormat.colorSpace;
    createInfo.imageExtent = extent;
    createInfo.imageArrayLayers = 1;
-   createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+   createInfo.imageUsage =
+       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
    // Handle queue families
    uint32_t queueFamilyIndices[] = {
@@ -933,12 +936,11 @@ VEResult VESwapchainInternal::createSwapchainResources()
    // Handle minimized window (width/height = 0)
    if (capabilities.currentExtent.width == 0 || capabilities.currentExtent.height == 0)
    {
-      return VE_ERROR_INVALID_PARAMETER;  // Window is minimized, can't recreate
+      return VE_ERROR_INVALID_PARAMETER; // Window is minimized, can't recreate
    }
 
    // Choose surface format
-   VkSurfaceFormatKHR surfaceFormat =
-       chooseSwapSurfaceFormat(device->physicalDevice, surface, requestedFormat);
+   VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(device->physicalDevice, surface, requestedFormat);
    format = surfaceFormat.format;
 
    // Choose present mode
@@ -962,7 +964,7 @@ VEResult VESwapchainInternal::createSwapchainResources()
 
    // Create swapchain (with old swapchain for resource reuse)
    VkSwapchainKHR oldSwapchain = swapchain;
-   
+
    VkSwapchainCreateInfoKHR createInfo{};
    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
    createInfo.surface = surface;
@@ -971,7 +973,8 @@ VEResult VESwapchainInternal::createSwapchainResources()
    createInfo.imageColorSpace = surfaceFormat.colorSpace;
    createInfo.imageExtent = extent;
    createInfo.imageArrayLayers = 1;
-   createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+   createInfo.imageUsage =
+       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
    createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
    createInfo.queueFamilyIndexCount = 1;
    uint32_t queueFamilyIndex = device->queueFamilies.graphicsFamily;
@@ -983,13 +986,13 @@ VEResult VESwapchainInternal::createSwapchainResources()
    createInfo.oldSwapchain = oldSwapchain;
 
    VkResult result = vkCreateSwapchainKHR(device->device, &createInfo, NULL, &swapchain);
-   
+
    // Destroy old swapchain after new one is created
    if (oldSwapchain != VK_NULL_HANDLE)
    {
       vkDestroySwapchainKHR(device->device, oldSwapchain, NULL);
    }
-   
+
    if (result != VK_SUCCESS)
    {
       veSetError("Failed to recreate swapchain (VkResult: %d)", result);

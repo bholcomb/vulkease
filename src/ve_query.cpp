@@ -1,7 +1,7 @@
 /**
  * @file ve_query.cpp
  * @brief Query Pool Implementation
- * 
+ *
  * Implements occlusion queries, timestamp queries, and pipeline statistics.
  */
 
@@ -110,8 +110,7 @@ VEResult veDestroyQueryPool(VEQueryPool *pool)
    return VE_SUCCESS;
 }
 
-VEResult veCmdResetQueryPool(VECommandBuffer *cmd, VEQueryPool *pool,
-                             uint32_t firstQuery, uint32_t queryCount)
+VEResult veCmdResetQueryPool(VECommandBuffer *cmd, VEQueryPool *pool, uint32_t firstQuery, uint32_t queryCount)
 {
    if (!cmd || !pool)
    {
@@ -207,8 +206,7 @@ VEResult veCmdEndQuery(VECommandBuffer *cmd, VEQueryPool *pool, uint32_t queryIn
    return VE_SUCCESS;
 }
 
-VEResult veCmdWriteTimestamp(VECommandBuffer *cmd, VEQueryPool *pool, uint32_t queryIndex,
-                             VkPipelineStageFlags2 stage)
+VEResult veCmdWriteTimestamp(VECommandBuffer *cmd, VEQueryPool *pool, uint32_t queryIndex, VkPipelineStageFlags2 stage)
 {
    if (!cmd || !pool)
    {
@@ -242,9 +240,8 @@ VEResult veCmdWriteTimestamp(VECommandBuffer *cmd, VEQueryPool *pool, uint32_t q
    return VE_SUCCESS;
 }
 
-VEResult veGetQueryResults(VEDevice *device, VEQueryPool *pool, uint32_t firstQuery,
-                           uint32_t queryCount, void *data, uint64_t dataSize,
-                           uint64_t stride, VkQueryResultFlags flags)
+VEResult veGetQueryResults(VEDevice *device, VEQueryPool *pool, uint32_t firstQuery, uint32_t queryCount, void *data,
+                           uint64_t dataSize, uint64_t stride, VkQueryResultFlags flags)
 {
    if (!device || !pool || !data || queryCount == 0)
    {
@@ -270,16 +267,17 @@ VEResult veGetQueryResults(VEDevice *device, VEQueryPool *pool, uint32_t firstQu
    VkDeviceSize vkStride = (stride == 0) ? sizeof(uint64_t) : stride;
    if (flags & VK_QUERY_RESULT_64_BIT)
    {
-      if (stride == 0) vkStride = sizeof(uint64_t);
+      if (stride == 0)
+         vkStride = sizeof(uint64_t);
    }
    else
    {
-      if (stride == 0) vkStride = sizeof(uint32_t);
+      if (stride == 0)
+         vkStride = sizeof(uint32_t);
    }
 
-   VkResult result = vkGetQueryPoolResults(deviceInternal->device, poolInternal->queryPool,
-                                           firstQuery, queryCount, (size_t)dataSize, data,
-                                           vkStride, flags);
+   VkResult result = vkGetQueryPoolResults(deviceInternal->device, poolInternal->queryPool, firstQuery, queryCount,
+                                           (size_t)dataSize, data, vkStride, flags);
 
    if (result == VK_NOT_READY)
    {

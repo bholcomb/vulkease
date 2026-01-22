@@ -6,8 +6,8 @@
 #include "ve_internal.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <limits>
 #include <string>
@@ -85,9 +85,8 @@ static bool convertColorToRGBA8(VkFormat format, const void *srcData, uint32_t w
    const size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
    out.resize(pixelCount * 4); // RGBA8 target
 
-   if (format == VK_FORMAT_R8G8B8A8_UNORM || format == VK_FORMAT_R8G8B8A8_SRGB ||
-       format == VK_FORMAT_R8G8B8A8_SNORM || format == VK_FORMAT_R8G8B8A8_UINT ||
-       format == VK_FORMAT_R8G8B8A8_SINT || format == VK_FORMAT_R8G8B8A8_USCALED ||
+   if (format == VK_FORMAT_R8G8B8A8_UNORM || format == VK_FORMAT_R8G8B8A8_SRGB || format == VK_FORMAT_R8G8B8A8_SNORM ||
+       format == VK_FORMAT_R8G8B8A8_UINT || format == VK_FORMAT_R8G8B8A8_SINT || format == VK_FORMAT_R8G8B8A8_USCALED ||
        format == VK_FORMAT_R8G8B8A8_SSCALED)
    {
       std::memcpy(out.data(), src, pixelCount * 4);
@@ -164,7 +163,8 @@ static bool convertColorToRGBA8(VkFormat format, const void *srcData, uint32_t w
    if (format == VK_FORMAT_R16G16B16A16_SFLOAT)
    {
       const uint16_t *half = static_cast<const uint16_t *>(srcData);
-      auto halfToFloat = [](uint16_t h) {
+      auto halfToFloat = [](uint16_t h)
+      {
          uint16_t hExp = (h & 0x7C00u) >> 10;
          uint16_t hMant = h & 0x03FFu;
          uint16_t hSign = (h & 0x8000u) >> 15;
@@ -204,7 +204,8 @@ static bool convertDepthToRGBA8(VkFormat format, const void *srcData, uint32_t w
    out.resize(pixelCount * 4);
    const uint8_t *srcBytes = static_cast<const uint8_t *>(srcData);
 
-   auto writePixel = [&out](size_t index, float depth) {
+   auto writePixel = [&out](size_t index, float depth)
+   {
       uint8_t value = floatToByte(depth);
       out[index * 4 + 0] = value;
       out[index * 4 + 1] = value;
@@ -787,7 +788,7 @@ uint32_t VEDeviceInternal::allocateTextureIndex()
    }
 
    std::lock_guard<std::mutex> lock(*textureIndexMutex);
-   
+
    uint32_t currentFreeCount = freeTextureCount.load(std::memory_order_relaxed);
    if (currentFreeCount == 0)
    {
@@ -811,7 +812,7 @@ void VEDeviceInternal::freeTextureIndex(uint32_t index)
    }
 
    std::lock_guard<std::mutex> lock(*textureIndexMutex);
-   
+
    uint32_t currentFreeCount = freeTextureCount.load(std::memory_order_relaxed);
    freeTextureIndices[currentFreeCount] = index;
    freeTextureCount.store(currentFreeCount + 1, std::memory_order_relaxed);
@@ -1217,8 +1218,8 @@ VEResult veCreateTexture1D(VEDevice *device, uint32_t width, VkFormat format, Vk
    return veCreateTexture(device, &desc, outIndex);
 }
 
-VEResult veCreateTexture2D(VEDevice *device, uint32_t width, uint32_t height, VkFormat format,
-                           VkImageUsageFlags usage, const char *debugName, VETextureIndex *outIndex)
+VEResult veCreateTexture2D(VEDevice *device, uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage,
+                           const char *debugName, VETextureIndex *outIndex)
 {
    VETextureDesc desc{};
    desc.width = width;
@@ -1255,9 +1256,8 @@ VEResult veCreateTexture3D(VEDevice *device, uint32_t width, uint32_t height, ui
    return veCreateTexture(device, &desc, outIndex);
 }
 
-VEResult veCreateTexture2DArray(VEDevice *device, uint32_t width, uint32_t height, uint32_t layers,
-                                VkFormat format, VkImageUsageFlags usage, const char *debugName,
-                                VETextureIndex *outIndex)
+VEResult veCreateTexture2DArray(VEDevice *device, uint32_t width, uint32_t height, uint32_t layers, VkFormat format,
+                                VkImageUsageFlags usage, const char *debugName, VETextureIndex *outIndex)
 {
    VETextureDesc desc{};
    desc.width = width;
@@ -1295,8 +1295,8 @@ VEResult veCreateTextureCube(VEDevice *device, uint32_t size, VkFormat format, V
 }
 
 VEResult veCreateTexture2DMultisample(VEDevice *device, uint32_t width, uint32_t height, VkFormat format,
-                                      VkSampleCountFlags sampleCount, VkImageUsageFlags usage,
-                                      const char *debugName, VETextureIndex *outIndex)
+                                      VkSampleCountFlags sampleCount, VkImageUsageFlags usage, const char *debugName,
+                                      VETextureIndex *outIndex)
 {
    VETextureDesc desc{};
    desc.width = width;

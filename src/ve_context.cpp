@@ -5,8 +5,8 @@
 
 #include "ve_internal.h"
 
-#include <new>
 #include <atomic>
+#include <new>
 #include <vector>
 
 #ifdef _WIN32
@@ -638,10 +638,8 @@ static bool findQueueFamilies(VkPhysicalDevice physicalDevice, VEQueueFamilies *
 
 uint32_t veGetVersion(void) { return VULKEASE_API_VERSION_2_0; }
 
-VEResult veCreateContext(const char *applicationName,
-                         const char *const *additionalInstanceExtensions,
-                         uint32_t additionalInstanceExtensionCount,
-                         VEContext **outContext)
+VEResult veCreateContext(const char *applicationName, const char *const *additionalInstanceExtensions,
+                         uint32_t additionalInstanceExtensionCount, VEContext **outContext)
 {
    if (!outContext)
    {
@@ -843,10 +841,8 @@ VEResult veSetMinMessageSeverity(VEMessageSeverity minSeverity)
 // Device Management Implementation
 // =============================================================================
 
-VEResult veCreateDevice(VEContext *context,
-                        VkPhysicalDevice preferredDevice,
-                        const char *const *additionalDeviceExtensions,
-                        uint32_t additionalDeviceExtensionCount,
+VEResult veCreateDevice(VEContext *context, VkPhysicalDevice preferredDevice,
+                        const char *const *additionalDeviceExtensions, uint32_t additionalDeviceExtensionCount,
                         VEDevice **outDevice)
 {
    if (!outDevice)
@@ -1103,8 +1099,7 @@ VEResult veCreateDevice(VEContext *context,
 
    // Initialize draw states
    device->maxDrawStates = VE_MAX_DRAW_STATES;
-   device->drawStates =
-       static_cast<VEDrawStateInternal *>(calloc(VE_MAX_DRAW_STATES, sizeof(VEDrawStateInternal)));
+   device->drawStates = static_cast<VEDrawStateInternal *>(calloc(VE_MAX_DRAW_STATES, sizeof(VEDrawStateInternal)));
    device->drawStateCount = 0;
 
    device->maxShaders = VE_MAX_SHADERS;
@@ -1267,10 +1262,8 @@ VEResult veEnumeratePhysicalDevices(VEContext *context, uint32_t *count)
    return VE_SUCCESS;
 }
 
-VEResult veGetPhysicalDeviceInfo(VEContext *context, uint32_t deviceIndex,
-                                  VkPhysicalDevice *physicalDevice,
-                                  char *deviceName,
-                                  VkPhysicalDeviceType *deviceType)
+VEResult veGetPhysicalDeviceInfo(VEContext *context, uint32_t deviceIndex, VkPhysicalDevice *physicalDevice,
+                                 char *deviceName, VkPhysicalDeviceType *deviceType)
 {
    if (!context)
    {
@@ -1684,7 +1677,7 @@ bool initializeDeviceFunctions(VkDevice device)
    GET_DEVICE_FUNC(vkCopyMemoryToImageEXT);
    GET_DEVICE_FUNC(vkCopyImageToMemoryEXT);
    GET_DEVICE_FUNC(vkCopyImageToImageEXT);
-   
+
    return true;
 }
 

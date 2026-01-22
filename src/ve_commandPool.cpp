@@ -1,11 +1,11 @@
 #include "ve_internal.h"
 
+#include <functional>
 #include <mutex>
 #include <new>
+#include <thread>
 #include <unordered_map>
 #include <vector>
-#include <thread>
-#include <functional>
 
 void VECommandBufferInternal::clearFenceTracking()
 {
