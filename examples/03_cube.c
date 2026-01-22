@@ -92,7 +92,6 @@ typedef struct CubeApp {
     VEContext* context;
     VEDevice* device;
     VESwapchain* swapchain;
-    VERenderTarget* renderTarget;
     
     // Resources
     VEBufferAddress vertexBuffer;
@@ -108,8 +107,10 @@ typedef struct CubeApp {
     // Graphics pipeline (includes shaders and render state)
     VEGraphicsPipeline* pipeline;
     
-    // Cached rendering info (built once, reused every frame)
-    VERenderingInfo renderingInfo;
+    // Render target and textures
+    VERenderTarget renderTarget;
+    VETextureIndex colorTexture;
+    VETextureIndex depthTexture;
     
     // Animation
     float rotationAngle;
@@ -180,20 +181,10 @@ static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
         if (app->swapchain) {
             veResizeSwapchain(app->swapchain, (uint32_t)width, (uint32_t)height);
         }
-        if (app->renderTarget) {
-            veResizeRenderTarget(app->renderTarget, (uint32_t)width, (uint32_t)height);
-            
-            // Rebuild rendering info with new size and texture handles
-            app->renderingInfo = veCreateRenderingInfo((uint32_t)width, (uint32_t)height);
-            VETextureIndex rtColor = veGetRenderTargetColorTexture(app->renderTarget);
-            (void)veRenderingAddColorAttachment(&app->renderingInfo,
-                                           rtColor,
-                                           VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                           (VEColor){0.1f, 0.2f, 0.3f, 1.0f});
-            VETextureIndex rtDepth = veGetRenderTargetDepthTexture(app->renderTarget);
-            (void)veRenderingSetDepthAttachment(&app->renderingInfo,
-                                           rtDepth,
-                                           VK_ATTACHMENT_LOAD_OP_CLEAR, 1.0f);
+        if (app->colorTexture != VE_INVALID_TEXTURE_INDEX) {
+            veResizeRenderTarget(app->device, &app->renderTarget, (uint32_t)width, (uint32_t)height);
+            app->colorTexture = app->renderTarget.attachments[0].texture;
+            app->depthTexture = app->renderTarget.attachments[VE_DEPTH_ATTACHMENT_INDEX].texture;
         }
     }
 }
@@ -279,31 +270,18 @@ static bool initVulkEase(CubeApp* app) {
     int width, height;
     glfwGetFramebufferSize(app->window, &width, &height);
     
-    VERenderTargetDesc rtDesc = {0};
-    rtDesc.width = (uint32_t)width;
-    rtDesc.height = (uint32_t)height;
-    rtDesc.colorFormat = veGetSwapchainFormat(app->swapchain);
-    rtDesc.depthFormat = VK_FORMAT_D32_SFLOAT;  // Depth buffer for 3D rendering
-    rtDesc.sampleCount = 1;
-    rtDesc.hasResolveTarget = false;
-    rtDesc.debugName = "CubeRenderTarget";
+    VEColor clearColor = {0.1f, 0.2f, 0.3f, 1.0f};
+    app->renderTarget = veCreateSimpleRenderTarget(app->device,
+                                                    (uint32_t)width, (uint32_t)height,
+                                                    veGetSwapchainFormat(app->swapchain),
+                                                    VK_FORMAT_D32_SFLOAT,  // Depth buffer
+                                                    clearColor, 1.0f,
+                                                    &app->colorTexture, &app->depthTexture);
 
-    if (veCreateRenderTarget(app->device, &rtDesc, &app->renderTarget) != VE_SUCCESS || !app->renderTarget) {
+    if (app->colorTexture == VE_INVALID_TEXTURE_INDEX) {
         fprintf(stderr, "Failed to create render target\n");
         return false;
     }
-    
-    // Build rendering info once (reused every frame)
-    app->renderingInfo = veCreateRenderingInfo((uint32_t)width, (uint32_t)height);
-    VETextureIndex rtColor = veGetRenderTargetColorTexture(app->renderTarget);
-    (void)veRenderingAddColorAttachment(&app->renderingInfo,
-                                   rtColor,
-                                   VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                   (VEColor){0.1f, 0.2f, 0.3f, 1.0f}); // Dark blue background
-    VETextureIndex rtDepth = veGetRenderTargetDepthTexture(app->renderTarget);
-    (void)veRenderingSetDepthAttachment(&app->renderingInfo,
-                                   rtDepth,
-                                   VK_ATTACHMENT_LOAD_OP_CLEAR, 1.0f);
     
     printf("VulkEase initialized successfully\n");
     printf("Device: %s\n", veGetDeviceName(app->device));
@@ -483,7 +461,7 @@ static void renderFrame(CubeApp* app) {
     }
     
     // Begin rendering (automatically handles texture transitions)
-    veBeginRendering(cmd, &app->renderingInfo);
+    veBeginRendering(cmd, &app->renderTarget);
     
     // Bind graphics pipeline and apply state
     veApplyGraphicsState(cmd, app->pipeline, NULL, NULL, NULL);
@@ -510,8 +488,8 @@ static void renderFrame(CubeApp* app) {
     // End rendering
     veEndRendering(cmd);
     
-    // Blit render target to swapchain (acquires swapchain image automatically)
-    VEResult result = veBlitToSwapchain(cmd, app->renderTarget, app->swapchain, VK_FILTER_LINEAR);
+    // Blit color texture to swapchain (acquires swapchain image automatically)
+    VEResult result = veBlitTextureToSwapchain(cmd, app->colorTexture, app->swapchain, VK_FILTER_LINEAR);
     if (result == VE_ERROR_SWAPCHAIN_OUT_OF_DATE) {
         // Resize callback handles this
         return;
@@ -525,11 +503,13 @@ static void renderFrame(CubeApp* app) {
 static void mainLoop(CubeApp* app) {
     app->lastTime = glfwGetTime();
     
-    uint64_t frameCount = 0;
     bool shouldQuit = false;
-    double frameTime = 0.0;
+    VEFrameTimingInfo timing = {0};
+    
     while (!glfwWindowShouldClose(app->window) && !shouldQuit) {
-        double start = glfwGetTime();
+        // Begin frame timing
+        veBeginFrame(app->device);
+        
         glfwPollEvents();
         
         // Handle window minimize
@@ -543,20 +523,42 @@ static void mainLoop(CubeApp* app) {
         updateUniforms(app);
         renderFrame(app);
 
-        frameCount++;
-        if(frameCount == 1) vePrintDebugInfo(app->device);
-        if(frameCount == 10) veSaveTexture(app->device, app->texture, "output-00000.png");
-        if(frameCount % 1000 == 0) printf("Average Framerate: %4.2fms\n", (frameTime / (double)frameCount) * 1000.0);
-        if(frameCount % 10000 == 0) vePrintProfileInfo(app->device);
+        // End frame and get timing info
+        veEndFrame(app->device, &timing);
+
+        // Print debug info on first frame
+        if(timing.frameNumber == 1) vePrintDebugInfo(app->device);
+        
+        // Save texture on frame 10
+        if(timing.frameNumber == 10) veSaveTexture(app->device, app->texture, "output-00000.png");
+        
+        // Print frame timing every 1000 frames
+        if(timing.frameNumber % 1000 == 0) {
+            printf("Frame %llu: %.2f ms (%.1f FPS) | Avg: %.2f ms (%.1f FPS) | Min: %.2f ms | Max: %.2f ms\n",
+                   (unsigned long long)timing.frameNumber,
+                   timing.frameTimeMs,
+                   timing.fps,
+                   timing.avgFrameTimeMs,
+                   timing.avgFps,
+                   timing.minFrameTimeMs,
+                   timing.maxFrameTimeMs);
+        }
+        
+        // Print profile info every 10000 frames
+        if(timing.frameNumber % 10000 == 0) vePrintProfileInfo(app->device);
 
         if(glfwGetKey(app->window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         {
             shouldQuit = true;
         }
-
-        double end = glfwGetTime();
-        frameTime += (end - start);
     }
+    
+    // Print final timing summary
+    printf("\n=== Final Timing Summary ===\n");
+    printf("Total frames: %llu\n", (unsigned long long)timing.frameNumber);
+    printf("Average frame time: %.2f ms (%.1f FPS)\n", timing.avgFrameTimeMs, timing.avgFps);
+    printf("Min frame time: %.2f ms\n", timing.minFrameTimeMs);
+    printf("Max frame time: %.2f ms\n", timing.maxFrameTimeMs);
     
     veDeviceWaitIdle(app->device);
 }
@@ -597,9 +599,12 @@ static void cleanup(CubeApp* app) {
         (void)veDestroyBuffer(app->device, app->vertexBuffer);
     }
     
-    // Destroy VulkEase objects
-    if (app->renderTarget) {
-        (void)veDestroyRenderTarget(app->renderTarget);
+    // Destroy render target textures
+    if (app->colorTexture != VE_INVALID_TEXTURE_INDEX) {
+        veDestroyTexture(app->device, app->colorTexture);
+    }
+    if (app->depthTexture != VE_INVALID_TEXTURE_INDEX) {
+        veDestroyTexture(app->device, app->depthTexture);
     }
     if (app->swapchain) {
         (void)veDestroySwapchain(app->swapchain);

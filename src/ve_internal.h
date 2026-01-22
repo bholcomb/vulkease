@@ -446,36 +446,6 @@ void veDestroyTextureImmediate(VEDeviceInternal* device, VETextureIndex index);
 void veDestroySamplerImmediate(VEDeviceInternal* device, VESamplerIndex index);
 void veDestroyShaderImmediate(VEShader* shader);
 
-struct VERenderTargetInternal
-{
-   VEDeviceInternal *device{nullptr};
-   uint32_t width{0};
-   uint32_t height{0};
-   VkFormat colorFormat{VK_FORMAT_UNDEFINED};
-   VkFormat depthFormat{VK_FORMAT_UNDEFINED};
-   VkSampleCountFlagBits sampleCount{VK_SAMPLE_COUNT_1_BIT};
-   bool hasResolveTarget{false};
-
-   VETextureIndex colorTexture{VE_INVALID_TEXTURE_INDEX};
-   VETextureIndex depthTexture{VE_INVALID_TEXTURE_INDEX};
-   VETextureIndex resolveTexture{VE_INVALID_TEXTURE_INDEX};
-
-   char debugName[VE_MAX_DEBUG_NAME_LENGTH]{};
-
-   VERenderTargetInternal() = default;
-   VERenderTargetInternal(const VERenderTargetInternal &) = delete;
-   VERenderTargetInternal &operator=(const VERenderTargetInternal &) = delete;
-   ~VERenderTargetInternal();
-
-   [[nodiscard]] VEResult create(VEDeviceInternal *deviceInternal, const VERenderTargetDesc *desc);
-   [[nodiscard]] VEResult resize(uint32_t newWidth, uint32_t newHeight);
-   void destroy();
-
-private:
-   void destroyTextures();
-   [[nodiscard]] VEResult createTextures();
-};
-
 struct VESwapchainInternal
 {
    VkSwapchainKHR swapchain{VK_NULL_HANDLE};
@@ -562,6 +532,8 @@ struct VEDeviceInternal
    std::atomic<uint32_t> samplerCount{0};
    uint32_t maxSamplers;
    std::unique_ptr<std::mutex> samplerIndexMutex;  // Protects sampler index allocation
+   VESamplerIndex defaultSamplers[VE_DEFAULT_SAMPLER_COUNT]{};
+   bool defaultSamplersInitialized{false};
 
    VEShaderInternal *shaders;
    uint32_t shaderCount;
@@ -589,6 +561,14 @@ struct VEDeviceInternal
    VEMemoryStats memoryStats;
    VEPipelineStats pipelineStats;
    double lastFrameTimestampSeconds{0.0};
+
+   // Frame timing
+   static constexpr uint32_t FRAME_TIMING_HISTORY_SIZE = 120;
+   double frameTimingHistory[FRAME_TIMING_HISTORY_SIZE]{};
+   uint32_t frameTimingHistoryIndex{0};
+   uint64_t frameNumber{0};
+   double frameStartTime{0.0};
+   bool frameInProgress{false};
 
    std::unique_ptr<VEDeviceQueueLocks> queueLocks;
 

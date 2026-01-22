@@ -297,3 +297,135 @@ VEResult VEDeviceInternal::updateSamplerDescriptor(VESamplerIndex index)
 
    return VE_SUCCESS;
 }
+
+// =============================================================================
+// Default Samplers
+// =============================================================================
+
+static VEResult veInitializeDefaultSamplers(VEDeviceInternal *device)
+{
+   if (device->defaultSamplersInitialized)
+   {
+      return VE_SUCCESS;
+   }
+
+   VEDevice *publicDevice = (VEDevice *)device;
+
+   // VE_DEFAULT_SAMPLER_NEAREST
+   VESamplerDesc nearestDesc{};
+   nearestDesc.minFilter = VK_FILTER_NEAREST;
+   nearestDesc.magFilter = VK_FILTER_NEAREST;
+   nearestDesc.mipmapFilter = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+   nearestDesc.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+   nearestDesc.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+   nearestDesc.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+   nearestDesc.maxAnisotropy = 1.0f;
+   nearestDesc.compareEnable = false;
+   nearestDesc.minLod = 0.0f;
+   nearestDesc.maxLod = 1000.0f;
+   nearestDesc.debugName = "DefaultNearestSampler";
+
+   VEResult result = veCreateSampler(publicDevice, &nearestDesc, &device->defaultSamplers[VE_DEFAULT_SAMPLER_NEAREST]);
+   if (result != VE_SUCCESS) return result;
+
+   // VE_DEFAULT_SAMPLER_LINEAR
+   VESamplerDesc linearDesc{};
+   linearDesc.minFilter = VK_FILTER_LINEAR;
+   linearDesc.magFilter = VK_FILTER_LINEAR;
+   linearDesc.mipmapFilter = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+   linearDesc.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+   linearDesc.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+   linearDesc.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+   linearDesc.maxAnisotropy = 1.0f;
+   linearDesc.compareEnable = false;
+   linearDesc.minLod = 0.0f;
+   linearDesc.maxLod = 1000.0f;
+   linearDesc.debugName = "DefaultLinearSampler";
+
+   result = veCreateSampler(publicDevice, &linearDesc, &device->defaultSamplers[VE_DEFAULT_SAMPLER_LINEAR]);
+   if (result != VE_SUCCESS) return result;
+
+   // VE_DEFAULT_SAMPLER_ANISOTROPIC_4X
+   VESamplerDesc aniso4xDesc{};
+   aniso4xDesc.minFilter = VK_FILTER_LINEAR;
+   aniso4xDesc.magFilter = VK_FILTER_LINEAR;
+   aniso4xDesc.mipmapFilter = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+   aniso4xDesc.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+   aniso4xDesc.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+   aniso4xDesc.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+   aniso4xDesc.maxAnisotropy = 4.0f;
+   aniso4xDesc.compareEnable = false;
+   aniso4xDesc.minLod = 0.0f;
+   aniso4xDesc.maxLod = 1000.0f;
+   aniso4xDesc.debugName = "DefaultAnisotropic4xSampler";
+
+   result = veCreateSampler(publicDevice, &aniso4xDesc, &device->defaultSamplers[VE_DEFAULT_SAMPLER_ANISOTROPIC_4X]);
+   if (result != VE_SUCCESS) return result;
+
+   // VE_DEFAULT_SAMPLER_ANISOTROPIC_16X
+   VESamplerDesc aniso16xDesc{};
+   aniso16xDesc.minFilter = VK_FILTER_LINEAR;
+   aniso16xDesc.magFilter = VK_FILTER_LINEAR;
+   aniso16xDesc.mipmapFilter = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+   aniso16xDesc.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+   aniso16xDesc.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+   aniso16xDesc.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+   aniso16xDesc.maxAnisotropy = 16.0f;
+   aniso16xDesc.compareEnable = false;
+   aniso16xDesc.minLod = 0.0f;
+   aniso16xDesc.maxLod = 1000.0f;
+   aniso16xDesc.debugName = "DefaultAnisotropic16xSampler";
+
+   result = veCreateSampler(publicDevice, &aniso16xDesc, &device->defaultSamplers[VE_DEFAULT_SAMPLER_ANISOTROPIC_16X]);
+   if (result != VE_SUCCESS) return result;
+
+   // VE_DEFAULT_SAMPLER_SHADOW
+   VESamplerDesc shadowDesc{};
+   shadowDesc.minFilter = VK_FILTER_LINEAR;
+   shadowDesc.magFilter = VK_FILTER_LINEAR;
+   shadowDesc.mipmapFilter = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+   shadowDesc.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+   shadowDesc.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+   shadowDesc.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+   shadowDesc.maxAnisotropy = 1.0f;
+   shadowDesc.compareEnable = true;
+   shadowDesc.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+   shadowDesc.minLod = 0.0f;
+   shadowDesc.maxLod = 1000.0f;
+   shadowDesc.debugName = "DefaultShadowSampler";
+
+   result = veCreateSampler(publicDevice, &shadowDesc, &device->defaultSamplers[VE_DEFAULT_SAMPLER_SHADOW]);
+   if (result != VE_SUCCESS) return result;
+
+   device->defaultSamplersInitialized = true;
+   return VE_SUCCESS;
+}
+
+VESamplerIndex veGetDefaultSampler(VEDevice *device, VEDefaultSampler sampler)
+{
+   if (!device)
+   {
+      veSetError("veGetDefaultSampler: Invalid device");
+      return VE_INVALID_SAMPLER_INDEX;
+   }
+
+   if (sampler >= VE_DEFAULT_SAMPLER_COUNT)
+   {
+      veSetError("veGetDefaultSampler: Invalid sampler type");
+      return VE_INVALID_SAMPLER_INDEX;
+   }
+
+   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+
+   // Lazy initialization of default samplers
+   if (!deviceInternal->defaultSamplersInitialized)
+   {
+      VEResult result = veInitializeDefaultSamplers(deviceInternal);
+      if (result != VE_SUCCESS)
+      {
+         return VE_INVALID_SAMPLER_INDEX;
+      }
+   }
+
+   return deviceInternal->defaultSamplers[sampler];
+}

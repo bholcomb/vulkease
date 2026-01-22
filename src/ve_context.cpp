@@ -1687,3 +1687,122 @@ bool initializeDeviceFunctions(VkDevice device)
    
    return true;
 }
+
+// =============================================================================
+// Fence Management
+// =============================================================================
+
+VEResult veCreateFence(VEDevice *device, bool signaled, VkFence *outFence)
+{
+   if (!device || !outFence)
+   {
+      veSetError("veCreateFence: Invalid parameters");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+
+   VkFenceCreateInfo fenceInfo{};
+   fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+   fenceInfo.flags = signaled ? VK_FENCE_CREATE_SIGNALED_BIT : 0;
+
+   VkResult result = vkCreateFence(deviceInternal->device, &fenceInfo, nullptr, outFence);
+   if (result != VK_SUCCESS)
+   {
+      veSetError("veCreateFence: vkCreateFence failed (VkResult: %d)", result);
+      return VE_ERROR_OUT_OF_MEMORY;
+   }
+
+   return VE_SUCCESS;
+}
+
+VEResult veDestroyFence(VEDevice *device, VkFence fence)
+{
+   if (!device)
+   {
+      veSetError("veDestroyFence: Invalid device");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   if (fence == VK_NULL_HANDLE)
+   {
+      return VE_SUCCESS; // Nothing to destroy
+   }
+
+   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+   vkDestroyFence(deviceInternal->device, fence, nullptr);
+
+   return VE_SUCCESS;
+}
+
+VEResult veWaitFence(VEDevice *device, VkFence fence, uint64_t timeout)
+{
+   if (!device || fence == VK_NULL_HANDLE)
+   {
+      veSetError("veWaitFence: Invalid parameters");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+
+   VkResult result = vkWaitForFences(deviceInternal->device, 1, &fence, VK_TRUE, timeout);
+   if (result == VK_TIMEOUT)
+   {
+      return VE_ERROR_TIMEOUT;
+   }
+   if (result != VK_SUCCESS)
+   {
+      veSetError("veWaitFence: vkWaitForFences failed (VkResult: %d)", result);
+      return VE_ERROR_UNKNOWN;
+   }
+
+   return VE_SUCCESS;
+}
+
+VEResult veGetFenceStatus(VEDevice *device, VkFence fence, bool *signaled)
+{
+   if (!device || fence == VK_NULL_HANDLE || !signaled)
+   {
+      veSetError("veGetFenceStatus: Invalid parameters");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+
+   VkResult result = vkGetFenceStatus(deviceInternal->device, fence);
+   if (result == VK_SUCCESS)
+   {
+      *signaled = true;
+   }
+   else if (result == VK_NOT_READY)
+   {
+      *signaled = false;
+   }
+   else
+   {
+      veSetError("veGetFenceStatus: vkGetFenceStatus failed (VkResult: %d)", result);
+      return VE_ERROR_UNKNOWN;
+   }
+
+   return VE_SUCCESS;
+}
+
+VEResult veResetFence(VEDevice *device, VkFence fence)
+{
+   if (!device || fence == VK_NULL_HANDLE)
+   {
+      veSetError("veResetFence: Invalid parameters");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+
+   VkResult result = vkResetFences(deviceInternal->device, 1, &fence);
+   if (result != VK_SUCCESS)
+   {
+      veSetError("veResetFence: vkResetFences failed (VkResult: %d)", result);
+      return VE_ERROR_UNKNOWN;
+   }
+
+   return VE_SUCCESS;
+}

@@ -803,3 +803,107 @@ void veSetObjectDebugName(VEDeviceInternal *device, uint64_t objectHandle, VkObj
 
    veFuncs.vkSetDebugUtilsObjectNameEXT(device->device, &nameInfo);
 }
+
+// =============================================================================
+// Frame Timing
+// =============================================================================
+
+static double veGetTimeSeconds()
+{
+#ifdef _WIN32
+   static LARGE_INTEGER frequency = {};
+   if (frequency.QuadPart == 0)
+   {
+      QueryPerformanceFrequency(&frequency);
+   }
+   LARGE_INTEGER now;
+   QueryPerformanceCounter(&now);
+   return (double)now.QuadPart / (double)frequency.QuadPart;
+#else
+   struct timespec ts;
+   clock_gettime(CLOCK_MONOTONIC, &ts);
+   return static_cast<double>(ts.tv_sec) + static_cast<double>(ts.tv_nsec) * 1e-9;
+#endif
+}
+
+VEResult veBeginFrame(VEDevice *device)
+{
+   if (!device)
+   {
+      veSetError("veBeginFrame: Invalid device");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+
+   if (deviceInternal->frameInProgress)
+   {
+      veSetError("veBeginFrame: Frame already in progress, call veEndFrame first");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   deviceInternal->frameStartTime = veGetTimeSeconds();
+   deviceInternal->frameInProgress = true;
+
+   return VE_SUCCESS;
+}
+
+VEResult veEndFrame(VEDevice *device, VEFrameTimingInfo *outTiming)
+{
+   if (!device)
+   {
+      veSetError("veEndFrame: Invalid device");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
+
+   if (!deviceInternal->frameInProgress)
+   {
+      veSetError("veEndFrame: No frame in progress, call veBeginFrame first");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   double endTime = veGetTimeSeconds();
+   double frameTimeSeconds = endTime - deviceInternal->frameStartTime;
+   double frameTimeMs = frameTimeSeconds * 1000.0;
+
+   // Store in history
+   uint32_t histIndex = deviceInternal->frameTimingHistoryIndex;
+   deviceInternal->frameTimingHistory[histIndex] = frameTimeMs;
+   deviceInternal->frameTimingHistoryIndex = (histIndex + 1) % VEDeviceInternal::FRAME_TIMING_HISTORY_SIZE;
+   deviceInternal->frameNumber++;
+   deviceInternal->frameInProgress = false;
+
+   if (outTiming)
+   {
+      // Calculate stats from history
+      uint32_t sampleCount = (deviceInternal->frameNumber < VEDeviceInternal::FRAME_TIMING_HISTORY_SIZE)
+                                 ? (uint32_t)deviceInternal->frameNumber
+                                 : VEDeviceInternal::FRAME_TIMING_HISTORY_SIZE;
+
+      double sum = 0.0;
+      double minTime = 1e9;
+      double maxTime = 0.0;
+
+      for (uint32_t i = 0; i < sampleCount; ++i)
+      {
+         double t = deviceInternal->frameTimingHistory[i];
+         sum += t;
+         if (t < minTime) minTime = t;
+         if (t > maxTime) maxTime = t;
+      }
+
+      double avgFrameTimeMs = (sampleCount > 0) ? (sum / sampleCount) : 0.0;
+
+      outTiming->frameTimeMs = frameTimeMs;
+      outTiming->avgFrameTimeMs = avgFrameTimeMs;
+      outTiming->minFrameTimeMs = (sampleCount > 0) ? minTime : 0.0;
+      outTiming->maxFrameTimeMs = (sampleCount > 0) ? maxTime : 0.0;
+      outTiming->frameNumber = deviceInternal->frameNumber;
+      outTiming->fps = (frameTimeMs > 0.0) ? (1000.0 / frameTimeMs) : 0.0;
+      outTiming->avgFps = (avgFrameTimeMs > 0.0) ? (1000.0 / avgFrameTimeMs) : 0.0;
+   }
+
+   return VE_SUCCESS;
+}

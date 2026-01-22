@@ -9,13 +9,95 @@ namespace VulkEase
     [StructLayout(LayoutKind.Sequential)] public struct VEDevice { public IntPtr native; }
     [StructLayout(LayoutKind.Sequential)] public struct VECommandBuffer { public IntPtr native; }
     [StructLayout(LayoutKind.Sequential)] public struct VESwapchain { public IntPtr native; }
-    [StructLayout(LayoutKind.Sequential)] public struct VERenderTarget { public IntPtr native; }
     [StructLayout(LayoutKind.Sequential)] public struct VEShader { public IntPtr native; }
     [StructLayout(LayoutKind.Sequential)] public struct VEGraphicsPipeline { public IntPtr native; }
     [StructLayout(LayoutKind.Sequential)] public struct VEDrawState { public IntPtr native; }
+    [StructLayout(LayoutKind.Sequential)] public struct VEQueryPool { public IntPtr native; }
     [StructLayout(LayoutKind.Sequential)] public struct VEBufferAddress { public UInt64 native; }
     [StructLayout(LayoutKind.Sequential)] public struct VETextureIndex { public UInt32 native; }
     [StructLayout(LayoutKind.Sequential)] public struct VESamplerIndex { public UInt32 native; }
+
+    // Query types
+    public enum VEQueryType
+    {
+        Occlusion = 0,
+        Timestamp = 1,
+        PipelineStatistics = 2
+    }
+
+    // Query pool descriptor
+    [StructLayout(LayoutKind.Sequential)]
+    public struct VEQueryPoolDesc
+    {
+        public VEQueryType type;
+        public UInt32 queryCount;
+        public VkQueryPipelineStatisticFlags pipelineStatistics;
+        [MarshalAs(UnmanagedType.LPStr)]
+        public string? debugName;
+    }
+
+    // Texture copy region (1:1 copy, same format)
+    [StructLayout(LayoutKind.Sequential)]
+    public struct VETextureCopyRegion
+    {
+        public UInt32 srcOffsetX, srcOffsetY, srcOffsetZ;
+        public UInt32 dstOffsetX, dstOffsetY, dstOffsetZ;
+        public UInt32 width, height, depth;
+        public UInt32 srcMipLevel, dstMipLevel;
+        public UInt32 srcArrayLayer, dstArrayLayer;
+        public UInt32 layerCount;
+    }
+
+    // Texture blit region (supports scaling and format conversion)
+    [StructLayout(LayoutKind.Sequential)]
+    public struct VETextureBlitRegion
+    {
+        public Int32 srcOffsetX0, srcOffsetY0, srcOffsetZ0;
+        public Int32 srcOffsetX1, srcOffsetY1, srcOffsetZ1;
+        public Int32 dstOffsetX0, dstOffsetY0, dstOffsetZ0;
+        public Int32 dstOffsetX1, dstOffsetY1, dstOffsetZ1;
+        public UInt32 srcMipLevel, dstMipLevel;
+        public UInt32 srcArrayLayer, dstArrayLayer;
+        public UInt32 layerCount;
+    }
+
+    // Buffer-to-texture or texture-to-buffer copy region
+    [StructLayout(LayoutKind.Sequential)]
+    public struct VEBufferTextureCopyRegion
+    {
+        public UInt64 bufferOffset;
+        public UInt32 bufferRowLength;
+        public UInt32 bufferImageHeight;
+        public UInt32 textureOffsetX, textureOffsetY, textureOffsetZ;
+        public UInt32 width, height, depth;
+        public UInt32 mipLevel;
+        public UInt32 arrayLayer;
+        public UInt32 layerCount;
+    }
+
+    // Frame timing info
+    [StructLayout(LayoutKind.Sequential)]
+    public struct VEFrameTimingInfo
+    {
+        public double frameTimeMs;
+        public double avgFrameTimeMs;
+        public double minFrameTimeMs;
+        public double maxFrameTimeMs;
+        public UInt64 frameNumber;
+        public double fps;
+        public double avgFps;
+    }
+
+    // Default sampler types
+    public enum VEDefaultSampler
+    {
+        Nearest = 0,
+        Linear = 1,
+        Anisotropic4X = 2,
+        Anisotropic16X = 3,
+        Shadow = 4,
+        Count = 5
+    }
 
     // Basic structures
     [StructLayout(LayoutKind.Sequential)]
@@ -138,31 +220,6 @@ namespace VulkEase
         public IntPtr debugName;
     }
 
-    // Render target descriptor (for C# use)
-    public struct VERenderTargetDesc
-    {
-        public UInt32 Width;
-        public UInt32 Height;
-        public VkFormat ColorFormat;
-        public VkFormat DepthFormat;
-        public VkSampleCountFlags SampleCount;
-        public bool HasResolveTarget;
-        public string? DebugName;
-    }
-
-    // Internal render target descriptor for P/Invoke
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct VERenderTargetDescInternal
-    {
-        public UInt32 width;
-        public UInt32 height;
-        public VkFormat colorFormat;
-        public VkFormat depthFormat;
-        public VkSampleCountFlags sampleCount;
-        [MarshalAs(UnmanagedType.I1)]
-        public bool hasResolveTarget;
-        public IntPtr debugName;
-    }
 
     // Buffer descriptor
     [StructLayout(LayoutKind.Sequential)]
@@ -466,9 +523,9 @@ namespace VulkEase
         public string? debugName;
     }
 
-    // Rendering attachment
+    // Render target attachment
     [StructLayout(LayoutKind.Sequential)]
-    public struct VERenderingAttachment
+    public struct VERenderTargetAttachment
     {
         public VETextureIndex texture;
         public VkAttachmentLoadOp loadOp;
@@ -478,7 +535,7 @@ namespace VulkEase
     }
 
     // Constants for attachment array layout
-    public static class VERenderingConstants
+    public static class VERenderTargetConstants
     {
         public const int VE_MAX_COLOR_ATTACHMENTS = 8;
         public const int VE_DEPTH_ATTACHMENT_INDEX = VE_MAX_COLOR_ATTACHMENTS;
@@ -486,13 +543,13 @@ namespace VulkEase
         public const int VE_TOTAL_ATTACHMENT_SLOTS = VE_MAX_COLOR_ATTACHMENTS + 2;
     }
 
-    // Internal PInvoke-friendly rendering info struct - matches C layout exactly
+    // Internal PInvoke-friendly render target struct - matches C layout exactly
     // Layout of attachments array:
     //   [0..colorAttachmentCount-1] = color attachments
     //   [VE_DEPTH_ATTACHMENT_INDEX] = depth attachment (if hasDepthAttachment)
     //   [VE_STENCIL_ATTACHMENT_INDEX] = stencil attachment (if hasStencilAttachment)
     [StructLayout(LayoutKind.Sequential)]
-    internal struct VERenderingInfoInternal
+    internal struct VERenderTargetInternal
     {
         public Int32 renderAreaX, renderAreaY;
         public UInt32 renderAreaWidth, renderAreaHeight;
@@ -503,25 +560,25 @@ namespace VulkEase
         public bool hasStencilAttachment;
         // Fixed-size array of attachments (VE_TOTAL_ATTACHMENT_SLOTS = 10)
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 10)]
-        public VERenderingAttachment[] attachments;
+        public VERenderTargetAttachment[] attachments;
     }
 
-    // User-friendly rendering info class (C# friendly)
-    public class VERenderingInfo
+    // User-friendly render target class (C# friendly)
+    public class VERenderTarget
     {
         public Int32 RenderAreaX { get; set; }
         public Int32 RenderAreaY { get; set; }
         public UInt32 RenderAreaWidth { get; set; }
         public UInt32 RenderAreaHeight { get; set; }
-        public List<VERenderingAttachment> ColorAttachments { get; set; } = new List<VERenderingAttachment>();
-        public VERenderingAttachment? DepthAttachment { get; set; }
-        public VERenderingAttachment? StencilAttachment { get; set; }
+        public List<VERenderTargetAttachment> ColorAttachments { get; set; } = new List<VERenderTargetAttachment>();
+        public VERenderTargetAttachment? DepthAttachment { get; set; }
+        public VERenderTargetAttachment? StencilAttachment { get; set; }
 
-        public VERenderingInfo()
+        public VERenderTarget()
         {
         }
 
-        public VERenderingInfo(UInt32 renderAreaWidth, UInt32 renderAreaHeight)
+        public VERenderTarget(UInt32 renderAreaWidth, UInt32 renderAreaHeight)
         {
             RenderAreaX = 0;
             RenderAreaY = 0;
@@ -529,7 +586,7 @@ namespace VulkEase
             RenderAreaHeight = renderAreaHeight;
         }
 
-        public VERenderingInfo(Int32 renderAreaX, Int32 renderAreaY, UInt32 renderAreaWidth, UInt32 renderAreaHeight)
+        public VERenderTarget(Int32 renderAreaX, Int32 renderAreaY, UInt32 renderAreaWidth, UInt32 renderAreaHeight)
         {
             RenderAreaX = renderAreaX;
             RenderAreaY = renderAreaY;
@@ -538,9 +595,9 @@ namespace VulkEase
         }
 
         // Convert to internal struct for P/Invoke
-        internal VERenderingInfoInternal ToInternal()
+        internal VERenderTargetInternal ToInternal()
         {
-            var result = new VERenderingInfoInternal
+            var result = new VERenderTargetInternal
             {
                 renderAreaX = RenderAreaX,
                 renderAreaY = RenderAreaY,
@@ -549,11 +606,11 @@ namespace VulkEase
                 colorAttachmentCount = (uint)ColorAttachments.Count,
                 hasDepthAttachment = DepthAttachment.HasValue,
                 hasStencilAttachment = StencilAttachment.HasValue,
-                attachments = new VERenderingAttachment[VERenderingConstants.VE_TOTAL_ATTACHMENT_SLOTS]
+                attachments = new VERenderTargetAttachment[VERenderTargetConstants.VE_TOTAL_ATTACHMENT_SLOTS]
             };
 
             // Copy color attachments
-            for (int i = 0; i < ColorAttachments.Count && i < VERenderingConstants.VE_MAX_COLOR_ATTACHMENTS; i++)
+            for (int i = 0; i < ColorAttachments.Count && i < VERenderTargetConstants.VE_MAX_COLOR_ATTACHMENTS; i++)
             {
                 result.attachments[i] = ColorAttachments[i];
             }
@@ -561,16 +618,49 @@ namespace VulkEase
             // Set depth attachment if present
             if (DepthAttachment.HasValue)
             {
-                result.attachments[VERenderingConstants.VE_DEPTH_ATTACHMENT_INDEX] = DepthAttachment.Value;
+                result.attachments[VERenderTargetConstants.VE_DEPTH_ATTACHMENT_INDEX] = DepthAttachment.Value;
             }
 
             // Set stencil attachment if present
             if (StencilAttachment.HasValue)
             {
-                result.attachments[VERenderingConstants.VE_STENCIL_ATTACHMENT_INDEX] = StencilAttachment.Value;
+                result.attachments[VERenderTargetConstants.VE_STENCIL_ATTACHMENT_INDEX] = StencilAttachment.Value;
             }
 
             return result;
+        }
+
+        // Update from internal struct after P/Invoke modifications
+        internal void FromInternal(VERenderTargetInternal internalInfo)
+        {
+            RenderAreaX = internalInfo.renderAreaX;
+            RenderAreaY = internalInfo.renderAreaY;
+            RenderAreaWidth = internalInfo.renderAreaWidth;
+            RenderAreaHeight = internalInfo.renderAreaHeight;
+
+            ColorAttachments.Clear();
+            for (int i = 0; i < internalInfo.colorAttachmentCount && i < VERenderTargetConstants.VE_MAX_COLOR_ATTACHMENTS; i++)
+            {
+                ColorAttachments.Add(internalInfo.attachments[i]);
+            }
+
+            if (internalInfo.hasDepthAttachment)
+            {
+                DepthAttachment = internalInfo.attachments[VERenderTargetConstants.VE_DEPTH_ATTACHMENT_INDEX];
+            }
+            else
+            {
+                DepthAttachment = null;
+            }
+
+            if (internalInfo.hasStencilAttachment)
+            {
+                StencilAttachment = internalInfo.attachments[VERenderTargetConstants.VE_STENCIL_ATTACHMENT_INDEX];
+            }
+            else
+            {
+                StencilAttachment = null;
+            }
         }
     }
 
@@ -689,5 +779,18 @@ namespace VulkEase
         public VkQueryControlFlags occlusionQueryFlags;
         [MarshalAs(UnmanagedType.U1)]
         public bool beginRecording;
+    }
+
+    /// <summary>
+    /// Pipeline statistics for performance monitoring.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct VEPipelineStats
+    {
+        public UInt32 totalPipelines;
+        public UInt32 activePipelines;
+        public UInt32 pipelineBinds;
+        public UInt32 drawStateChanges;
+        public UInt32 individualOverrides;
     }
 }

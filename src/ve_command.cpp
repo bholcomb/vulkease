@@ -598,19 +598,19 @@ extern "C" VEResult veReleaseCommandBuffer(VECommandBuffer *cmd)
    return VE_SUCCESS;
 }
 
-extern "C" VEResult vePopulateSecondaryDescFromRenderingInfo(VEDevice *device,
-                                                             const VERenderingInfo *renderingInfo,
-                                                             VESecondaryCommandBufferDesc *desc)
+extern "C" VEResult vePopulateSecondaryDescFromRenderTarget(VEDevice *device,
+                                                            const VERenderTarget *renderTarget,
+                                                            VESecondaryCommandBufferDesc *desc)
 {
-   if (!device || !renderingInfo || !desc)
+   if (!device || !renderTarget || !desc)
    {
-      veSetError("vePopulateSecondaryDescFromRenderingInfo: device, renderingInfo, and desc must be non-null");
+      veSetError("vePopulateSecondaryDescFromRenderTarget: device, renderTarget, and desc must be non-null");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   if (renderingInfo->colorAttachmentCount > 8)
+   if (renderTarget->colorAttachmentCount > 8)
    {
-      veSetError("vePopulateSecondaryDescFromRenderingInfo: colorAttachmentCount exceeds maximum of 8");
+      veSetError("vePopulateSecondaryDescFromRenderTarget: colorAttachmentCount exceeds maximum of 8");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
@@ -627,7 +627,7 @@ extern "C" VEResult vePopulateSecondaryDescFromRenderingInfo(VEDevice *device,
       }
       if (sampleMask != resolved)
       {
-         veSetError("vePopulateSecondaryDescFromRenderingInfo: attachments must use a consistent sample count");
+         veSetError("vePopulateSecondaryDescFromRenderTarget: attachments must use a consistent sample count");
          return false;
       }
       return true;
@@ -639,14 +639,14 @@ extern "C" VEResult vePopulateSecondaryDescFromRenderingInfo(VEDevice *device,
    };
 
    // Color attachments
-   desc->colorAttachmentCount = renderingInfo->colorAttachmentCount;
-   for (uint32_t i = 0; i < renderingInfo->colorAttachmentCount; ++i)
+   desc->colorAttachmentCount = renderTarget->colorAttachmentCount;
+   for (uint32_t i = 0; i < renderTarget->colorAttachmentCount; ++i)
    {
-      VETextureInternal *tex = deviceInternal->getTexture(renderingInfo->attachments[i].texture);
+      VETextureInternal *tex = deviceInternal->getTexture(renderTarget->attachments[i].texture);
       if (!tex)
       {
-         veSetError("vePopulateSecondaryDescFromRenderingInfo: invalid texture index %u for color attachment %u",
-                    renderingInfo->attachments[i].texture, i);
+         veSetError("vePopulateSecondaryDescFromRenderTarget: invalid texture index %u for color attachment %u",
+                    renderTarget->attachments[i].texture, i);
          return VE_ERROR_INVALID_PARAMETER;
       }
 
@@ -660,13 +660,13 @@ extern "C" VEResult vePopulateSecondaryDescFromRenderingInfo(VEDevice *device,
    // Depth attachment
    desc->depthAttachmentFormat = VK_FORMAT_UNDEFINED;
    desc->stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
-   if (renderingInfo->hasDepthAttachment)
+   if (renderTarget->hasDepthAttachment)
    {
-      const VERenderingAttachment *depthAttachment = &renderingInfo->attachments[VE_DEPTH_ATTACHMENT_INDEX];
+      const VERenderTargetAttachment *depthAttachment = &renderTarget->attachments[VE_DEPTH_ATTACHMENT_INDEX];
       VETextureInternal *tex = deviceInternal->getTexture(depthAttachment->texture);
       if (!tex)
       {
-         veSetError("vePopulateSecondaryDescFromRenderingInfo: invalid depth attachment texture index %u",
+         veSetError("vePopulateSecondaryDescFromRenderTarget: invalid depth attachment texture index %u",
                     depthAttachment->texture);
          return VE_ERROR_INVALID_PARAMETER;
       }
@@ -684,13 +684,13 @@ extern "C" VEResult vePopulateSecondaryDescFromRenderingInfo(VEDevice *device,
    }
 
    // Stencil attachment (explicit)
-   if (renderingInfo->hasStencilAttachment)
+   if (renderTarget->hasStencilAttachment)
    {
-      const VERenderingAttachment *stencilAttachment = &renderingInfo->attachments[VE_STENCIL_ATTACHMENT_INDEX];
+      const VERenderTargetAttachment *stencilAttachment = &renderTarget->attachments[VE_STENCIL_ATTACHMENT_INDEX];
       VETextureInternal *tex = deviceInternal->getTexture(stencilAttachment->texture);
       if (!tex)
       {
-         veSetError("vePopulateSecondaryDescFromRenderingInfo: invalid stencil attachment texture index %u",
+         veSetError("vePopulateSecondaryDescFromRenderTarget: invalid stencil attachment texture index %u",
                     stencilAttachment->texture);
          return VE_ERROR_INVALID_PARAMETER;
       }
@@ -716,10 +716,10 @@ extern "C" VEResult vePopulateSecondaryDescFromRenderingInfo(VEDevice *device,
    }
 
    // Copy render area for veApplyRenderState defaults
-   desc->renderAreaX = renderingInfo->renderAreaX;
-   desc->renderAreaY = renderingInfo->renderAreaY;
-   desc->renderAreaWidth = renderingInfo->renderAreaWidth;
-   desc->renderAreaHeight = renderingInfo->renderAreaHeight;
+   desc->renderAreaX = renderTarget->renderAreaX;
+   desc->renderAreaY = renderTarget->renderAreaY;
+   desc->renderAreaWidth = renderTarget->renderAreaWidth;
+   desc->renderAreaHeight = renderTarget->renderAreaHeight;
 
    return VE_SUCCESS;
 }
@@ -1070,85 +1070,85 @@ VEResult veExecuteSecondaryCommandBuffers(VECommandBuffer *primaryCmd, uint32_t 
 }
 
 // =============================================================================
-// Rendering Info Builder Functions
+// Render Target Builder Functions
 // =============================================================================
 
-VERenderingInfo veCreateRenderingInfo(uint32_t width, uint32_t height)
+VERenderTarget veCreateRenderTarget(uint32_t width, uint32_t height)
 {
-   VERenderingInfo info = {};
-   info.renderAreaX = 0;
-   info.renderAreaY = 0;
-   info.renderAreaWidth = width;
-   info.renderAreaHeight = height;
-   info.colorAttachmentCount = 0;
-   info.hasDepthAttachment = false;
-   info.hasStencilAttachment = false;
-   return info;
+   VERenderTarget target = {};
+   target.renderAreaX = 0;
+   target.renderAreaY = 0;
+   target.renderAreaWidth = width;
+   target.renderAreaHeight = height;
+   target.colorAttachmentCount = 0;
+   target.hasDepthAttachment = false;
+   target.hasStencilAttachment = false;
+   return target;
 }
 
-VERenderingInfo veCreateRenderingInfoWithOffset(int32_t x, int32_t y, uint32_t width, uint32_t height)
+VERenderTarget veCreateRenderTargetWithOffset(int32_t x, int32_t y, uint32_t width, uint32_t height)
 {
-   VERenderingInfo info = {};
-   info.renderAreaX = x;
-   info.renderAreaY = y;
-   info.renderAreaWidth = width;
-   info.renderAreaHeight = height;
-   info.colorAttachmentCount = 0;
-   info.hasDepthAttachment = false;
-   info.hasStencilAttachment = false;
-   return info;
+   VERenderTarget target = {};
+   target.renderAreaX = x;
+   target.renderAreaY = y;
+   target.renderAreaWidth = width;
+   target.renderAreaHeight = height;
+   target.colorAttachmentCount = 0;
+   target.hasDepthAttachment = false;
+   target.hasStencilAttachment = false;
+   return target;
 }
 
-VEResult veRenderingAddColorAttachment(VERenderingInfo *info, VETextureIndex texture, VkAttachmentLoadOp loadOp,
-                                      VEColor clearValue)
+VEResult veRenderTargetAddColorAttachment(VERenderTarget *target, VETextureIndex texture, VkAttachmentLoadOp loadOp,
+                                          VEColor clearValue)
 {
-   if (!info || info->colorAttachmentCount >= VE_MAX_COLOR_ATTACHMENTS)
+   if (!target || target->colorAttachmentCount >= VE_MAX_COLOR_ATTACHMENTS)
    {
-      veSetError("Invalid rendering info or too many color attachments");
+      veSetError("Invalid render target or too many color attachments");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   VERenderingAttachment *attachment = &info->attachments[info->colorAttachmentCount];
+   VERenderTargetAttachment *attachment = &target->attachments[target->colorAttachmentCount];
    attachment->texture = texture;
    attachment->loadOp = loadOp;
    attachment->storeOp = VK_ATTACHMENT_STORE_OP_STORE;
    attachment->clearValue = clearValue;
    attachment->resolveTexture = VE_INVALID_TEXTURE_INDEX;
 
-   info->colorAttachmentCount++;
+   target->colorAttachmentCount++;
    return VE_SUCCESS;
 }
 
-VEResult veRenderingAddColorAttachmentResolve(VERenderingInfo *info, VETextureIndex texture, VETextureIndex resolveTexture,
-                                             VkAttachmentLoadOp loadOp, VEColor clearValue)
+VEResult veRenderTargetAddColorAttachmentResolve(VERenderTarget *target, VETextureIndex texture, VETextureIndex resolveTexture,
+                                                 VkAttachmentLoadOp loadOp, VEColor clearValue)
 {
-   if (!info || info->colorAttachmentCount >= VE_MAX_COLOR_ATTACHMENTS)
+   if (!target || target->colorAttachmentCount >= VE_MAX_COLOR_ATTACHMENTS)
    {
-      veSetError("Invalid rendering info or too many color attachments");
+      veSetError("Invalid render target or too many color attachments");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   VERenderingAttachment *attachment = &info->attachments[info->colorAttachmentCount];
+   VERenderTargetAttachment *attachment = &target->attachments[target->colorAttachmentCount];
    attachment->texture = texture;
    attachment->loadOp = loadOp;
    attachment->storeOp = VK_ATTACHMENT_STORE_OP_STORE;
    attachment->clearValue = clearValue;
    attachment->resolveTexture = resolveTexture;
 
-   info->colorAttachmentCount++;
+   target->colorAttachmentCount++;
    return VE_SUCCESS;
 }
 
-VEResult veRenderingSetDepthAttachment(VERenderingInfo *info, VETextureIndex texture, VkAttachmentLoadOp loadOp,
-                                      float clearDepth)
+VEResult veRenderTargetSetDepthAttachment(VERenderTarget *target, VETextureIndex texture, VkAttachmentLoadOp loadOp,
+                                          float clearDepth)
 {
-   if (!info)
+   if (!target)
    {
-      veSetError("Rendering info cannot be NULL");
+      veSetError("Render target cannot be NULL");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   VERenderingAttachment *attachment = &info->attachments[VE_DEPTH_ATTACHMENT_INDEX];
+   VERenderTargetAttachment *attachment = &target->attachments[VE_DEPTH_ATTACHMENT_INDEX];
    attachment->texture = texture;
    attachment->loadOp = loadOp;
    // Store depth if we loaded it, otherwise don't care (cleared depth typically not needed after)
@@ -1160,32 +1160,34 @@ VEResult veRenderingSetDepthAttachment(VERenderingInfo *info, VETextureIndex tex
    attachment->clearValue.a = 0.0f;
    attachment->resolveTexture = VE_INVALID_TEXTURE_INDEX;
 
-   info->hasDepthAttachment = true;
+   target->hasDepthAttachment = true;
    return VE_SUCCESS;
 }
 
-VEResult veRenderingSetStencilAttachment(VERenderingInfo *info, VETextureIndex texture, VkAttachmentLoadOp loadOp,
-                                        uint32_t clearStencil)
+VEResult veRenderTargetSetStencilAttachment(VERenderTarget *target, VETextureIndex texture, VkAttachmentLoadOp loadOp,
+                                            uint32_t clearStencil)
 {
-   if (!info)
+   if (!target)
    {
-      veSetError("Rendering info cannot be NULL");
+      veSetError("Render target cannot be NULL");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   VERenderingAttachment *attachment = &info->attachments[VE_STENCIL_ATTACHMENT_INDEX];
+   VERenderTargetAttachment *attachment = &target->attachments[VE_STENCIL_ATTACHMENT_INDEX];
    attachment->texture = texture;
    attachment->loadOp = loadOp;
    attachment->storeOp =
        (loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE;
    // Store stencil value in the clear color (will be interpreted correctly in veBeginRendering)
-   attachment->clearValue.r = *(float *)&clearStencil; // Bit-cast to float for storage
+   // Use memcpy for type-safe bit-cast (avoids strict-aliasing violation)
+   static_assert(sizeof(float) == sizeof(uint32_t), "float and uint32_t must be same size");
+   memcpy(&attachment->clearValue.r, &clearStencil, sizeof(float));
    attachment->clearValue.g = 0.0f;
    attachment->clearValue.b = 0.0f;
    attachment->clearValue.a = 0.0f;
    attachment->resolveTexture = VE_INVALID_TEXTURE_INDEX;
 
-   info->hasStencilAttachment = true;
+   target->hasStencilAttachment = true;
    return VE_SUCCESS;
 }
 
@@ -1193,9 +1195,9 @@ VEResult veRenderingSetStencilAttachment(VERenderingInfo *info, VETextureIndex t
 // Dynamic Rendering
 // =============================================================================
 
-VEResult veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *renderingInfo)
+VEResult veBeginRendering(VECommandBuffer *cmd, const VERenderTarget *renderTarget)
 {
-   if (!cmd || !renderingInfo)
+   if (!cmd || !renderTarget)
    {
       veSetError("Invalid parameters for begin rendering");
       return VE_ERROR_INVALID_PARAMETER;
@@ -1204,14 +1206,14 @@ VEResult veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *rendering
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
 
    // Get pointers to attachments from the inline array
-   const VERenderingAttachment *colorAttachments = renderingInfo->attachments;
-   const VERenderingAttachment *depthAttachment =
-       renderingInfo->hasDepthAttachment ? &renderingInfo->attachments[VE_DEPTH_ATTACHMENT_INDEX] : nullptr;
-   const VERenderingAttachment *stencilAttachment =
-       renderingInfo->hasStencilAttachment ? &renderingInfo->attachments[VE_STENCIL_ATTACHMENT_INDEX] : nullptr;
+   const VERenderTargetAttachment *colorAttachments = renderTarget->attachments;
+   const VERenderTargetAttachment *depthAttachment =
+       renderTarget->hasDepthAttachment ? &renderTarget->attachments[VE_DEPTH_ATTACHMENT_INDEX] : nullptr;
+   const VERenderTargetAttachment *stencilAttachment =
+       renderTarget->hasStencilAttachment ? &renderTarget->attachments[VE_STENCIL_ATTACHMENT_INDEX] : nullptr;
 
    // Automatically transition all attachments to the correct layout
-   for (uint32_t i = 0; i < renderingInfo->colorAttachmentCount && i < VE_MAX_COLOR_ATTACHMENTS; i++)
+   for (uint32_t i = 0; i < renderTarget->colorAttachmentCount && i < VE_MAX_COLOR_ATTACHMENTS; i++)
    {
       veTransitionTextureForColorAttachment(cmd, colorAttachments[i].texture);
       if (colorAttachments[i].resolveTexture != VE_INVALID_TEXTURE_INDEX)
@@ -1232,15 +1234,15 @@ VEResult veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *rendering
    VkRenderingInfo vkRenderingInfo{};
    vkRenderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
    vkRenderingInfo.flags = VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT;
-   vkRenderingInfo.renderArea.offset.x = renderingInfo->renderAreaX;
-   vkRenderingInfo.renderArea.offset.y = renderingInfo->renderAreaY;
-   vkRenderingInfo.renderArea.extent.width = renderingInfo->renderAreaWidth;
-   vkRenderingInfo.renderArea.extent.height = renderingInfo->renderAreaHeight;
+   vkRenderingInfo.renderArea.offset.x = renderTarget->renderAreaX;
+   vkRenderingInfo.renderArea.offset.y = renderTarget->renderAreaY;
+   vkRenderingInfo.renderArea.extent.width = renderTarget->renderAreaWidth;
+   vkRenderingInfo.renderArea.extent.height = renderTarget->renderAreaHeight;
    vkRenderingInfo.layerCount = 1;
 
    // Convert color attachments
    VkRenderingAttachmentInfo vkColorAttachments[8] = {};
-   for (uint32_t i = 0; i < renderingInfo->colorAttachmentCount && i < 8; i++)
+   for (uint32_t i = 0; i < renderTarget->colorAttachmentCount && i < 8; i++)
    {
       vkColorAttachments[i].sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
 
@@ -1277,7 +1279,7 @@ VEResult veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *rendering
       }
    }
 
-   vkRenderingInfo.colorAttachmentCount = renderingInfo->colorAttachmentCount;
+   vkRenderingInfo.colorAttachmentCount = renderTarget->colorAttachmentCount;
    vkRenderingInfo.pColorAttachments = vkColorAttachments;
 
    // Convert depth attachment
@@ -1340,7 +1342,8 @@ VEResult veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *rendering
       vkStencilAttachment.loadOp = (VkAttachmentLoadOp)stencilAttachment->loadOp;
       vkStencilAttachment.storeOp = (VkAttachmentStoreOp)stencilAttachment->storeOp;
       vkStencilAttachment.clearValue.depthStencil.depth = 1.0f;
-      vkStencilAttachment.clearValue.depthStencil.stencil = 0;
+      // Retrieve stencil value that was stored via memcpy in veRenderTargetSetStencilAttachment
+      memcpy(&vkStencilAttachment.clearValue.depthStencil.stencil, &stencilAttachment->clearValue.r, sizeof(uint32_t));
 
       // Handle resolve attachment if present
       if (stencilAttachment->resolveTexture != VE_INVALID_TEXTURE_INDEX)
@@ -1364,10 +1367,10 @@ VEResult veBeginRendering(VECommandBuffer *cmd, const VERenderingInfo *rendering
 
    // Track render area for veApplyRenderState default viewport/scissor
    internal->inRenderPass = true;
-   internal->renderAreaX = static_cast<uint32_t>(renderingInfo->renderAreaX);
-   internal->renderAreaY = static_cast<uint32_t>(renderingInfo->renderAreaY);
-   internal->renderAreaWidth = renderingInfo->renderAreaWidth;
-   internal->renderAreaHeight = renderingInfo->renderAreaHeight;
+   internal->renderAreaX = static_cast<uint32_t>(renderTarget->renderAreaX);
+   internal->renderAreaY = static_cast<uint32_t>(renderTarget->renderAreaY);
+   internal->renderAreaWidth = renderTarget->renderAreaWidth;
+   internal->renderAreaHeight = renderTarget->renderAreaHeight;
 
    // Bind the descriptors once per begin rendering call
    VkDescriptorSet descriptorSets[2] = {internal->device->textureDescriptorSet, internal->device->samplerDescriptorSet};
