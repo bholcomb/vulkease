@@ -1373,7 +1373,7 @@ VEResult veLoadTexture(VEDevice *device, const char *filename, VkImageUsageFlags
    // Generate mipmaps if requested and texture creation succeeded
    if (createResult == VE_SUCCESS && created != VE_INVALID_TEXTURE_INDEX && generateMips && desc.mipLevels > 1)
    {
-      VEResult mipmapResult = veGenerateMipmapsImmediate(device, created);
+      VEResult mipmapResult = veGenerateMipmaps(device, created);
       if (mipmapResult != VE_SUCCESS)
       {
          veSetError("Failed to generate mipmaps for loaded texture: %s", filename);
@@ -1434,7 +1434,7 @@ VEResult veLoadHDRTexture(VEDevice *device, const char *filename, VkImageUsageFl
    // Generate mipmaps if requested and texture creation succeeded
    if (createResult == VE_SUCCESS && created != VE_INVALID_TEXTURE_INDEX && generateMips && desc.mipLevels > 1)
    {
-      VEResult mipmapResult = veGenerateMipmapsImmediate(device, created);
+      VEResult mipmapResult = veGenerateMipmaps(device, created);
       if (mipmapResult != VE_SUCCESS)
       {
          veSetError("Failed to generate mipmaps for loaded HDR texture: %s", filename);
@@ -1551,7 +1551,7 @@ VEResult veLoadCubeTexture(VEDevice *device, const char *filenames[6], VkImageUs
 
    if (generateMips && mipLevels > 1)
    {
-      VEResult mipResult = veGenerateMipmapsImmediate(device, created);
+      VEResult mipResult = veGenerateMipmaps(device, created);
       if (mipResult != VE_SUCCESS)
       {
          (void)veDestroyTexture(device, created);
@@ -1563,16 +1563,16 @@ VEResult veLoadCubeTexture(VEDevice *device, const char *filenames[6], VkImageUs
    return VE_SUCCESS;
 }
 
-VEResult veGenerateMipmaps(VEDevice *device, VECommandBuffer *cmd, VETextureIndex texture)
+VEResult veCmdGenerateMipmaps(VECommandBuffer *cmd, VETextureIndex texture)
 {
-   if (!device || !cmd || texture == VE_INVALID_TEXTURE_INDEX)
+   if (!cmd || texture == VE_INVALID_TEXTURE_INDEX)
    {
       veSetError("Invalid parameters for mipmap generation");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
    VECommandBufferInternal *cmdInternal = (VECommandBufferInternal *)cmd;
+   VEDeviceInternal *deviceInternal = cmdInternal->device;
 
    // Get texture and validate
    VETextureInternal *textureInternal = deviceInternal->getTexture(texture);
@@ -1758,11 +1758,11 @@ VEResult veGenerateMipmaps(VEDevice *device, VECommandBuffer *cmd, VETextureInde
    return VE_SUCCESS;
 }
 
-VEResult veGenerateMipmapsImmediate(VEDevice *device, VETextureIndex texture)
+VEResult veGenerateMipmaps(VEDevice *device, VETextureIndex texture)
 {
    if (!device || texture == VE_INVALID_TEXTURE_INDEX)
    {
-      veSetError("Invalid parameters for immediate mipmap generation");
+      veSetError("Invalid parameters for mipmap generation");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
@@ -1775,7 +1775,7 @@ VEResult veGenerateMipmapsImmediate(VEDevice *device, VETextureIndex texture)
    }
 
    // Generate mipmaps
-   VEResult result = veGenerateMipmaps(device, cmd, texture);
+   VEResult result = veCmdGenerateMipmaps(cmd, texture);
    if (result != VE_SUCCESS)
    {
       // Note: command buffer will be cleaned up automatically on submission

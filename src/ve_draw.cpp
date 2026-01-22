@@ -769,6 +769,28 @@ VEResult veDraw(VECommandBuffer *cmd, uint32_t vertexCount, uint32_t instanceCou
    return VE_SUCCESS;
 }
 
+VEResult veBindVertexBuffer(VECommandBuffer *cmd, uint32_t binding, VEBufferAddress vertexBuffer, uint64_t offset)
+{
+   if (!cmd || vertexBuffer == 0)
+   {
+      veSetError("Invalid parameters for veBindVertexBuffer");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+   VkBuffer buffer = internal->device->getVkBufferFromAddress(vertexBuffer);
+
+   if (buffer == VK_NULL_HANDLE)
+   {
+      veSetError("Invalid vertex buffer address");
+      return VE_ERROR_NOT_FOUND;
+   }
+
+   VkDeviceSize vkOffset = offset;
+   vkCmdBindVertexBuffers(internal->commandBuffer, binding, 1, &buffer, &vkOffset);
+   return VE_SUCCESS;
+}
+
 VEResult veBindIndexBuffer(VECommandBuffer *cmd, VEBufferAddress indexBuffer, uint64_t offset, VkIndexType format)
 {
    if (!cmd || indexBuffer == 0)

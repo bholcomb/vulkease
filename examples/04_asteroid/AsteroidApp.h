@@ -72,13 +72,14 @@ private:
    VEContext *context_{nullptr};
    VEDevice *device_{nullptr};
    VESwapchain *swapchain_{nullptr};
-   VERenderTarget *renderTarget_{nullptr};
    VkFormat swapchainFormat_{VK_FORMAT_UNDEFINED};
 
    VEShader *vertexShader_{nullptr};
    VEShader *fragmentShader_{nullptr};
    VEGraphicsPipeline *pipeline_{nullptr};
-   VERenderingInfo renderingInfo_{};
+   VERenderTarget renderTarget_{};
+   VETextureIndex colorTexture_{VE_INVALID_TEXTURE_INDEX};
+   VETextureIndex depthTexture_{VE_INVALID_TEXTURE_INDEX};
 
    VEBufferAddress vertexBuffer_{VE_INVALID_ADDRESS};
    VEBufferAddress indexBuffer_{VE_INVALID_ADDRESS};

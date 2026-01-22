@@ -4,35 +4,1987 @@
         <name>VulkEase</name>
     </assembly>
     <members>
+        <member name="T:VulkEase.VEPipelineStats">
+            <summary>
+            Pipeline statistics for performance monitoring.
+            </summary>
+        </member>
         <member name="T:VulkEase.VulkEase">
             <summary>
-            VulkEase main API class - Modern Vulkan 1.3+ Bindless Graphics API
+            VulkEase main API class - Modern Vulkan 1.4+ Bindless Graphics API
             </summary>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetVersion">
+            <summary>
+            Get the VulkEase library version.
+            </summary>
+            <returns>Version number encoded as (major &lt;&lt; 22) | (minor &lt;&lt; 12) | patch.
+            Use VULKEASE_VERSION_MAJOR, VULKEASE_VERSION_MINOR, VULKEASE_VERSION_PATCH to decode.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateContext(System.String,System.String[])">
+            <summary>
+            Create a VulkEase context, initializing the Vulkan 1.4 instance.
+            </summary>
+            <param name="applicationName">Application name shown in debug tools and driver info. Can be null for a default name.</param>
+            <param name="additionalInstanceExtensions">Optional array of additional instance extension names to enable. Can be null.</param>
+            <returns>The created VEContext handle.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if context creation fails due to:
+            VE_ERROR_OUT_OF_MEMORY if allocation failed, or
+            VE_ERROR_FEATURE_NOT_SUPPORTED if required Vulkan version/extensions unavailable.</exception>
+            <remarks>
+            The context is the root object for VulkEase. It owns the VkInstance and must outlive all devices created from it.
+            Call DestroyContext() when done, after destroying all child devices.
+            </remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.DestroyContext(VulkEase.VEContext)">
+            <summary>
+            Destroy a VulkEase context and release all associated resources.
+            </summary>
+            <param name="context">Context handle to destroy. Can be default (no-op).</param>
+            <remarks>All devices created from this context must be destroyed before calling this.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.EnumeratePhysicalDevices(VulkEase.VEContext,System.UInt32@)">
+            <summary>
+            Enumerate the number of available physical devices (GPUs).
+            </summary>
+            <param name="context">Valid VulkEase context.</param>
+            <param name="count">Receives the number of available physical devices.</param>
+            <returns>VE_SUCCESS on success, or VE_ERROR_INVALID_PARAMETER if context is invalid.</returns>
+            <remarks>Call this before GetPhysicalDeviceInfo() to determine how many devices are available for selection.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetPhysicalDeviceInfo(VulkEase.VEContext,System.UInt32,System.IntPtr@,System.String@,System.Nullable{VulkEase.VkPhysicalDeviceType}@)">
+            <summary>
+            Get information about a specific physical device.
+            </summary>
+            <param name="context">Valid VulkEase context.</param>
+            <param name="deviceIndex">Index of the device (0 to count-1 from EnumeratePhysicalDevices).</param>
+            <param name="physicalDevice">Receives the VkPhysicalDevice handle.</param>
+            <param name="deviceName">Receives the device name string.</param>
+            <param name="deviceType">Receives the device type enum (Discrete, Integrated, etc.).</param>
+            <returns>VE_SUCCESS on success, or VE_ERROR_INVALID_PARAMETER if context is invalid or deviceIndex out of range.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateDevice(VulkEase.VEContext,System.IntPtr,System.String[])">
+            <summary>
+            Create a VulkEase device from the context.
+            </summary>
+            <param name="context">Valid VulkEase context.</param>
+            <param name="preferredDevice">VkPhysicalDevice to use, or IntPtr.Zero for auto-selection (prefers discrete GPUs over integrated).</param>
+            <param name="additionalDeviceExtensions">Optional array of additional device extension names to enable. Can be null.</param>
+            <returns>The created VEDevice handle.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if device creation fails due to:
+            VE_ERROR_OUT_OF_MEMORY if allocation failed, or
+            VE_ERROR_FEATURE_NOT_SUPPORTED if required features unavailable.</exception>
+            <remarks>Call DestroyDevice() when done, before destroying the context.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.DestroyDevice(VulkEase.VEDevice)">
+            <summary>
+            Destroy a VulkEase device and release all associated resources.
+            </summary>
+            <param name="device">Device handle to destroy. Can be default (no-op).</param>
+            <remarks>All resources created from this device (buffers, textures, shaders, etc.) should be destroyed before calling this.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.IsInstanceExtensionAvailable(System.String)">
+            <summary>
+            Check if a Vulkan instance extension is available.
+            </summary>
+            <param name="extensionName">Name of the extension to check (e.g., "VK_KHR_surface").</param>
+            <returns>True if the extension is available, false otherwise.</returns>
+            <remarks>Query availability before creating a context if you need specific extensions.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.IsDeviceExtensionAvailable(VulkEase.VEContext,System.String)">
+            <summary>
+            Check if a Vulkan device extension is available.
+            </summary>
+            <param name="context">Valid VulkEase context.</param>
+            <param name="extensionName">Name of the extension to check (e.g., "VK_KHR_swapchain").</param>
+            <returns>True if the extension is available, false otherwise or if context is invalid.</returns>
+            <remarks>Query availability before creating a device if you need specific extensions.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.DeviceWaitIdle(VulkEase.VEDevice)">
+            <summary>
+            Wait for the device to become idle.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <returns>VE_SUCCESS on success, VE_ERROR_INVALID_PARAMETER if device is invalid, or VE_ERROR_DEVICE_LOST if the device was lost.</returns>
+            <remarks>
+            Blocks until all GPU operations on all queues have completed.
+            Useful for cleanup or synchronization points.
+            Warning: This is a heavy synchronization operation. Avoid in performance-critical paths.
+            </remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetDeviceName(VulkEase.VEDevice)">
+            <summary>
+            Get the GPU device name as a human-readable string.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <returns>Device name string, or null if device is invalid. The string is owned by VulkEase and valid until the device is destroyed.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetDriverVersion(VulkEase.VEDevice)">
+            <summary>
+            Get the GPU driver version as a human-readable string.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <returns>Driver version string, or null if device is invalid. The string is owned by VulkEase and valid until the device is destroyed.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetVulkanVersion(VulkEase.VEDevice)">
+            <summary>
+            Get the Vulkan API version supported by the device.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <returns>Vulkan version encoded as VK_MAKE_API_VERSION(), or 0 if device is invalid.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetVkInstance(VulkEase.VEContext)">
+            <summary>
+            Get the underlying VkInstance handle.
+            </summary>
+            <param name="context">Valid VulkEase context.</param>
+            <returns>VkInstance handle, or IntPtr.Zero if context is invalid.</returns>
+            <remarks>
+            Provides access to the raw Vulkan instance for custom extension use or interop with other Vulkan libraries.
+            Warning: The returned handle is owned by VulkEase. Do not destroy it directly. Lifetime matches the owning VEContext.
+            </remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetVkPhysicalDevice(VulkEase.VEDevice)">
+            <summary>
+            Get the underlying VkPhysicalDevice handle.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <returns>VkPhysicalDevice handle, or IntPtr.Zero if device is invalid.</returns>
+            <remarks>Warning: The returned handle is owned by VulkEase. Lifetime matches the owning VEDevice.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetVkDevice(VulkEase.VEDevice)">
+            <summary>
+            Get the underlying VkDevice handle.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <returns>VkDevice handle, or IntPtr.Zero if device is invalid.</returns>
+            <remarks>Warning: The returned handle is owned by VulkEase. Do not destroy it directly. Lifetime matches the owning VEDevice.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetVkGraphicsQueue(VulkEase.VEDevice)">
+            <summary>
+            Get the graphics queue handle.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <returns>VkQueue handle for graphics operations, or IntPtr.Zero if device is invalid.</returns>
+            <remarks>Warning: The returned handle is owned by VulkEase. Lifetime matches the owning VEDevice.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetVkComputeQueue(VulkEase.VEDevice)">
+            <summary>
+            Get the compute queue handle.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <returns>VkQueue handle for compute operations, or IntPtr.Zero if device is invalid.</returns>
+            <remarks>Warning: The returned handle is owned by VulkEase. Lifetime matches the owning VEDevice.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetVkTransferQueue(VulkEase.VEDevice)">
+            <summary>
+            Get the transfer queue handle.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <returns>VkQueue handle for transfer operations, or IntPtr.Zero if device is invalid.</returns>
+            <remarks>Warning: The returned handle is owned by VulkEase. Lifetime matches the owning VEDevice.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetVkCommandBufferFence(VulkEase.VECommandBuffer)">
+            <summary>
+            Get the fence associated with a command buffer.
+            </summary>
+            <param name="cmd">Valid VulkEase command buffer.</param>
+            <returns>VkFence handle, or IntPtr.Zero if cmd is invalid.</returns>
+            <remarks>
+            Each command buffer has an associated fence for synchronization purposes.
+            Warning: The returned handle is owned by VulkEase. Lifetime matches the owning VECommandBuffer.
+            </remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetVkBufferFromAddress(VulkEase.VEDevice,System.UInt64)">
+            <summary>
+            Get the VkBuffer handle from a buffer device address.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="address">Buffer device address obtained from CreateBuffer().</param>
+            <returns>VkBuffer handle, or IntPtr.Zero if device is invalid or address is invalid.</returns>
+            <remarks>Warning: The returned handle is owned by VulkEase. Lifetime matches the buffer.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetVkImageFromTexture(VulkEase.VEDevice,VulkEase.VETextureIndex)">
+            <summary>
+            Get the VkImage handle from a texture index.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="texture">Texture index obtained from CreateTexture().</param>
+            <returns>VkImage handle, or IntPtr.Zero if device is invalid or index is invalid.</returns>
+            <remarks>Warning: The returned handle is owned by VulkEase. Lifetime matches the texture.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetVkImageViewFromTexture(VulkEase.VEDevice,VulkEase.VETextureIndex)">
+            <summary>
+            Get the VkImageView handle from a texture index.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="texture">Texture index obtained from CreateTexture().</param>
+            <returns>VkImageView handle, or IntPtr.Zero if device is invalid or index is invalid.</returns>
+            <remarks>Warning: The returned handle is owned by VulkEase. Lifetime matches the texture.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetVkSamplerFromIndex(VulkEase.VEDevice,VulkEase.VESamplerIndex)">
+            <summary>
+            Get the VkSampler handle from a sampler index.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="sampler">Sampler index obtained from CreateSampler().</param>
+            <returns>VkSampler handle, or IntPtr.Zero if device is invalid or index is invalid.</returns>
+            <remarks>Warning: The returned handle is owned by VulkEase. Lifetime matches the sampler.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetVkSwapchain(VulkEase.VESwapchain)">
+            <summary>
+            Get the VkSwapchainKHR handle from a swapchain.
+            </summary>
+            <param name="swapchain">Valid VulkEase swapchain.</param>
+            <returns>VkSwapchainKHR handle, or IntPtr.Zero if swapchain is invalid.</returns>
+            <remarks>Warning: The returned handle is owned by VulkEase. Lifetime matches the swapchain.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetVkSwapchainImage(VulkEase.VESwapchain,System.UInt32)">
+            <summary>
+            Get a swapchain image by index.
+            </summary>
+            <param name="swapchain">Valid VulkEase swapchain.</param>
+            <param name="imageIndex">Index of the swapchain image (0 to image count - 1).</param>
+            <returns>VkImage handle, or IntPtr.Zero if swapchain is invalid or index is out of range.</returns>
+            <remarks>Warning: The returned handle is owned by VulkEase. Lifetime matches the swapchain.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetVkSwapchainImageView(VulkEase.VESwapchain,System.UInt32)">
+            <summary>
+            Get a swapchain image view by index.
+            </summary>
+            <param name="swapchain">Valid VulkEase swapchain.</param>
+            <param name="imageIndex">Index of the swapchain image (0 to image count - 1).</param>
+            <returns>VkImageView handle, or IntPtr.Zero if swapchain is invalid or index is out of range.</returns>
+            <remarks>Warning: The returned handle is owned by VulkEase. Lifetime matches the swapchain.</remarks>
+        </member>
+        <member name="T:VulkEase.VulkEase.MessageCallbackDelegate">
+            <summary>
+            Delegate for receiving VulkEase diagnostic messages.
+            </summary>
+            <param name="severity">Severity level of the message.</param>
+            <param name="message">The message text.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetMessageCallback(VulkEase.VulkEase.MessageCallbackDelegate)">
+            <summary>
+            Set the global debug/diagnostic message callback.
+            </summary>
+            <param name="callback">Callback function to receive messages. Pass null to disable.</param>
+            <returns>VE_SUCCESS on success.</returns>
+            <remarks>
+            The callback may be invoked from any thread. Ensure your callback
+            implementation is thread-safe and non-blocking.
+            </remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetMinMessageSeverity(VulkEase.VEMessageSeverity)">
+            <summary>
+            Set the minimum message severity that will be emitted.
+            </summary>
+            <param name="minSeverity">Minimum severity level to emit. Messages below this are filtered out.</param>
+            <returns>VE_SUCCESS on success.</returns>
+            <remarks>Default is VE_MESSAGE_SEVERITY_WARNING.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateFence(VulkEase.VEDevice,System.Boolean,System.IntPtr@)">
+            <summary>
+            Create a fence for GPU-CPU synchronization.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="signaled">If true, the fence starts in signaled state. Set to true when you want to skip the first wait.</param>
+            <param name="fence">Receives the VkFence handle on success.</param>
+            <returns>VE_SUCCESS on success, VE_ERROR_INVALID_PARAMETER if device or fence is invalid, or VE_ERROR_OUT_OF_MEMORY if allocation failed.</returns>
+            <remarks>
+            Fences are used to synchronize the CPU with GPU operations.
+            They can be passed to async transfer operations or used for custom synchronization.
+            Call DestroyFence() when done.
+            </remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.DestroyFence(VulkEase.VEDevice,System.IntPtr)">
+            <summary>
+            Destroy a fence.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="fence">Fence handle to destroy. Can be IntPtr.Zero (no-op).</param>
+            <returns>VE_SUCCESS on success, or VE_ERROR_INVALID_PARAMETER if device is invalid.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.WaitFence(VulkEase.VEDevice,System.IntPtr,System.UInt64)">
+            <summary>
+            Wait for a fence to be signaled.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="fence">Fence to wait on.</param>
+            <param name="timeout">Maximum time to wait in nanoseconds. Default is UInt64.MaxValue (infinite).</param>
+            <returns>VE_SUCCESS if signaled, VE_TIMEOUT if timeout expired, or VE_ERROR_DEVICE_LOST if device was lost.</returns>
+            <remarks>Blocks the calling thread until the fence is signaled or the timeout expires.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetFenceStatus(VulkEase.VEDevice,System.IntPtr,System.Boolean@)">
+            <summary>
+            Check if a fence is signaled without blocking.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="fence">Fence to check.</param>
+            <param name="signaled">Receives true if the fence is signaled, false otherwise.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.ResetFence(VulkEase.VEDevice,System.IntPtr)">
+            <summary>
+            Reset a fence to unsignaled state.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="fence">Fence to reset.</param>
+            <returns>VE_SUCCESS on success.</returns>
+            <remarks>Must be called before reusing a fence that has been signaled.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateBuffer(VulkEase.VEDevice,VulkEase.VEBufferDesc)">
+            <summary>
+            Create a buffer and return its GPU device address.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="desc">Buffer descriptor specifying size, usage, and optional initial data.</param>
+            <returns>GPU device address of the created buffer. Pass directly to shaders via push constants.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if buffer creation fails due to invalid parameters or out of memory.</exception>
+            <remarks>
+            VulkEase buffers use buffer device addresses (BDA) instead of handles.
+            The 64-bit address can be passed directly to shaders via push constants.
+            Call DestroyBuffer() when done.
+            </remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.DestroyBuffer(VulkEase.VEDevice,VulkEase.VEBufferAddress)">
+            <summary>
+            Destroy a buffer by its device address.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="address">Buffer address to destroy. Can be VE_INVALID_ADDRESS (no-op).</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.MapBuffer(VulkEase.VEDevice,VulkEase.VEBufferAddress,System.IntPtr@)">
+            <summary>
+            Map a buffer for CPU access.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="address">Buffer to map.</param>
+            <param name="mappedData">Receives pointer to the mapped memory.</param>
+            <returns>VE_SUCCESS on success, VE_ERROR_MEMORY_MAP_FAILED if mapping failed.</returns>
+            <remarks>The buffer must have been created with host-visible memory. Call UnmapBuffer() when done.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.UnmapBuffer(VulkEase.VEDevice,VulkEase.VEBufferAddress)">
+            <summary>
+            Unmap a previously mapped buffer.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="address">Buffer to unmap.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.UpdateBuffer(VulkEase.VEDevice,VulkEase.VEBufferAddress,System.IntPtr,System.UInt64,System.UInt64)">
+            <summary>
+            Update buffer data from the CPU.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="address">Target buffer address.</param>
+            <param name="data">Pointer to source data.</param>
+            <param name="size">Number of bytes to copy.</param>
+            <param name="offset">Byte offset into the buffer (default 0).</param>
+            <returns>VE_SUCCESS on success.</returns>
+            <remarks>Uses persistent mapping or host transfer for efficient updates.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetBufferSize(VulkEase.VEDevice,VulkEase.VEBufferAddress)">
+            <summary>
+            Get the size of a buffer in bytes.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="address">Buffer to query.</param>
+            <returns>Size in bytes, or 0 if buffer is invalid.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetBufferUsage(VulkEase.VEDevice,VulkEase.VEBufferAddress)">
+            <summary>
+            Get the usage flags of a buffer.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="address">Buffer to query.</param>
+            <returns>VkBufferUsageFlags, or 0 if buffer is invalid.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateVertexBuffer(VulkEase.VEDevice,System.IntPtr,System.UInt64,System.String)">
+            <summary>
+            Create a vertex buffer with initial data.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="vertices">Pointer to vertex data.</param>
+            <param name="size">Size of vertex data in bytes.</param>
+            <param name="debugName">Optional debug name for tools like RenderDoc.</param>
+            <returns>GPU device address of the created buffer.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if buffer creation fails.</exception>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateIndexBuffer(VulkEase.VEDevice,System.IntPtr,System.UInt64,System.String)">
+            <summary>
+            Create an index buffer with initial data.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="indices">Pointer to index data.</param>
+            <param name="size">Size of index data in bytes.</param>
+            <param name="debugName">Optional debug name for tools like RenderDoc.</param>
+            <returns>GPU device address of the created buffer.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if buffer creation fails.</exception>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateUniformBuffer(VulkEase.VEDevice,System.UInt64,System.Boolean,System.String)">
+            <summary>
+            Create a uniform buffer for shader constants.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="size">Size of buffer in bytes.</param>
+            <param name="persistentlyMapped">If true, the buffer remains mapped for easy CPU updates.</param>
+            <param name="debugName">Optional debug name for tools like RenderDoc.</param>
+            <returns>GPU device address of the created buffer.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if buffer creation fails.</exception>
+            <remarks>Uniform buffers are ideal for per-frame data like view/projection matrices.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateStorageBuffer(VulkEase.VEDevice,System.UInt64,System.String)">
+            <summary>
+            Create a storage buffer for large read/write data.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="size">Size of buffer in bytes.</param>
+            <param name="debugName">Optional debug name for tools like RenderDoc.</param>
+            <returns>GPU device address of the created buffer.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if buffer creation fails.</exception>
+            <remarks>Storage buffers (SSBOs) can be larger than uniform buffers and support read/write access from shaders.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateIndirectBuffer(VulkEase.VEDevice,System.UInt64,System.String)">
+            <summary>
+            Create an indirect draw/dispatch buffer.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="size">Size of buffer in bytes.</param>
+            <param name="debugName">Optional debug name for the buffer. Can be null.</param>
+            <returns>GPU device address of the created buffer.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if buffer creation fails.</exception>
+            <remarks>Creates a buffer for indirect drawing or compute dispatch commands populated by the GPU.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.CmdCopyBuffer(VulkEase.VECommandBuffer,VulkEase.VEBufferAddress,VulkEase.VEBufferAddress,System.UInt64,System.UInt64,System.UInt64)">
+            <summary>
+            Copy buffer data on the GPU (deferred/command buffer version).
+            </summary>
+            <param name="cmd">Valid command buffer in recording state.</param>
+            <param name="src">Source buffer address.</param>
+            <param name="dst">Destination buffer address.</param>
+            <param name="srcOffset">Byte offset into source buffer.</param>
+            <param name="dstOffset">Byte offset into destination buffer.</param>
+            <param name="size">Number of bytes to copy.</param>
+            <returns>VE_SUCCESS on success, or VE_ERROR_INVALID_PARAMETER if cmd is invalid or addresses are invalid.</returns>
+            <remarks>Records a buffer copy operation into a command buffer for later execution.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.CopyBuffer(VulkEase.VEDevice,VulkEase.VEBufferAddress,VulkEase.VEBufferAddress,System.UInt64,System.UInt64,System.UInt64,System.IntPtr)">
+            <summary>
+            Copy buffer data on the GPU (immediate version).
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="src">Source buffer address.</param>
+            <param name="dst">Destination buffer address.</param>
+            <param name="srcOffset">Byte offset into source buffer.</param>
+            <param name="dstOffset">Byte offset into destination buffer.</param>
+            <param name="size">Number of bytes to copy.</param>
+            <param name="fence">Optional fence to signal when the copy completes. Can be IntPtr.Zero.</param>
+            <returns>VE_SUCCESS on success, or an error code on failure.</returns>
+            <remarks>Executes the copy immediately on a transfer queue. If fence is provided, signals it when complete.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.CmdFillBuffer(VulkEase.VECommandBuffer,VulkEase.VEBufferAddress,System.UInt64,System.UInt64,System.UInt32)">
+            <summary>
+            Fill a buffer with a 32-bit value.
+            </summary>
+            <param name="cmd">Valid command buffer in recording state.</param>
+            <param name="dst">Destination buffer address.</param>
+            <param name="offset">Byte offset into the buffer (must be 4-byte aligned).</param>
+            <param name="size">Number of bytes to fill (must be 4-byte aligned or VK_WHOLE_SIZE).</param>
+            <param name="data">32-bit value to fill with.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CmdUpdateBuffer(VulkEase.VECommandBuffer,VulkEase.VEBufferAddress,System.UInt64,System.Byte[])">
+            <summary>
+            Update buffer with inline data during command buffer recording.
+            </summary>
+            <param name="cmd">Valid command buffer in recording state.</param>
+            <param name="dst">Destination buffer address.</param>
+            <param name="offset">Byte offset into the buffer.</param>
+            <param name="data">Data to copy into the buffer.</param>
+            <returns>VE_SUCCESS on success.</returns>
+            <remarks>For small updates (less than 65536 bytes). Larger updates should use staging buffers.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateTexture(VulkEase.VEDevice,VulkEase.VETextureDesc)">
+            <summary>
+            Create a texture and return its bindless index.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="desc">Texture descriptor with dimensions, format, usage, and optional initial data.</param>
+            <returns>32-bit bindless texture index. Pass to shaders via push constants.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if texture creation fails.</exception>
+            <remarks>
+            VulkEase textures use bindless indices for access from shaders.
+            The returned index can be used to sample the texture via the global texture array.
+            Call DestroyTexture() when done.
+            </remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.DestroyTexture(VulkEase.VEDevice,VulkEase.VETextureIndex)">
+            <summary>
+            Destroy a texture by its bindless index.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="index">Texture index to destroy. Can be VE_INVALID_TEXTURE_INDEX (no-op).</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetTextureSize(VulkEase.VEDevice,VulkEase.VETextureIndex)">
+            <summary>
+            Get the dimensions of a texture.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="index">Texture index to query.</param>
+            <returns>VkExtent3D with width, height, and depth.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetTextureFormat(VulkEase.VEDevice,VulkEase.VETextureIndex)">
+            <summary>
+            Get the format of a texture.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="index">Texture index to query.</param>
+            <returns>VkFormat of the texture, or VK_FORMAT_UNDEFINED if invalid.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateTexture1D(VulkEase.VEDevice,System.UInt32,VulkEase.VkFormat,VulkEase.VkImageUsageFlags,System.String)">
+            <summary>
+            Create a 1D texture.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="width">Width in pixels.</param>
+            <param name="format">Pixel format.</param>
+            <param name="usage">Vulkan image usage flags.</param>
+            <param name="debugName">Optional debug name for tools like RenderDoc.</param>
+            <returns>Bindless texture index.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if texture creation fails.</exception>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateTexture2D(VulkEase.VEDevice,System.UInt32,System.UInt32,VulkEase.VkFormat,VulkEase.VkImageUsageFlags,System.String)">
+            <summary>
+            Create a 2D texture.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="width">Width in pixels.</param>
+            <param name="height">Height in pixels.</param>
+            <param name="format">Pixel format.</param>
+            <param name="usage">Vulkan image usage flags.</param>
+            <param name="debugName">Optional debug name for tools like RenderDoc.</param>
+            <returns>Bindless texture index.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if texture creation fails.</exception>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateTexture3D(VulkEase.VEDevice,System.UInt32,System.UInt32,System.UInt32,VulkEase.VkFormat,VulkEase.VkImageUsageFlags,System.String)">
+            <summary>
+            Create a 3D (volume) texture.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="width">Width in pixels.</param>
+            <param name="height">Height in pixels.</param>
+            <param name="depth">Depth in pixels.</param>
+            <param name="format">Pixel format.</param>
+            <param name="usage">Vulkan image usage flags.</param>
+            <param name="debugName">Optional debug name for tools like RenderDoc.</param>
+            <returns>Bindless texture index.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if texture creation fails.</exception>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateTexture2DArray(VulkEase.VEDevice,System.UInt32,System.UInt32,System.UInt32,VulkEase.VkFormat,VulkEase.VkImageUsageFlags,System.String)">
+            <summary>
+            Create a 2D texture array.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="width">Width in pixels.</param>
+            <param name="height">Height in pixels.</param>
+            <param name="layers">Number of array layers.</param>
+            <param name="format">Pixel format.</param>
+            <param name="usage">Vulkan image usage flags.</param>
+            <param name="debugName">Optional debug name for tools like RenderDoc.</param>
+            <returns>Bindless texture index.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if texture creation fails.</exception>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateTextureCube(VulkEase.VEDevice,System.UInt32,VulkEase.VkFormat,VulkEase.VkImageUsageFlags,System.String)">
+            <summary>
+            Create a cube map texture.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="size">Width and height of each face in pixels (cube faces are square).</param>
+            <param name="format">Pixel format.</param>
+            <param name="usage">Vulkan image usage flags.</param>
+            <param name="debugName">Optional debug name for tools like RenderDoc.</param>
+            <returns>Bindless texture index.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if texture creation fails.</exception>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateTexture2DMultisample(VulkEase.VEDevice,System.UInt32,System.UInt32,VulkEase.VkFormat,VulkEase.VkSampleCountFlags,VulkEase.VkImageUsageFlags,System.String)">
+            <summary>
+            Create a multisampled 2D texture.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="width">Width in pixels.</param>
+            <param name="height">Height in pixels.</param>
+            <param name="format">Pixel format.</param>
+            <param name="sampleCount">Number of samples per pixel (e.g., VK_SAMPLE_COUNT_4_BIT).</param>
+            <param name="usage">Vulkan image usage flags.</param>
+            <param name="debugName">Optional debug name for tools like RenderDoc.</param>
+            <returns>Bindless texture index.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if texture creation fails.</exception>
+        </member>
+        <member name="M:VulkEase.VulkEase.LoadTexture(VulkEase.VEDevice,System.String,VulkEase.VkImageUsageFlags,System.Boolean)">
+            <summary>
+            Load a texture from an image file.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="filename">Path to the image file (PNG, JPG, BMP, TGA, etc.).</param>
+            <param name="usage">Vulkan image usage flags.</param>
+            <param name="generateMips">If true, automatically generates mipmaps.</param>
+            <returns>Bindless texture index.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if loading fails.</exception>
+        </member>
+        <member name="M:VulkEase.VulkEase.LoadHDRTexture(VulkEase.VEDevice,System.String,VulkEase.VkImageUsageFlags,System.Boolean)">
+            <summary>
+            Load an HDR texture from a file.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="filename">Path to the HDR image file.</param>
+            <param name="usage">Vulkan image usage flags.</param>
+            <param name="generateMips">If true, automatically generates mipmaps.</param>
+            <returns>Bindless texture index.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if loading fails.</exception>
+        </member>
+        <member name="M:VulkEase.VulkEase.LoadCubeTexture(VulkEase.VEDevice,System.String[],VulkEase.VkImageUsageFlags,System.Boolean)">
+            <summary>
+            Load a cube map texture from 6 image files.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="filenames">Array of 6 file paths for +X, -X, +Y, -Y, +Z, -Z faces.</param>
+            <param name="usage">Vulkan image usage flags.</param>
+            <param name="generateMips">If true, automatically generates mipmaps.</param>
+            <returns>Bindless texture index.</returns>
+            <exception cref="T:System.ArgumentException">Thrown if filenames is null or does not contain exactly 6 paths.</exception>
+            <exception cref="T:System.InvalidOperationException">Thrown if loading fails.</exception>
+        </member>
+        <member name="M:VulkEase.VulkEase.HostWriteTextureRegion(VulkEase.VEDevice,VulkEase.VETextureIndex,System.IntPtr,System.UIntPtr,System.UInt32,System.UInt32,System.UInt32,System.UInt32,System.UInt32,System.UInt32)">
+            <summary>
+            Write data to a texture region using host transfer.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="texture">Texture to write to.</param>
+            <param name="srcData">Pointer to source data.</param>
+            <param name="dataSize">Size of the source data in bytes.</param>
+            <param name="offsetX">X offset into the texture.</param>
+            <param name="offsetY">Y offset into the texture.</param>
+            <param name="offsetZ">Z offset into the texture.</param>
+            <param name="width">Width of the region to write.</param>
+            <param name="height">Height of the region to write.</param>
+            <param name="depth">Depth of the region to write.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.HostReadTextureRegion(VulkEase.VEDevice,VulkEase.VETextureIndex,System.IntPtr,System.UIntPtr,System.UInt32,System.UInt32,System.UInt32,System.UInt32,System.UInt32,System.UInt32)">
+            <summary>
+            Read data from a texture region using host transfer.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="texture">Texture to read from.</param>
+            <param name="dstData">Pointer to destination buffer.</param>
+            <param name="dataSize">Size of the destination buffer in bytes.</param>
+            <param name="offsetX">X offset into the texture.</param>
+            <param name="offsetY">Y offset into the texture.</param>
+            <param name="offsetZ">Z offset into the texture.</param>
+            <param name="width">Width of the region to read.</param>
+            <param name="height">Height of the region to read.</param>
+            <param name="depth">Depth of the region to read.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.HostWriteTexture(VulkEase.VEDevice,VulkEase.VETextureIndex,System.IntPtr,System.UIntPtr)">
+            <summary>
+            Write data to an entire texture using host transfer.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="texture">Texture to write to.</param>
+            <param name="srcData">Pointer to source data.</param>
+            <param name="dataSize">Size of the source data in bytes.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.HostReadTexture(VulkEase.VEDevice,VulkEase.VETextureIndex,System.IntPtr,System.UIntPtr)">
+            <summary>
+            Read data from an entire texture using host transfer.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="texture">Texture to read from.</param>
+            <param name="dstData">Pointer to destination buffer.</param>
+            <param name="dataSize">Size of the destination buffer in bytes.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CmdGenerateMipmaps(VulkEase.VECommandBuffer,VulkEase.VETextureIndex)">
+            <summary>
+            Generate mipmaps for a texture (command buffer version).
+            </summary>
+            <param name="cmd">Valid command buffer in recording state.</param>
+            <param name="texture">Texture to generate mipmaps for.</param>
+            <returns>VE_SUCCESS on success.</returns>
+            <remarks>Records mipmap generation commands into the command buffer for later execution.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.GenerateMipmaps(VulkEase.VEDevice,VulkEase.VETextureIndex)">
+            <summary>
+            Generate mipmaps for a texture (immediate/blocking version).
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="texture">Texture to generate mipmaps for.</param>
+            <returns>VE_SUCCESS on success.</returns>
+            <remarks>Executes immediately and blocks until complete.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.SaveTexture(VulkEase.VEDevice,VulkEase.VETextureIndex,System.String)">
+            <summary>
+            Save a texture to an image file.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="texture">Texture to save.</param>
+            <param name="filename">Output file path. Format is determined by extension (PNG, JPG, BMP, TGA).</param>
+            <returns>VE_SUCCESS on success, or VE_ERROR_IO_FAILED if writing fails.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CmdCopyTexture(VulkEase.VECommandBuffer,VulkEase.VETextureIndex,VulkEase.VETextureIndex,System.Nullable{VulkEase.VETextureCopyRegion})">
+            <summary>
+            Copy texture data (command buffer version).
+            </summary>
+            <param name="cmd">Valid command buffer in recording state.</param>
+            <param name="src">Source texture.</param>
+            <param name="dst">Destination texture.</param>
+            <param name="region">Optional region to copy. If null, copies entire texture.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CopyTexture(VulkEase.VEDevice,VulkEase.VETextureIndex,VulkEase.VETextureIndex,System.Nullable{VulkEase.VETextureCopyRegion},System.IntPtr)">
+            <summary>
+            Copy texture data (immediate version).
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="src">Source texture.</param>
+            <param name="dst">Destination texture.</param>
+            <param name="region">Optional region to copy. If null, copies entire texture.</param>
+            <param name="fence">Optional fence to signal when complete.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CmdBlitTexture(VulkEase.VECommandBuffer,VulkEase.VETextureIndex,VulkEase.VETextureIndex,System.Nullable{VulkEase.VETextureBlitRegion},VulkEase.VkFilter)">
+            <summary>
+            Blit (scaled copy) texture data (command buffer version).
+            </summary>
+            <param name="cmd">Valid command buffer in recording state.</param>
+            <param name="src">Source texture.</param>
+            <param name="dst">Destination texture.</param>
+            <param name="region">Optional region to blit. If null, blits entire texture.</param>
+            <param name="filter">Filtering mode for scaling (linear or nearest).</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.BlitTexture(VulkEase.VEDevice,VulkEase.VETextureIndex,VulkEase.VETextureIndex,System.Nullable{VulkEase.VETextureBlitRegion},VulkEase.VkFilter,System.IntPtr)">
+            <summary>
+            Blit (scaled copy) texture data (immediate version).
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="src">Source texture.</param>
+            <param name="dst">Destination texture.</param>
+            <param name="region">Optional region to blit. If null, blits entire texture.</param>
+            <param name="filter">Filtering mode for scaling (linear or nearest).</param>
+            <param name="fence">Optional fence to signal when complete.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CmdCopyBufferToTexture(VulkEase.VECommandBuffer,VulkEase.VEBufferAddress,VulkEase.VETextureIndex,System.Nullable{VulkEase.VEBufferTextureCopyRegion})">
+            <summary>
+            Copy buffer data to a texture (command buffer version).
+            </summary>
+            <param name="cmd">Valid command buffer in recording state.</param>
+            <param name="src">Source buffer address.</param>
+            <param name="dst">Destination texture.</param>
+            <param name="region">Optional region specifying the copy parameters. If null, uses defaults.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CopyBufferToTexture(VulkEase.VEDevice,VulkEase.VEBufferAddress,VulkEase.VETextureIndex,System.Nullable{VulkEase.VEBufferTextureCopyRegion},System.IntPtr)">
+            <summary>
+            Copy buffer data to a texture (immediate version).
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="src">Source buffer address.</param>
+            <param name="dst">Destination texture.</param>
+            <param name="region">Optional region specifying the copy parameters. If null, uses defaults.</param>
+            <param name="fence">Optional fence to signal when complete.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CmdCopyTextureToBuffer(VulkEase.VECommandBuffer,VulkEase.VETextureIndex,VulkEase.VEBufferAddress,System.Nullable{VulkEase.VEBufferTextureCopyRegion})">
+            <summary>
+            Copy texture data to a buffer (command buffer version).
+            </summary>
+            <param name="cmd">Valid command buffer in recording state.</param>
+            <param name="src">Source texture.</param>
+            <param name="dst">Destination buffer address.</param>
+            <param name="region">Optional region specifying the copy parameters. If null, uses defaults.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CopyTextureToBuffer(VulkEase.VEDevice,VulkEase.VETextureIndex,VulkEase.VEBufferAddress,System.Nullable{VulkEase.VEBufferTextureCopyRegion},System.IntPtr)">
+            <summary>
+            Copy texture data to a buffer (immediate version).
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="src">Source texture.</param>
+            <param name="dst">Destination buffer address.</param>
+            <param name="region">Optional region specifying the copy parameters. If null, uses defaults.</param>
+            <param name="fence">Optional fence to signal when complete.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateSampler(VulkEase.VEDevice,VulkEase.VESamplerDesc)">
+            <summary>
+            Create a sampler with custom settings.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="desc">Sampler descriptor with filtering, addressing, and other settings.</param>
+            <returns>Bindless sampler index. Pass to shaders via push constants.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if sampler creation fails.</exception>
+            <remarks>Call DestroySampler() when done.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.DestroySampler(VulkEase.VEDevice,VulkEase.VESamplerIndex)">
+            <summary>
+            Destroy a sampler by its bindless index.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="index">Sampler index to destroy. Can be VE_INVALID_SAMPLER_INDEX (no-op).</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateLinearSampler(VulkEase.VEDevice)">
+            <summary>
+            Create a linear (bilinear) filtering sampler with clamp-to-edge addressing.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <returns>Bindless sampler index.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if sampler creation fails.</exception>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateNearestSampler(VulkEase.VEDevice)">
+            <summary>
+            Create a nearest (point) filtering sampler with clamp-to-edge addressing.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <returns>Bindless sampler index.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if sampler creation fails.</exception>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateAnisotropicSampler(VulkEase.VEDevice,System.Single)">
+            <summary>
+            Create an anisotropic filtering sampler.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="maxAnisotropy">Maximum anisotropy level (typically 1.0 to 16.0).</param>
+            <returns>Bindless sampler index.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if sampler creation fails.</exception>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateShadowSampler(VulkEase.VEDevice)">
+            <summary>
+            Create a shadow map comparison sampler.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <returns>Bindless sampler index configured for depth comparison.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if sampler creation fails.</exception>
+            <remarks>Uses compare-less-or-equal for standard shadow mapping.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetDefaultSampler(VulkEase.VEDevice,VulkEase.VEDefaultSampler)">
+            <summary>
+            Get a built-in default sampler.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="sampler">Which default sampler to retrieve.</param>
+            <returns>Bindless sampler index.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.LoadShaderFromBuffer(VulkEase.VEDevice,System.Byte[],VulkEase.VkShaderStageFlags,System.String,System.String)">
+            <summary>
+            Load a shader from SPIR-V bytecode in memory.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="buffer">SPIR-V bytecode.</param>
+            <param name="stage">Shader stage (vertex, fragment, compute, etc.).</param>
+            <param name="entryPoint">Entry point function name (typically "main").</param>
+            <param name="debugName">Optional debug name for tools like RenderDoc.</param>
+            <returns>Shader object handle.</returns>
+            <exception cref="T:System.ArgumentException">Thrown if buffer is null or empty.</exception>
+            <exception cref="T:System.InvalidOperationException">Thrown if shader compilation fails.</exception>
+            <remarks>
+            VulkEase uses shader objects (VK_EXT_shader_object) for hot-reloadable shaders.
+            Call DestroyShader() when done.
+            </remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.LoadShaderFromFile(VulkEase.VEDevice,System.String,VulkEase.VkShaderStageFlags,System.String,System.String)">
+            <summary>
+            Load a shader from a SPIR-V file.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="filename">Path to the .spv file.</param>
+            <param name="stage">Shader stage (vertex, fragment, compute, etc.).</param>
+            <param name="entryPoint">Entry point function name (typically "main").</param>
+            <param name="debugName">Optional debug name for tools like RenderDoc.</param>
+            <returns>Shader object handle.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if file cannot be loaded or shader compilation fails.</exception>
+        </member>
+        <member name="M:VulkEase.VulkEase.DestroyShader(VulkEase.VEShader)">
+            <summary>
+            Destroy a shader object.
+            </summary>
+            <param name="shader">Shader handle to destroy. Can be default (no-op).</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetShaderHotReloadEnabled(VulkEase.VEDevice,System.Boolean)">
+            <summary>
+            Enable or disable shader hot-reloading for the device.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="enable">True to enable hot-reloading, false to disable.</param>
+            <remarks>When enabled, shaders loaded from files can be automatically reloaded when modified.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.ShaderNeedsReload(VulkEase.VEShader)">
+            <summary>
+            Check if a shader's source file has been modified and needs reloading.
+            </summary>
+            <param name="shader">Shader to check.</param>
+            <returns>True if the shader needs reloading.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.ReloadShader(VulkEase.VEShader)">
+            <summary>
+            Reload a shader from its source file.
+            </summary>
+            <param name="shader">Shader to reload.</param>
+            <returns>VE_SUCCESS on success, or an error code if reloading failed.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateGraphicsPipeline(VulkEase.VEDevice,VulkEase.VEGraphicsPipelineDesc)">
+            <summary>
+            Create a graphics pipeline with custom settings.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="desc">Pipeline descriptor with shaders, vertex input, and state.</param>
+            <returns>Graphics pipeline handle.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if pipeline creation fails.</exception>
+            <remarks>
+            Combines shaders + vertex input + material state (depth, stencil, blend, rasterization).
+            Use the convenience functions CreateOpaquePipeline, CreateTransparentPipeline, etc. for common cases.
+            Call DestroyGraphicsPipeline() when done.
+            </remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.DestroyGraphicsPipeline(VulkEase.VEGraphicsPipeline)">
+            <summary>
+            Destroy a graphics pipeline.
+            </summary>
+            <param name="pipeline">Pipeline handle to destroy. Can be default (no-op).</param>
         </member>
         <member name="M:VulkEase.VulkEase.CreateOpaquePipeline(VulkEase.VEDevice,VulkEase.VEShader,VulkEase.VEShader,System.String)">
             <summary>
-            Creates an opaque graphics pipeline with depth testing enabled and no blending.
+            Create an opaque rendering pipeline.
             </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="vertexShader">Vertex shader object.</param>
+            <param name="fragmentShader">Fragment shader object.</param>
+            <param name="debugName">Optional debug name.</param>
+            <returns>Pipeline configured for opaque geometry (depth test on, depth write on, no blending).</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if pipeline creation fails.</exception>
         </member>
         <member name="M:VulkEase.VulkEase.CreateTransparentPipeline(VulkEase.VEDevice,VulkEase.VEShader,VulkEase.VEShader,System.String)">
             <summary>
-            Creates a transparent graphics pipeline with alpha blending enabled.
+            Create a transparent rendering pipeline with alpha blending.
             </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="vertexShader">Vertex shader object.</param>
+            <param name="fragmentShader">Fragment shader object.</param>
+            <param name="debugName">Optional debug name.</param>
+            <returns>Pipeline configured for transparent geometry (depth test on, depth write off, alpha blend).</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if pipeline creation fails.</exception>
         </member>
         <member name="M:VulkEase.VulkEase.CreateAdditivePipeline(VulkEase.VEDevice,VulkEase.VEShader,VulkEase.VEShader,System.String)">
             <summary>
-            Creates an additive blending graphics pipeline.
+            Create an additive blending pipeline.
             </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="vertexShader">Vertex shader object.</param>
+            <param name="fragmentShader">Fragment shader object.</param>
+            <param name="debugName">Optional debug name.</param>
+            <returns>Pipeline configured for additive blending (depth test on, depth write off, additive blend).</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if pipeline creation fails.</exception>
         </member>
         <member name="M:VulkEase.VulkEase.CreateShadowPipeline(VulkEase.VEDevice,VulkEase.VEShader,VulkEase.VEShader,System.String)">
             <summary>
-            Creates a shadow rendering graphics pipeline (depth-only).
+            Create a shadow map rendering pipeline.
             </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="vertexShader">Vertex shader object.</param>
+            <param name="fragmentShader">Fragment shader object.</param>
+            <param name="debugName">Optional debug name.</param>
+            <returns>Pipeline configured for shadow map rendering (depth bias enabled, backface culling).</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if pipeline creation fails.</exception>
         </member>
         <member name="M:VulkEase.VulkEase.CreateUIOverlayPipeline(VulkEase.VEDevice,VulkEase.VEShader,VulkEase.VEShader,System.String)">
             <summary>
-            Creates a UI overlay graphics pipeline with transparency.
+            Create a UI overlay rendering pipeline.
             </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="vertexShader">Vertex shader object.</param>
+            <param name="fragmentShader">Fragment shader object.</param>
+            <param name="debugName">Optional debug name.</param>
+            <returns>Pipeline configured for UI rendering (no depth, alpha blend, no culling).</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if pipeline creation fails.</exception>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateDrawState(VulkEase.VEDevice,VulkEase.VEDrawStateDesc)">
+            <summary>
+            Create a draw state with custom settings.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="desc">Draw state descriptor with rasterization, depth, stencil, and blend settings.</param>
+            <returns>Draw state handle.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if creation fails.</exception>
+            <remarks>
+            Draw states capture per-draw dynamic state that can be changed without pipeline rebinds.
+            Call DestroyDrawState() when done.
+            </remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.DestroyDrawState(VulkEase.VEDrawState)">
+            <summary>
+            Destroy a draw state.
+            </summary>
+            <param name="drawState">Draw state handle to destroy. Can be default (no-op).</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateDefaultDrawState(VulkEase.VEDevice)">
+            <summary>
+            Create a default draw state preset.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <returns>Draw state with default settings (fill mode, CCW front face, back culling, depth test on).</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if creation fails.</exception>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateWireframeDrawState(VulkEase.VEDevice)">
+            <summary>
+            Create a wireframe draw state preset.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <returns>Draw state configured for wireframe rendering (line mode, no culling).</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if creation fails.</exception>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateShadowDrawState(VulkEase.VEDevice)">
+            <summary>
+            Create a draw state preset optimized for shadow map rendering.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <returns>Draw state configured for shadow rendering (depth bias enabled).</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if creation fails.</exception>
+        </member>
+        <member name="M:VulkEase.VulkEase.DefaultDrawStateDesc">
+            <summary>
+            Get a default draw state descriptor.
+            </summary>
+            <returns>VEDrawStateDesc initialized with sensible defaults.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.BeginCommandBuffer(VulkEase.VEDevice)">
+            <summary>
+            Begin a primary command buffer for recording commands.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <returns>Command buffer handle in recording state.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if command buffer allocation fails.</exception>
+            <remarks>
+            Command buffers record GPU commands for later submission.
+            Call EndCommandBuffer() when done recording, then SubmitCommandBuffer() to execute.
+            </remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.SubmitCommandBuffer(VulkEase.VECommandBuffer,System.Boolean)">
+            <summary>
+            Submit a command buffer for execution.
+            </summary>
+            <param name="cmd">Command buffer to submit.</param>
+            <param name="waitForCompletion">If true, blocks until execution completes.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.EndCommandBuffer(VulkEase.VECommandBuffer)">
+            <summary>
+            End command buffer recording.
+            </summary>
+            <param name="cmd">Command buffer to end.</param>
+            <returns>VE_SUCCESS on success.</returns>
+            <remarks>Must be called after recording and before submission.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.ResetCommandBuffer(VulkEase.VECommandBuffer)">
+            <summary>
+            Reset a command buffer for reuse.
+            </summary>
+            <param name="cmd">Command buffer to reset.</param>
+            <returns>VE_SUCCESS on success.</returns>
+            <remarks>Clears all recorded commands. The command buffer can be re-recorded after this.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.ReleaseCommandBuffer(VulkEase.VECommandBuffer)">
+            <summary>
+            Release a command buffer back to the pool.
+            </summary>
+            <param name="cmd">Command buffer to release.</param>
+            <remarks>The command buffer must not be in use by the GPU when released.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.PopulateSecondaryDescFromRenderTarget(VulkEase.VEDevice,VulkEase.VERenderTarget,VulkEase.VESecondaryCommandBufferDesc@)">
+            <summary>
+            Populate a secondary command buffer descriptor from render target.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="renderTarget">Render target to extract formats from.</param>
+            <param name="desc">Descriptor to populate.</param>
+            <returns>VE_SUCCESS on success.</returns>
+            <remarks>Use this when creating secondary command buffers that will be executed inside a render pass.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.BeginSecondaryCommandBuffer(VulkEase.VEDevice,VulkEase.VESecondaryCommandBufferDesc)">
+            <summary>
+            Begin a secondary command buffer for recording.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="desc">Descriptor with inheritance and format info.</param>
+            <returns>Secondary command buffer handle in recording state.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if allocation fails.</exception>
+            <remarks>Secondary command buffers can be executed from primary command buffers using ExecuteSecondaryCommandBuffers().</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.BeginSecondaryRecording(VulkEase.VECommandBuffer,VulkEase.VESecondaryCommandBufferDesc)">
+            <summary>
+            Begin recording on a secondary command buffer.
+            </summary>
+            <param name="cmd">Secondary command buffer to begin recording on.</param>
+            <param name="desc">Descriptor with inheritance and format info.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.ExecuteSecondaryCommandBuffers(VulkEase.VECommandBuffer,System.Collections.Generic.IReadOnlyList{VulkEase.VECommandBuffer},System.Boolean)">
+            <summary>
+            Execute secondary command buffers from a primary command buffer.
+            </summary>
+            <param name="primary">Primary command buffer in recording state.</param>
+            <param name="secondaryBuffers">List of secondary command buffers to execute.</param>
+            <param name="releaseCommandBuffers">If true, releases the secondary buffers after execution.</param>
+            <returns>VE_SUCCESS on success, or VE_ERROR_INVALID_PARAMETER if list is null or empty.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateRenderTarget(System.UInt32,System.UInt32)">
+            <summary>
+            Create a render target structure for dynamic rendering.
+            </summary>
+            <param name="width">Render area width in pixels.</param>
+            <param name="height">Render area height in pixels.</param>
+            <returns>Initialized VERenderTarget ready for attachment configuration.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateRenderTargetWithOffset(System.Int32,System.Int32,System.UInt32,System.UInt32)">
+            <summary>
+            Create a render target structure with a custom offset.
+            </summary>
+            <param name="x">Render area X offset.</param>
+            <param name="y">Render area Y offset.</param>
+            <param name="width">Render area width in pixels.</param>
+            <param name="height">Render area height in pixels.</param>
+            <returns>Initialized VERenderTarget with offset.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.RenderTargetAddColorAttachment(VulkEase.VERenderTarget@,VulkEase.VETextureIndex,VulkEase.VkAttachmentLoadOp,VulkEase.VEColor)">
+            <summary>
+            Add a color attachment to a render target.
+            </summary>
+            <param name="target">Render target to modify.</param>
+            <param name="texture">Texture for the color attachment.</param>
+            <param name="loadOp">Load operation (clear, load, or don't care).</param>
+            <param name="clearColor">Clear color value if loadOp is CLEAR.</param>
+            <returns>VE_SUCCESS on success, or VE_ERROR_INVALID_PARAMETER if attachment limit exceeded.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.RenderTargetAddColorAttachmentResolve(VulkEase.VERenderTarget@,VulkEase.VETextureIndex,VulkEase.VETextureIndex,VulkEase.VkAttachmentLoadOp,VulkEase.VEColor)">
+            <summary>
+            Add a color attachment with MSAA resolve target.
+            </summary>
+            <param name="target">Render target to modify.</param>
+            <param name="texture">Multisampled texture for rendering.</param>
+            <param name="resolveTexture">Single-sampled texture to resolve into.</param>
+            <param name="loadOp">Load operation.</param>
+            <param name="clearColor">Clear color value.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.RenderTargetSetDepthAttachment(VulkEase.VERenderTarget@,VulkEase.VETextureIndex,VulkEase.VkAttachmentLoadOp,System.Single)">
+            <summary>
+            Set the depth attachment for rendering.
+            </summary>
+            <param name="target">Render target to modify.</param>
+            <param name="texture">Texture for depth attachment (must have depth format).</param>
+            <param name="loadOp">Load operation.</param>
+            <param name="clearDepth">Clear depth value (typically 1.0 for reverse-Z, 0.0 otherwise).</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.RenderTargetSetStencilAttachment(VulkEase.VERenderTarget@,VulkEase.VETextureIndex,VulkEase.VkAttachmentLoadOp,System.UInt32)">
+            <summary>
+            Set the stencil attachment for rendering.
+            </summary>
+            <param name="target">Render target to modify.</param>
+            <param name="texture">Texture for stencil attachment.</param>
+            <param name="loadOp">Load operation.</param>
+            <param name="clearStencil">Clear stencil value.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.ResizeRenderTarget(VulkEase.VEDevice,VulkEase.VERenderTarget@,System.UInt32,System.UInt32)">
+            <summary>
+            Resize all textures attached to a render target.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="target">Render target to resize.</param>
+            <param name="width">New width in pixels.</param>
+            <param name="height">New height in pixels.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateSimpleRenderTarget(VulkEase.VEDevice,System.UInt32,System.UInt32,VulkEase.VkFormat,VulkEase.VkFormat,VulkEase.VEColor,System.Single,VulkEase.VETextureIndex@,VulkEase.VETextureIndex@)">
+            <summary>
+            Create a simple render target with color and optional depth.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="width">Width in pixels.</param>
+            <param name="height">Height in pixels.</param>
+            <param name="colorFormat">Color texture format.</param>
+            <param name="depthFormat">Depth format (VK_FORMAT_UNDEFINED for no depth).</param>
+            <param name="clearColor">Clear color value.</param>
+            <param name="clearDepth">Clear depth value.</param>
+            <param name="colorTexture">Receives the color texture index.</param>
+            <param name="depthTexture">Receives the depth texture index (if depth format specified).</param>
+            <returns>Configured VERenderTarget.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.BlitTextureToSwapchain(VulkEase.VECommandBuffer,VulkEase.VETextureIndex,VulkEase.VESwapchain,VulkEase.VkFilter)">
+            <summary>
+            Blit a texture to a swapchain for presentation.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="texture">Source texture to blit.</param>
+            <param name="swapchain">Destination swapchain.</param>
+            <param name="filter">Filtering mode (NEAREST or LINEAR).</param>
+            <returns>VE_SUCCESS on success, or VE_ERROR_SWAPCHAIN_OUT_OF_DATE if resize needed.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.BeginRendering(VulkEase.VECommandBuffer,VulkEase.VERenderTarget)">
+            <summary>
+            Begin dynamic rendering.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="renderTarget">Render target configuration with attachments.</param>
+            <remarks>
+            All draw commands must be issued between BeginRendering() and EndRendering().
+            There are no render passes in VulkEase - just begin/end rendering blocks.
+            </remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.EndRendering(VulkEase.VECommandBuffer)">
+            <summary>
+            End dynamic rendering.
+            </summary>
+            <param name="cmd">Command buffer with active rendering.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.BindGraphicsPipeline(VulkEase.VECommandBuffer,VulkEase.VEGraphicsPipeline)">
+            <summary>
+            Bind a graphics pipeline for subsequent draw commands.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="pipeline">Graphics pipeline to bind.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.ApplyDrawState(VulkEase.VECommandBuffer,VulkEase.VEDrawState)">
+            <summary>
+            Apply a draw state's dynamic state settings.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="drawState">Draw state to apply.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.ApplyGraphicsState(VulkEase.VECommandBuffer,VulkEase.VEGraphicsPipeline,System.Nullable{VulkEase.VEDrawState},System.Nullable{VulkEase.VEViewport},System.Nullable{VulkEase.VERect2D})">
+            <summary>
+            Apply complete graphics state in a single call.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="pipeline">Graphics pipeline to bind.</param>
+            <param name="drawState">Optional draw state to apply.</param>
+            <param name="viewport">Optional viewport to set.</param>
+            <param name="scissor">Optional scissor rect to set.</param>
+            <exception cref="T:System.InvalidOperationException">Thrown if state application fails.</exception>
+            <remarks>Convenience function that combines BindGraphicsPipeline, ApplyDrawState, SetViewport, and SetScissor.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.BindShader(VulkEase.VECommandBuffer,VulkEase.VEShader)">
+            <summary>
+            Bind a single shader.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="shader">Shader to bind.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.BindShaders(VulkEase.VECommandBuffer,VulkEase.VEShader[])">
+            <summary>
+            Bind multiple shaders at once.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="shaders">Array of shaders to bind.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.UnbindShaderStage(VulkEase.VECommandBuffer,VulkEase.VkShaderStageFlags)">
+            <summary>
+            Unbind a shader stage.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="stage">Shader stage to unbind.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetViewport(VulkEase.VECommandBuffer,System.Single,System.Single,System.Single,System.Single,System.Single,System.Single)">
+            <summary>
+            Set the viewport for rendering.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="x">Viewport X offset.</param>
+            <param name="y">Viewport Y offset.</param>
+            <param name="width">Viewport width.</param>
+            <param name="height">Viewport height.</param>
+            <param name="minDepth">Minimum depth value (default 0.0).</param>
+            <param name="maxDepth">Maximum depth value (default 1.0).</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetScissor(VulkEase.VECommandBuffer,System.Int32,System.Int32,System.UInt32,System.UInt32)">
+            <summary>
+            Set the scissor rectangle for rendering.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="x">Scissor X offset.</param>
+            <param name="y">Scissor Y offset.</param>
+            <param name="width">Scissor width.</param>
+            <param name="height">Scissor height.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetTopology(VulkEase.VECommandBuffer,VulkEase.VkPrimitiveTopology)">
+            <summary>
+            Set the primitive topology.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="topology">Primitive topology (triangles, lines, points, etc.).</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetPrimitiveRestart(VulkEase.VECommandBuffer,System.Boolean)">
+            <summary>
+            Enable or disable primitive restart.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="enable">True to enable primitive restart.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetPatchControlPoints(VulkEase.VECommandBuffer,System.UInt32)">
+            <summary>
+            Set tessellation patch control points.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="controlPoints">Number of control points per patch.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetPolygonMode(VulkEase.VECommandBuffer,VulkEase.VkPolygonMode)">
+            <summary>
+            Set polygon rendering mode.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="mode">Polygon mode (fill, line, point).</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetLineWidth(VulkEase.VECommandBuffer,System.Single)">
+            <summary>
+            Set line width for line primitives.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="width">Line width in pixels.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetCullMode(VulkEase.VECommandBuffer,VulkEase.VkCullModeFlags)">
+            <summary>
+            Set face culling mode.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="cullMode">Culling mode (none, front, back, or both).</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetFrontFace(VulkEase.VECommandBuffer,VulkEase.VkFrontFace)">
+            <summary>
+            Set front face winding order.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="frontFace">Front face winding (counter-clockwise or clockwise).</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetRasterizerDiscard(VulkEase.VECommandBuffer,System.Boolean)">
+            <summary>
+            Enable or disable rasterizer discard.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="enable">True to discard all rasterized fragments.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetDepthBias(VulkEase.VECommandBuffer,System.Boolean,System.Single,System.Single,System.Single)">
+            <summary>
+            Set depth bias parameters.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="enable">True to enable depth bias.</param>
+            <param name="constantFactor">Constant depth bias factor.</param>
+            <param name="clamp">Maximum depth bias clamp value.</param>
+            <param name="slopeFactor">Slope-based depth bias factor.</param>
+            <returns>VE_SUCCESS on success.</returns>
+            <remarks>Depth bias is useful for shadow mapping to avoid shadow acne.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetDepthClamp(VulkEase.VECommandBuffer,System.Boolean)">
+            <summary>
+            Enable or disable depth clamping.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="enable">True to clamp depth values instead of clipping.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetAlphaToCoverage(VulkEase.VECommandBuffer,System.Boolean)">
+            <summary>
+            Enable or disable alpha-to-coverage.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="enable">True to enable alpha-to-coverage.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetAlphaToOne(VulkEase.VECommandBuffer,System.Boolean)">
+            <summary>
+            Enable or disable alpha-to-one.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="enable">True to enable alpha-to-one.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetDepthTest(VulkEase.VECommandBuffer,System.Boolean)">
+            <summary>
+            Enable or disable depth testing.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="enable">True to enable depth testing.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetDepthWrite(VulkEase.VECommandBuffer,System.Boolean)">
+            <summary>
+            Enable or disable depth writing.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="enable">True to enable depth writing.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetDepthCompareOp(VulkEase.VECommandBuffer,VulkEase.VkCompareOp)">
+            <summary>
+            Set the depth comparison operation.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="op">Comparison operation (less, greater, equal, etc.).</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetStencilTest(VulkEase.VECommandBuffer,System.Boolean)">
+            <summary>
+            Enable or disable stencil testing.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="enable">True to enable stencil testing.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetStencilOp(VulkEase.VECommandBuffer,VulkEase.VkStencilFaceFlags,VulkEase.VkStencilOp,VulkEase.VkStencilOp,VulkEase.VkStencilOp,VulkEase.VkCompareOp)">
+            <summary>
+            Set stencil operations.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="faceMask">Which faces to affect (VK_STENCIL_FACE_FRONT_BIT, etc.).</param>
+            <param name="failOp">Operation on stencil test fail.</param>
+            <param name="passOp">Operation on stencil and depth test pass.</param>
+            <param name="depthFailOp">Operation on stencil pass but depth test fail.</param>
+            <param name="compareOp">Stencil comparison operation.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetStencilReference(VulkEase.VECommandBuffer,VulkEase.VkStencilFaceFlags,System.UInt32)">
+            <summary>
+            Set the stencil reference value.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="faceMask">Which faces to affect.</param>
+            <param name="reference">Reference value for stencil comparison.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetWireframe(VulkEase.VECommandBuffer,System.Boolean)">
+            <summary>
+            Convenience function to enable or disable wireframe rendering.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="enabled">True for wireframe, false for fill.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetDepthTesting(VulkEase.VECommandBuffer,System.Boolean,System.Boolean)">
+            <summary>
+            Convenience function to configure depth testing.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="testEnabled">Whether depth testing is enabled.</param>
+            <param name="writeEnabled">Whether depth writing is enabled.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.OverrideRasterState(VulkEase.VECommandBuffer,VulkEase.VERasterConfig)">
+            <summary>
+            Override rasterization state.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="raster">Raster configuration to apply.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.OverrideDepthState(VulkEase.VECommandBuffer,VulkEase.VEDepthConfig)">
+            <summary>
+            Override depth/stencil state.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="depth">Depth configuration to apply.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.OverrideBlendState(VulkEase.VECommandBuffer,VulkEase.VEBlendConfig)">
+            <summary>
+            Override blend state.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="blend">Blend configuration to apply.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetAlphaBlending(VulkEase.VECommandBuffer,System.Boolean)">
+            <summary>
+            Enable or disable alpha blending.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="enabled">True to enable alpha blending.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetCulling(VulkEase.VECommandBuffer,VulkEase.VkCullModeFlags)">
+            <summary>
+            Set face culling mode.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="cullMode">Culling mode to apply.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.PushConstants``1(VulkEase.VECommandBuffer,``0,System.UIntPtr)">
+            <summary>
+            Push constants to shaders.
+            </summary>
+            <typeparam name="T">Struct type to push.</typeparam>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="data">Data to push.</param>
+            <param name="offset">Offset in push constant range (default 0).</param>
+            <remarks>
+            Push constants provide the fastest way to pass small amounts of data to shaders.
+            Maximum size is 256 bytes (Vulkan spec minimum guarantee).
+            </remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.BindVertexBuffer(VulkEase.VECommandBuffer,System.UInt32,VulkEase.VEBufferAddress,System.UInt64)">
+            <summary>
+            Bind a vertex buffer.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="binding">Binding index (typically 0).</param>
+            <param name="vertexBuffer">Buffer containing vertex data.</param>
+            <param name="offset">Byte offset into the buffer.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.BindIndexBuffer(VulkEase.VECommandBuffer,VulkEase.VEBufferAddress,System.UInt32,VulkEase.VkIndexType)">
+            <summary>
+            Bind an index buffer.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="indexBuffer">Buffer containing index data.</param>
+            <param name="offset">Byte offset into the buffer.</param>
+            <param name="format">Index format (UINT16 or UINT32).</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.Draw(VulkEase.VECommandBuffer,System.UInt32,System.UInt32,System.UInt32,System.UInt32)">
+            <summary>
+            Draw non-indexed primitives.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="vertexCount">Number of vertices to draw.</param>
+            <param name="instanceCount">Number of instances to draw (default 1).</param>
+            <param name="firstVertex">Index of the first vertex (default 0).</param>
+            <param name="firstInstance">Index of the first instance (default 0).</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.DrawIndexed(VulkEase.VECommandBuffer,System.UInt32,System.UInt32,System.UInt32,System.Int32,System.UInt32)">
+            <summary>
+            Draw indexed primitives.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="indexCount">Number of indices to draw.</param>
+            <param name="instanceCount">Number of instances to draw (default 1).</param>
+            <param name="firstIndex">Index of the first index in the buffer (default 0).</param>
+            <param name="vertexOffset">Value added to each index before fetching vertex data (default 0).</param>
+            <param name="firstInstance">Index of the first instance (default 0).</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.DrawIndirect(VulkEase.VECommandBuffer,VulkEase.VEBufferAddress,System.UIntPtr,System.UInt32,System.UInt32)">
+            <summary>
+            Draw primitives using parameters from an indirect buffer.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="indirectBuffer">Buffer containing VkDrawIndirectCommand structures.</param>
+            <param name="offset">Byte offset into the indirect buffer.</param>
+            <param name="drawCount">Number of draws to execute.</param>
+            <param name="stride">Stride between draw commands in the buffer.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.DrawIndexedIndirect(VulkEase.VECommandBuffer,VulkEase.VEBufferAddress,System.UIntPtr,System.UInt32,System.UInt32)">
+            <summary>
+            Draw indexed primitives using parameters from an indirect buffer.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="indirectBuffer">Buffer containing VkDrawIndexedIndirectCommand structures.</param>
+            <param name="offset">Byte offset into the indirect buffer.</param>
+            <param name="drawCount">Number of draws to execute.</param>
+            <param name="stride">Stride between draw commands in the buffer.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.DrawIndirectCount(VulkEase.VECommandBuffer,VulkEase.VEBufferAddress,System.UIntPtr,VulkEase.VEBufferAddress,System.UInt64,System.UInt32,System.UInt32)">
+            <summary>
+            Draw primitives with a GPU-determined draw count.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="indirectBuffer">Buffer containing draw commands.</param>
+            <param name="indirectOffset">Byte offset into the indirect buffer.</param>
+            <param name="countBuffer">Buffer containing the draw count.</param>
+            <param name="countOffset">Byte offset into the count buffer.</param>
+            <param name="maxDrawCount">Maximum number of draws to execute.</param>
+            <param name="stride">Stride between draw commands.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.DrawIndexedIndirectCount(VulkEase.VECommandBuffer,VulkEase.VEBufferAddress,System.UIntPtr,VulkEase.VEBufferAddress,System.UInt64,System.UInt32,System.UInt32)">
+            <summary>
+            Draw indexed primitives with a GPU-determined draw count.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="indirectBuffer">Buffer containing draw commands.</param>
+            <param name="indirectOffset">Byte offset into the indirect buffer.</param>
+            <param name="countBuffer">Buffer containing the draw count.</param>
+            <param name="countOffset">Byte offset into the count buffer.</param>
+            <param name="maxDrawCount">Maximum number of draws to execute.</param>
+            <param name="stride">Stride between draw commands.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.ClearColorAttachment(VulkEase.VECommandBuffer,System.UInt32,VulkEase.VEColor,System.Nullable{VulkEase.VERect2D})">
+            <summary>
+            Clear a color attachment during rendering.
+            </summary>
+            <param name="cmd">Command buffer in recording state (inside a render pass).</param>
+            <param name="attachmentIndex">Index of the color attachment to clear.</param>
+            <param name="clearValue">Color to clear to.</param>
+            <param name="rect">Optional rectangle to clear. If null, clears the entire attachment.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.ClearDepthStencilAttachment(VulkEase.VECommandBuffer,System.Single,System.UInt32,System.UInt32,System.Nullable{VulkEase.VERect2D})">
+            <summary>
+            Clear depth and/or stencil attachment during rendering.
+            </summary>
+            <param name="cmd">Command buffer in recording state (inside a render pass).</param>
+            <param name="depth">Depth value to clear to.</param>
+            <param name="stencil">Stencil value to clear to.</param>
+            <param name="aspectMask">Which aspects to clear (VK_IMAGE_ASPECT_DEPTH_BIT and/or VK_IMAGE_ASPECT_STENCIL_BIT).</param>
+            <param name="rect">Optional rectangle to clear. If null, clears the entire attachment.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateQueryPool(VulkEase.VEDevice,VulkEase.VEQueryPoolDesc,VulkEase.VEQueryPool@)">
+            <summary>
+            Create a query pool for GPU queries.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="desc">Query pool descriptor with type and count.</param>
+            <param name="pool">Receives the created query pool handle.</param>
+            <returns>VE_SUCCESS on success.</returns>
+            <remarks>Query pools can be used for timestamp queries, occlusion queries, and pipeline statistics.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.DestroyQueryPool(VulkEase.VEQueryPool)">
+            <summary>
+            Destroy a query pool.
+            </summary>
+            <param name="pool">Query pool to destroy.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CmdResetQueryPool(VulkEase.VECommandBuffer,VulkEase.VEQueryPool,System.UInt32,System.UInt32)">
+            <summary>
+            Reset queries in a query pool.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="pool">Query pool containing the queries.</param>
+            <param name="firstQuery">First query index to reset.</param>
+            <param name="queryCount">Number of queries to reset.</param>
+            <returns>VE_SUCCESS on success.</returns>
+            <remarks>Queries must be reset before they can be used again.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.CmdBeginQuery(VulkEase.VECommandBuffer,VulkEase.VEQueryPool,System.UInt32)">
+            <summary>
+            Begin a query.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="pool">Query pool to use.</param>
+            <param name="queryIndex">Index of the query to begin.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CmdEndQuery(VulkEase.VECommandBuffer,VulkEase.VEQueryPool,System.UInt32)">
+            <summary>
+            End a query.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="pool">Query pool to use.</param>
+            <param name="queryIndex">Index of the query to end.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.CmdWriteTimestamp(VulkEase.VECommandBuffer,VulkEase.VEQueryPool,System.UInt32,VulkEase.VkPipelineStageFlags2)">
+            <summary>
+            Write a GPU timestamp to a query.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="pool">Timestamp query pool.</param>
+            <param name="queryIndex">Index of the query to write.</param>
+            <param name="stage">Pipeline stage at which to record the timestamp.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetQueryResults(VulkEase.VEDevice,VulkEase.VEQueryPool,System.UInt32,System.UInt32,System.UInt64[],VulkEase.VkQueryResultFlags)">
+            <summary>
+            Retrieve query results from a query pool.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="pool">Query pool to read from.</param>
+            <param name="firstQuery">First query index to read.</param>
+            <param name="queryCount">Number of queries to read.</param>
+            <param name="results">Array to receive the results.</param>
+            <param name="flags">Query result flags (default: 64-bit results).</param>
+            <returns>VE_SUCCESS on success, VE_NOT_READY if results not available yet.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.Dispatch(VulkEase.VECommandBuffer,System.UInt32,System.UInt32,System.UInt32)">
+            <summary>
+            Dispatch a compute shader.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="groupCountX">Number of workgroups in X dimension.</param>
+            <param name="groupCountY">Number of workgroups in Y dimension.</param>
+            <param name="groupCountZ">Number of workgroups in Z dimension.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.DispatchIndirect(VulkEase.VECommandBuffer,VulkEase.VEBufferAddress,System.UIntPtr)">
+            <summary>
+            Dispatch a compute shader with parameters from an indirect buffer.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="indirectBuffer">Buffer containing VkDispatchIndirectCommand.</param>
+            <param name="offset">Byte offset into the indirect buffer.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.BarrierVertexToFragment(VulkEase.VECommandBuffer)">
+            <summary>
+            Insert a barrier for vertex to fragment shader synchronization.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.BarrierComputeToVertex(VulkEase.VECommandBuffer)">
+            <summary>
+            Insert a barrier for compute to vertex shader synchronization.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.BarrierComputeToCompute(VulkEase.VECommandBuffer)">
+            <summary>
+            Insert a barrier for compute to compute shader synchronization.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.BarrierGraphicsToPresent(VulkEase.VECommandBuffer)">
+            <summary>
+            Insert a barrier for graphics to present synchronization.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.TransitionTexture(VulkEase.VECommandBuffer,VulkEase.VETextureIndex,VulkEase.VkImageLayout,VulkEase.VkImageLayout)">
+            <summary>
+            Transition a texture between image layouts.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="texture">Texture to transition.</param>
+            <param name="oldLayout">Current layout of the texture.</param>
+            <param name="newLayout">Desired layout for the texture.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.TransitionTextureForShaderRead(VulkEase.VECommandBuffer,VulkEase.VETextureIndex)">
+            <summary>
+            Transition a texture to shader read layout.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="texture">Texture to transition.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.TransitionTextureForColorAttachment(VulkEase.VECommandBuffer,VulkEase.VETextureIndex)">
+            <summary>
+            Transition a texture to color attachment layout.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="texture">Texture to transition.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.TransitionTextureForDepthAttachment(VulkEase.VECommandBuffer,VulkEase.VETextureIndex)">
+            <summary>
+            Transition a texture to depth attachment layout.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="texture">Texture to transition.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.TransitionTextureForTransferSrc(VulkEase.VECommandBuffer,VulkEase.VETextureIndex)">
+            <summary>
+            Transition a texture to transfer source layout.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="texture">Texture to transition.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.TransitionTextureForTransferDst(VulkEase.VECommandBuffer,VulkEase.VETextureIndex)">
+            <summary>
+            Transition a texture to transfer destination layout.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="texture">Texture to transition.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.TransitionTextureForPresent(VulkEase.VECommandBuffer,VulkEase.VETextureIndex)">
+            <summary>
+            Transition a texture to present layout for swapchain presentation.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="texture">Texture to transition.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.TransitionTextureToLayout(VulkEase.VECommandBuffer,VulkEase.VETextureIndex,VulkEase.VkImageLayout)">
+            <summary>
+            Transition a texture to a specific layout.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="texture">Texture to transition.</param>
+            <param name="newLayout">Target layout for the texture.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.CreateSwapchain(VulkEase.VEDevice,VulkEase.VESwapchainDesc)">
+            <summary>
+            Create a swapchain for window presentation.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="desc">Swapchain descriptor with surface, size, and format settings.</param>
+            <returns>Swapchain handle.</returns>
+            <exception cref="T:System.InvalidOperationException">Thrown if swapchain creation fails.</exception>
+            <remarks>Call DestroySwapchain() when done.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.DestroySwapchain(VulkEase.VESwapchain)">
+            <summary>
+            Destroy a swapchain.
+            </summary>
+            <param name="swapchain">Swapchain to destroy.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.PresentImage(VulkEase.VESwapchain,VulkEase.VECommandBuffer,System.Boolean)">
+            <summary>
+            Present the rendered image to the swapchain.
+            </summary>
+            <param name="swapchain">Swapchain to present to.</param>
+            <param name="cmd">Command buffer with rendering commands.</param>
+            <param name="releaseCommandBuffer">If true, releases the command buffer after presentation.</param>
+            <returns>VE_SUCCESS on success, VE_SUBOPTIMAL or VE_OUT_OF_DATE if swapchain needs recreation.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.ResizeSwapchain(VulkEase.VESwapchain,System.UInt32,System.UInt32)">
+            <summary>
+            Resize a swapchain after window resize.
+            </summary>
+            <param name="swapchain">Swapchain to resize.</param>
+            <param name="width">New width in pixels.</param>
+            <param name="height">New height in pixels.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetSwapchainSize(VulkEase.VESwapchain)">
+            <summary>
+            Get the current size of a swapchain.
+            </summary>
+            <param name="swapchain">Swapchain to query.</param>
+            <returns>Current swapchain dimensions.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetSwapchainFormat(VulkEase.VESwapchain)">
+            <summary>
+            Get the color format of a swapchain.
+            </summary>
+            <param name="swapchain">Swapchain to query.</param>
+            <returns>VkFormat of the swapchain images.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.BeginDebugLabel(VulkEase.VECommandBuffer,System.String,VulkEase.VEColor)">
+            <summary>
+            Begin a debug label region in a command buffer.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="label">Label text to display in debug tools.</param>
+            <param name="color">Color for the label region.</param>
+            <remarks>Visible in tools like RenderDoc. Must be balanced with EndDebugLabel.</remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.EndDebugLabel(VulkEase.VECommandBuffer)">
+            <summary>
+            End a debug label region in a command buffer.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.InsertDebugLabel(VulkEase.VECommandBuffer,System.String,VulkEase.VEColor)">
+            <summary>
+            Insert a single debug label marker in a command buffer.
+            </summary>
+            <param name="cmd">Command buffer in recording state.</param>
+            <param name="label">Label text to display.</param>
+            <param name="color">Color for the marker.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetBufferDebugName(VulkEase.VEDevice,VulkEase.VEBufferAddress,System.String)">
+            <summary>
+            Set a debug name for a buffer.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="address">Buffer address.</param>
+            <param name="name">Debug name to set.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetTextureDebugName(VulkEase.VEDevice,VulkEase.VETextureIndex,System.String)">
+            <summary>
+            Set a debug name for a texture.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="texture">Texture index.</param>
+            <param name="name">Debug name to set.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.SetSamplerDebugName(VulkEase.VEDevice,VulkEase.VESamplerIndex,System.String)">
+            <summary>
+            Set a debug name for a sampler.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="sampler">Sampler index.</param>
+            <param name="name">Debug name to set.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetPerformanceStats(VulkEase.VEDevice,VulkEase.VEPerformanceStats@)">
+            <summary>
+            Get performance statistics for the device.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="stats">Receives performance statistics.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetMemoryStats(VulkEase.VEDevice,VulkEase.VEMemoryStats@)">
+            <summary>
+            Get memory usage statistics for the device.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="stats">Receives memory statistics.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetGraphicsPipelineStats(VulkEase.VEDevice,VulkEase.VEGraphicsPipelineStats@)">
+            <summary>
+            Get graphics pipeline statistics.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="stats">Receives pipeline statistics.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.PrintDebugInfo(VulkEase.VEDevice)">
+            <summary>
+            Print debug information about the device to the message callback.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.PrintProfileInfo(VulkEase.VEDevice)">
+            <summary>
+            Print profiling information to the message callback.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.GetPipelineStats(VulkEase.VEDevice,VulkEase.VEPipelineStats@)">
+            <summary>
+            Get pipeline usage statistics.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="stats">Receives pipeline statistics.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.PrintGraphicsPipeline(VulkEase.VEGraphicsPipeline)">
+            <summary>
+            Print graphics pipeline configuration to the message callback.
+            </summary>
+            <param name="pipeline">Pipeline to print configuration for.</param>
+            <returns>VE_SUCCESS on success.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.ValidateGraphicsPipeline(VulkEase.VEGraphicsPipeline)">
+            <summary>
+            Validate a graphics pipeline configuration for common errors.
+            </summary>
+            <param name="pipeline">Pipeline to validate.</param>
+            <returns>VE_SUCCESS if valid, or an error code describing the issue.</returns>
+        </member>
+        <member name="M:VulkEase.VulkEase.BeginFrame(VulkEase.VEDevice)">
+            <summary>
+            Begin a new frame for timing purposes.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <returns>VE_SUCCESS on success.</returns>
+            <remarks>
+            Call at the start of each frame to begin timing measurement.
+            Must be paired with EndFrame().
+            </remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.EndFrame(VulkEase.VEDevice,VulkEase.VEFrameTimingInfo@)">
+            <summary>
+            End the current frame and retrieve timing information.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <param name="timing">Receives frame timing statistics.</param>
+            <returns>VE_SUCCESS on success.</returns>
+            <remarks>
+            Call at the end of each frame after all GPU work is submitted.
+            Returns CPU and GPU timing information for the completed frame.
+            </remarks>
         </member>
         <member name="T:VulkEase.VulkEaseDll">
             <summary>

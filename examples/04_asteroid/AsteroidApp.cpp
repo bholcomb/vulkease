@@ -360,32 +360,20 @@ bool AsteroidApp::initVulkEase()
    int rtWidth, rtHeight;
    glfwGetFramebufferSize(window_, &rtWidth, &rtHeight);
 
-   VERenderTargetDesc rtDesc{};
-   rtDesc.width = static_cast<uint32_t>(rtWidth);
-   rtDesc.height = static_cast<uint32_t>(rtHeight);
-   rtDesc.colorFormat = swapchainFormat_;
-   rtDesc.depthFormat = VK_FORMAT_D32_SFLOAT;
-   rtDesc.sampleCount = 1;
-   rtDesc.hasResolveTarget = false;
-   rtDesc.debugName = "AsteroidRenderTarget";
+   VEColor clearColor{0.01f, 0.01f, 0.015f, 1.0f}; // Dark space background
+   renderTarget_ = veCreateSimpleRenderTarget(device_,
+                                               static_cast<uint32_t>(rtWidth),
+                                               static_cast<uint32_t>(rtHeight),
+                                               swapchainFormat_,
+                                               VK_FORMAT_D32_SFLOAT,
+                                               clearColor, 1.0f,
+                                               &colorTexture_, &depthTexture_);
 
-   if (veCreateRenderTarget(device_, &rtDesc, &renderTarget_) != VE_SUCCESS || !renderTarget_)
+   if (colorTexture_ == VE_INVALID_TEXTURE_INDEX)
    {
       std::fprintf(stderr, "Failed to create render target\n");
       return false;
    }
-
-   // Build rendering info once (reused every frame)
-   renderingInfo_ = veCreateRenderingInfo(static_cast<uint32_t>(rtWidth), static_cast<uint32_t>(rtHeight));
-   VETextureIndex rtColor = veGetRenderTargetColorTexture(renderTarget_);
-   (void)veRenderingAddColorAttachment(&renderingInfo_,
-                                 rtColor,
-                                  VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                  VEColor{0.01f, 0.01f, 0.015f, 1.0f}); // Dark space background
-   VETextureIndex rtDepth = veGetRenderTargetDepthTexture(renderTarget_);
-   (void)veRenderingSetDepthAttachment(&renderingInfo_,
-                                 rtDepth,
-                                  VK_ATTACHMENT_LOAD_OP_CLEAR, 1.0f);
 
    return true;
 }
@@ -399,10 +387,15 @@ void AsteroidApp::shutdownVulkEase()
 
    destroyAssets();
 
-   if (renderTarget_)
+   if (colorTexture_ != VE_INVALID_TEXTURE_INDEX)
    {
-      (void)veDestroyRenderTarget(renderTarget_);
-      renderTarget_ = nullptr;
+      veDestroyTexture(device_, colorTexture_);
+      colorTexture_ = VE_INVALID_TEXTURE_INDEX;
+   }
+   if (depthTexture_ != VE_INVALID_TEXTURE_INDEX)
+   {
+      veDestroyTexture(device_, depthTexture_);
+      depthTexture_ = VE_INVALID_TEXTURE_INDEX;
    }
 
    if (swapchain_)
@@ -584,9 +577,13 @@ void AsteroidApp::destroyAssets()
 void AsteroidApp::mainLoop()
 {
    auto lastTime = std::chrono::high_resolution_clock::now();
+   VEFrameTimingInfo veTiming = {};
 
    while (!glfwWindowShouldClose(window_))
    {
+      // Begin frame timing with VulkEase
+      veBeginFrame(device_);
+      
       auto frameStart = std::chrono::high_resolution_clock::now();
 
       glfwPollEvents();
@@ -610,6 +607,9 @@ void AsteroidApp::mainLoop()
       double submitMs = 0.0;
       submitFrame(recorded, submitMs);
 
+      // End frame and get VulkEase timing info
+      veEndFrame(device_, &veTiming);
+
       auto frameEnd = std::chrono::high_resolution_clock::now();
       double frameMs = toMilliseconds(std::chrono::duration_cast<std::chrono::nanoseconds>(frameEnd - frameStart));
 
@@ -623,6 +623,14 @@ void AsteroidApp::mainLoop()
 
       ++frameIndex_;
    }
+   
+   // Print final VulkEase timing summary
+   std::cout << "\n=== VulkEase Timing Summary ===\n"
+             << "Total frames: " << veTiming.frameNumber << "\n"
+             << "Average frame time: " << std::fixed << std::setprecision(2) << veTiming.avgFrameTimeMs 
+             << " ms (" << std::setprecision(1) << veTiming.avgFps << " FPS)\n"
+             << "Min frame time: " << std::setprecision(2) << veTiming.minFrameTimeMs << " ms\n"
+             << "Max frame time: " << veTiming.maxFrameTimeMs << " ms\n";
 }
 
 void AsteroidApp::handleInput()
@@ -699,7 +707,7 @@ void AsteroidApp::recordChunks(uint32_t width, uint32_t height, std::vector<Reco
 
    auto recordChunk = [this, width, height](uint32_t chunkIndex, RecordedChunk &outChunk) -> bool {
       // Set up secondary command buffer descriptor.
-      // Note: We specify formats directly here rather than using vePopulateSecondaryDescFromRenderingInfo
+      // Note: We specify formats directly here rather than using vePopulateSecondaryDescFromRenderTarget
       // because secondary buffers are recorded in parallel BEFORE we acquire the swapchain image.
       // The formats are known constants (swapchainFormat_, VK_FORMAT_D32_SFLOAT).
       VESecondaryCommandBufferDesc desc{};
@@ -802,9 +810,8 @@ void AsteroidApp::submitFrame(const std::vector<RecordedChunk> &recorded, double
    auto start = std::chrono::high_resolution_clock::now();
 
    // Get render target size for camera projection
-   VkExtent2D extent = veGetRenderTargetSize(renderTarget_);
-   uint32_t width = extent.width;
-   uint32_t height = extent.height;
+   uint32_t width = renderTarget_.renderAreaWidth;
+   uint32_t height = renderTarget_.renderAreaHeight;
 
    VECommandBuffer *primary = nullptr;
    if (veBeginCommandBuffer(device_, &primary) != VE_SUCCESS || !primary)
@@ -813,7 +820,7 @@ void AsteroidApp::submitFrame(const std::vector<RecordedChunk> &recorded, double
    }
 
    // Begin rendering (automatically handles texture transitions)
-   veBeginRendering(primary, &renderingInfo_);
+   veBeginRendering(primary, &renderTarget_);
 
    // Update camera buffer once per frame before executing secondary buffers.
    // Use actual elapsed time so animation speed is framerate-independent.
@@ -847,7 +854,6 @@ void AsteroidApp::submitFrame(const std::vector<RecordedChunk> &recorded, double
    // Set render state once in the primary buffer - this is inherited by all secondary buffers.
    // Note: With VK_EXT_shader_object, dynamic state is NOT inherited by secondary command buffers,
    // so each secondary must also set state. We set it here for reference/documentation.
-   veBindGraphicsPipeline(primary, pipeline_);
    veApplyGraphicsState(primary, pipeline_, nullptr, nullptr, nullptr);
 
    if (!recorded.empty())
@@ -869,8 +875,8 @@ void AsteroidApp::submitFrame(const std::vector<RecordedChunk> &recorded, double
 
    veEndRendering(primary);
 
-   // Blit render target to swapchain (acquires swapchain image automatically)
-   VEResult blitResult = veBlitToSwapchain(primary, renderTarget_, swapchain_, VK_FILTER_LINEAR);
+   // Blit color texture to swapchain (acquires swapchain image automatically)
+   VEResult blitResult = veBlitTextureToSwapchain(primary, colorTexture_, swapchain_, VK_FILTER_LINEAR);
    if (blitResult == VE_ERROR_SWAPCHAIN_OUT_OF_DATE)
    {
       int framebufferWidth = 0;
@@ -880,21 +886,10 @@ void AsteroidApp::submitFrame(const std::vector<RecordedChunk> &recorded, double
       {
          veResizeSwapchain(swapchain_, static_cast<uint32_t>(framebufferWidth),
                            static_cast<uint32_t>(framebufferHeight));
-         veResizeRenderTarget(renderTarget_, static_cast<uint32_t>(framebufferWidth),
+         veResizeRenderTarget(device_, &renderTarget_, static_cast<uint32_t>(framebufferWidth),
                               static_cast<uint32_t>(framebufferHeight));
-         
-         // Rebuild rendering info with new size and texture handles
-         renderingInfo_ = veCreateRenderingInfo(static_cast<uint32_t>(framebufferWidth),
-                                               static_cast<uint32_t>(framebufferHeight));
-         VETextureIndex rtColor = veGetRenderTargetColorTexture(renderTarget_);
-         (void)veRenderingAddColorAttachment(&renderingInfo_,
-                                        rtColor,
-                                        VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                        VEColor{0.01f, 0.01f, 0.015f, 1.0f});
-         VETextureIndex rtDepth = veGetRenderTargetDepthTexture(renderTarget_);
-         (void)veRenderingSetDepthAttachment(&renderingInfo_,
-                                        rtDepth,
-                                        VK_ATTACHMENT_LOAD_OP_CLEAR, 1.0f);
+         colorTexture_ = renderTarget_.attachments[0].texture;
+         depthTexture_ = renderTarget_.attachments[VE_DEPTH_ATTACHMENT_INDEX].texture;
       }
       // Release command buffer manually on early return
       veReleaseCommandBuffer(primary);

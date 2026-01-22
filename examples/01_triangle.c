@@ -29,12 +29,12 @@ typedef struct {
 static VEContext* g_context = NULL;
 static VEDevice* g_device = NULL;
 static VESwapchain* g_swapchain = NULL;
-static VERenderTarget* g_renderTarget = NULL;
 static VEShader* g_vertexShader = NULL;
 static VEShader* g_fragmentShader = NULL;
 static VEBufferAddress g_vertexBuffer = VE_INVALID_ADDRESS;
 static VEGraphicsPipeline* g_pipeline = NULL;
-static VERenderingInfo g_renderingInfo;
+static VERenderTarget g_renderTarget;
+static VETextureIndex g_colorTexture = VE_INVALID_TEXTURE_INDEX;
 
 int win_width = 800;
 int win_height = 600;
@@ -69,16 +69,12 @@ static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
         if (g_swapchain) {
             veResizeSwapchain(g_swapchain, (uint32_t)width, (uint32_t)height);
         }
-        if (g_renderTarget) {
-            veResizeRenderTarget(g_renderTarget, (uint32_t)width, (uint32_t)height);
+        if (g_colorTexture != VE_INVALID_TEXTURE_INDEX) {
+            // Resize the render target (resizes all attached textures)
+            veResizeRenderTarget(g_device, &g_renderTarget, (uint32_t)width, (uint32_t)height);
             
-            // Rebuild rendering info with new size and texture handle
-            g_renderingInfo = veCreateRenderingInfo((uint32_t)width, (uint32_t)height);
-            VETextureIndex rtColor = veGetRenderTargetColorTexture(g_renderTarget);
-            (void)veRenderingAddColorAttachment(&g_renderingInfo, 
-                                           rtColor,
-                                           VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                           (VEColor){0.1f, 0.1f, 0.1f, 1.0f});
+            // Update the color texture reference (texture index may have changed)
+            g_colorTexture = g_renderTarget.attachments[0].texture;
         }
     }
 }
@@ -155,28 +151,19 @@ static bool initVulkEase(GLFWwindow* window) {
     
     printf("Swapchain created: %dx%d\n", win_width, win_height);
 
-    // Create render target for offscreen rendering
-    VERenderTargetDesc rtDesc = {0};
-    rtDesc.width = (uint32_t)win_width;
-    rtDesc.height = (uint32_t)win_height;
-    rtDesc.colorFormat = veGetSwapchainFormat(g_swapchain);
-    rtDesc.depthFormat = VK_FORMAT_UNDEFINED;  // No depth buffer for this example
-    rtDesc.sampleCount = 1;
-    rtDesc.hasResolveTarget = false;
-    rtDesc.debugName = "TriangleRenderTarget";
+    // Create render target for offscreen rendering using convenience function
+    VEColor clearColor = {0.1f, 0.1f, 0.1f, 1.0f};
+    g_renderTarget = veCreateSimpleRenderTarget(g_device, 
+                                                 (uint32_t)win_width, (uint32_t)win_height,
+                                                 veGetSwapchainFormat(g_swapchain),
+                                                 VK_FORMAT_UNDEFINED,  // No depth buffer
+                                                 clearColor, 1.0f,
+                                                 &g_colorTexture, NULL);
 
-    if (veCreateRenderTarget(g_device, &rtDesc, &g_renderTarget) != VE_SUCCESS || !g_renderTarget) {
+    if (g_colorTexture == VE_INVALID_TEXTURE_INDEX) {
         fprintf(stderr, "Failed to create render target\n");
         return false;
     }
-    
-    // Build rendering info once (reused every frame)
-    g_renderingInfo = veCreateRenderingInfo((uint32_t)win_width, (uint32_t)win_height);
-    VETextureIndex rtColor = veGetRenderTargetColorTexture(g_renderTarget);
-    (void)veRenderingAddColorAttachment(&g_renderingInfo, 
-                                   rtColor,
-                                   VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                   (VEColor){0.1f, 0.1f, 0.1f, 1.0f}); // Dark gray background
 
     printf("Render target created: %dx%d\n", win_width, win_height);
     
@@ -280,7 +267,7 @@ static void render() {
     createRotationMatrix(mvpMatrix, rotationAngle);
     
     // Begin rendering (automatically handles texture transitions)
-    veBeginRendering(cmd, &g_renderingInfo);
+    veBeginRendering(cmd, &g_renderTarget);
   
     // Apply graphics state (NULL viewport/scissor uses full render area)
     veApplyGraphicsState(cmd, g_pipeline, NULL, NULL, NULL);
@@ -304,8 +291,8 @@ static void render() {
     // End rendering
     veEndRendering(cmd);
     
-    // Blit render target to swapchain (acquires swapchain image automatically)
-    VEResult result = veBlitToSwapchain(cmd, g_renderTarget, g_swapchain, VK_FILTER_LINEAR);
+    // Blit color texture to swapchain (acquires swapchain image automatically)
+    VEResult result = veBlitTextureToSwapchain(cmd, g_colorTexture, g_swapchain, VK_FILTER_LINEAR);
     if (result == VE_ERROR_SWAPCHAIN_OUT_OF_DATE) {
         // Handle swapchain recreation - resize callback handles this
         return;
@@ -336,8 +323,8 @@ static void cleanup() {
         (void)veDestroyGraphicsPipeline(g_pipeline);
     }
     
-    if (g_renderTarget) {
-        (void)veDestroyRenderTarget(g_renderTarget);
+    if (g_colorTexture != VE_INVALID_TEXTURE_INDEX) {
+        veDestroyTexture(g_device, g_colorTexture);
     }
 
     if (g_swapchain) {
@@ -375,27 +362,46 @@ int main() {
     
     printf("Starting render loop...\n");
 
-    uint64_t frameCount = 0;
     bool shouldQuit = false;
-    double frameTime = 0.0;
+    VEFrameTimingInfo timing = {0};
+    
     while (!glfwWindowShouldClose(window) && !shouldQuit) {
-        double start = glfwGetTime();
+        // Begin frame timing
+        veBeginFrame(g_device);
         
         glfwPollEvents();
         render();
 
-        frameCount++;
-        if(frameCount % 1000 == 0) printf("Average Framerate: %f:4.2ms\n", (frameTime / (double)frameCount) * 1000.0);
-        if(frameCount % 10000 == 0) vePrintDebugInfo(g_device);
+        // End frame and get timing info
+        veEndFrame(g_device, &timing);
+
+        // Print frame timing every 1000 frames
+        if(timing.frameNumber % 1000 == 0) {
+            printf("Frame %llu: %.2f ms (%.1f FPS) | Avg: %.2f ms (%.1f FPS) | Min: %.2f ms | Max: %.2f ms\n",
+                   (unsigned long long)timing.frameNumber,
+                   timing.frameTimeMs,
+                   timing.fps,
+                   timing.avgFrameTimeMs,
+                   timing.avgFps,
+                   timing.minFrameTimeMs,
+                   timing.maxFrameTimeMs);
+        }
+        
+        // Print debug info every 10000 frames
+        if(timing.frameNumber % 10000 == 0) vePrintDebugInfo(g_device);
 
         if(glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         {
             shouldQuit = true;
         }
-
-        double end = glfwGetTime();
-        frameTime += (end - start);
     }
+    
+    // Print final timing summary
+    printf("\n=== Final Timing Summary ===\n");
+    printf("Total frames: %llu\n", (unsigned long long)timing.frameNumber);
+    printf("Average frame time: %.2f ms (%.1f FPS)\n", timing.avgFrameTimeMs, timing.avgFps);
+    printf("Min frame time: %.2f ms\n", timing.minFrameTimeMs);
+    printf("Max frame time: %.2f ms\n", timing.maxFrameTimeMs);
     
     printf("Shutting down...\n");
     

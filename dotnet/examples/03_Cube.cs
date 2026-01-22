@@ -74,7 +74,8 @@ namespace VulkEaseExamples
         private VEDevice _device;
         private VESwapchain _swapchain;
         private VERenderTarget _renderTarget;
-        private VERenderingInfo _renderingInfo;
+        private VETextureIndex _colorTexture;
+        private VETextureIndex _depthTexture;
 
         // Resources
         private VEBufferAddress _vertexBuffer;
@@ -93,6 +94,9 @@ namespace VulkEaseExamples
         // Animation
         private float _rotationAngle;
         private Stopwatch _stopwatch = Stopwatch.StartNew();
+        
+        // Frame timing
+        private VEFrameTimingInfo _timing;
 
         public CubeExample() : base(GameWindowSettings.Default,
             new NativeWindowSettings()
@@ -162,34 +166,11 @@ namespace VulkEaseExamples
             if (_swapchain.native != IntPtr.Zero && e.Width > 0 && e.Height > 0)
             {
                 VE.ResizeSwapchain(_swapchain, (uint)e.Width, (uint)e.Height);
-                VE.ResizeRenderTarget(_renderTarget, (uint)e.Width, (uint)e.Height);
-                RebuildRenderingInfo();
+                VE.ResizeRenderTarget(_device, ref _renderTarget, (uint)e.Width, (uint)e.Height);
+                _colorTexture = _renderTarget.ColorAttachments[0].texture;
+                if (_renderTarget.DepthAttachment.HasValue)
+                    _depthTexture = _renderTarget.DepthAttachment.Value.texture;
             }
-        }
-
-        private void RebuildRenderingInfo()
-        {
-            var extent = VE.GetRenderTargetSize(_renderTarget);
-            uint width = extent.width;
-            uint height = extent.height;
-            
-            _renderingInfo = new VERenderingInfo(width, height);
-            _renderingInfo.ColorAttachments.Add(new VERenderingAttachment
-            {
-                texture = VE.GetRenderTargetColorTexture(_renderTarget),
-                loadOp = VkAttachmentLoadOp.VK_ATTACHMENT_LOAD_OP_CLEAR,
-                storeOp = VkAttachmentStoreOp.VK_ATTACHMENT_STORE_OP_STORE,
-                clearValue = new VEColor(0.1f, 0.2f, 0.3f, 1.0f),
-                resolveTexture = VEConstants.VE_INVALID_TEXTURE_INDEX
-            });
-            _renderingInfo.DepthAttachment = new VERenderingAttachment
-            {
-                texture = VE.GetRenderTargetDepthTexture(_renderTarget),
-                loadOp = VkAttachmentLoadOp.VK_ATTACHMENT_LOAD_OP_CLEAR,
-                storeOp = VkAttachmentStoreOp.VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                clearValue = new VEColor(1.0f, 0.0f, 0.0f, 0.0f),
-                resolveTexture = VEConstants.VE_INVALID_TEXTURE_INDEX
-            };
         }
 
         protected override void OnRenderFrame(FrameEventArgs args)
@@ -202,8 +183,20 @@ namespace VulkEaseExamples
                 return;
             }
 
+            // Begin frame timing
+            VE.BeginFrame(_device);
+
             UpdateAnimation();
             RenderCube();
+
+            // End frame and get timing info
+            VE.EndFrame(_device, out _timing);
+
+            // Print frame timing every 1000 frames
+            if (_timing.frameNumber % 1000 == 0)
+            {
+                Console.WriteLine($"Frame {_timing.frameNumber}: {_timing.frameTimeMs:F2} ms ({_timing.fps:F1} FPS) | Avg: {_timing.avgFrameTimeMs:F2} ms ({_timing.avgFps:F1} FPS) | Min: {_timing.minFrameTimeMs:F2} ms | Max: {_timing.maxFrameTimeMs:F2} ms");
+            }
         }
 
         protected override void OnKeyDown(KeyboardKeyEventArgs e)
@@ -249,20 +242,12 @@ namespace VulkEaseExamples
                 }
 
                 // Create render target with depth buffer
-                var renderTargetDesc = new VERenderTargetDesc
-                {
-                    Width = (uint)WindowWidth,
-                    Height = (uint)WindowHeight,
-                    ColorFormat = VkFormat.VK_FORMAT_B8G8R8A8_SRGB,
-                    DepthFormat = VkFormat.VK_FORMAT_D32_SFLOAT,
-                    SampleCount = VkSampleCountFlags.VK_SAMPLE_COUNT_1_BIT,
-                    HasResolveTarget = false,
-                    DebugName = "CubeRenderTarget"
-                };
-                _renderTarget = VE.CreateRenderTarget(_device, renderTargetDesc);
-
-                // Build rendering info
-                RebuildRenderingInfo();
+                _renderTarget = VE.CreateSimpleRenderTarget(_device,
+                    (uint)WindowWidth, (uint)WindowHeight,
+                    VkFormat.VK_FORMAT_B8G8R8A8_SRGB,
+                    VkFormat.VK_FORMAT_D32_SFLOAT,
+                    new VEColor(0.1f, 0.2f, 0.3f, 1.0f), 1.0f,
+                    out _colorTexture, out _depthTexture);
 
                 Console.WriteLine($"Swapchain and render target created successfully: {WindowWidth}x{WindowHeight}");
                 return true;
@@ -530,9 +515,8 @@ namespace VulkEaseExamples
                 // Begin command buffer
                 var cmd = VE.BeginCommandBuffer(_device);
 
-                var extent = VE.GetRenderTargetSize(_renderTarget);
-                uint width = extent.width;
-                uint height = extent.height;
+                uint width = _renderTarget.RenderAreaWidth;
+                uint height = _renderTarget.RenderAreaHeight;
 
                 // Build transformation matrices
                 float aspect = (float)width / (float)height;
@@ -562,11 +546,7 @@ namespace VulkEaseExamples
                 }
 
                 // Begin rendering to render target (transitions handled automatically)
-                VE.BeginRendering(cmd, _renderingInfo);
-
-                // Set viewport and scissor
-                VE.SetViewport(cmd, 0.0f, 0.0f, width, height, 0.0f, 1.0f);
-                VE.SetScissor(cmd, 0, 0, width, height);
+                VE.BeginRendering(cmd, _renderTarget);
 
                 // Apply graphics state (sets required dynamic states for shader objects)
                 VE.ApplyGraphicsState(cmd, _pipeline, null, null, null);
@@ -595,8 +575,8 @@ namespace VulkEaseExamples
                 // End rendering
                 VE.EndRendering(cmd);
 
-                // Blit render target to swapchain (acquires swapchain image internally)
-                var blitResult = VE.BlitToSwapchain(cmd, _renderTarget, _swapchain, VkFilter.VK_FILTER_LINEAR);
+                // Blit color texture to swapchain (acquires swapchain image internally)
+                var blitResult = VE.BlitTextureToSwapchain(cmd, _colorTexture, _swapchain, VkFilter.VK_FILTER_LINEAR);
 
                 if (blitResult == VEResult.VE_ERROR_SWAPCHAIN_OUT_OF_DATE)
                 {
@@ -606,8 +586,10 @@ namespace VulkEaseExamples
                     if (newWidth > 0 && newHeight > 0)
                     {
                         VE.ResizeSwapchain(_swapchain, newWidth, newHeight);
-                        VE.ResizeRenderTarget(_renderTarget, newWidth, newHeight);
-                        RebuildRenderingInfo();
+                        VE.ResizeRenderTarget(_device, ref _renderTarget, newWidth, newHeight);
+                        _colorTexture = _renderTarget.ColorAttachments[0].texture;
+                        if (_renderTarget.DepthAttachment.HasValue)
+                            _depthTexture = _renderTarget.DepthAttachment.Value.texture;
                     }
                     return;
                 }
@@ -623,8 +605,10 @@ namespace VulkEaseExamples
                     if (newWidth > 0 && newHeight > 0)
                     {
                         VE.ResizeSwapchain(_swapchain, newWidth, newHeight);
-                        VE.ResizeRenderTarget(_renderTarget, newWidth, newHeight);
-                        RebuildRenderingInfo();
+                        VE.ResizeRenderTarget(_device, ref _renderTarget, newWidth, newHeight);
+                        _colorTexture = _renderTarget.ColorAttachments[0].texture;
+                        if (_renderTarget.DepthAttachment.HasValue)
+                            _depthTexture = _renderTarget.DepthAttachment.Value.texture;
                     }
                 }
             }
@@ -636,6 +620,14 @@ namespace VulkEaseExamples
 
         protected override void OnUnload()
         {
+            // Print final timing summary
+            Console.WriteLine();
+            Console.WriteLine("=== Final Timing Summary ===");
+            Console.WriteLine($"Total frames: {_timing.frameNumber}");
+            Console.WriteLine($"Average frame time: {_timing.avgFrameTimeMs:F2} ms ({_timing.avgFps:F1} FPS)");
+            Console.WriteLine($"Min frame time: {_timing.minFrameTimeMs:F2} ms");
+            Console.WriteLine($"Max frame time: {_timing.maxFrameTimeMs:F2} ms");
+            Console.WriteLine();
             Console.WriteLine("Shutting down gracefully...");
 
             if (_device.native != IntPtr.Zero)
@@ -687,9 +679,13 @@ namespace VulkEaseExamples
             }
 
             // Destroy VulkEase objects
-            if (_renderTarget.native != IntPtr.Zero)
+            if (_colorTexture.native != VEConstants.VE_INVALID_TEXTURE_INDEX.native)
             {
-                VE.DestroyRenderTarget(_renderTarget);
+                VE.DestroyTexture(_device, _colorTexture);
+            }
+            if (_depthTexture.native != VEConstants.VE_INVALID_TEXTURE_INDEX.native)
+            {
+                VE.DestroyTexture(_device, _depthTexture);
             }
 
             if (_swapchain.native != IntPtr.Zero)
