@@ -133,6 +133,17 @@
             <param name="device">Valid VulkEase device.</param>
             <returns>Vulkan version encoded as VK_MAKE_API_VERSION(), or 0 if device is invalid.</returns>
         </member>
+        <member name="M:VulkEase.VulkEase.IsMeshShaderSupported(VulkEase.VEDevice)">
+            <summary>
+            Check if mesh shaders are supported on the device.
+            </summary>
+            <param name="device">Valid VulkEase device.</param>
+            <returns>True if mesh shaders (VK_EXT_mesh_shader) are supported, false otherwise.</returns>
+            <remarks>
+            Applications should check this before using mesh shader pipelines or draw commands.
+            Mesh shaders require VK_EXT_mesh_shader extension support.
+            </remarks>
+        </member>
         <member name="M:VulkEase.VulkEase.GetVkInstance(VulkEase.VEContext)">
             <summary>
             Get the underlying VkInstance handle.
@@ -1617,6 +1628,52 @@
             <param name="countOffset">Byte offset into the count buffer.</param>
             <param name="maxDrawCount">Maximum number of draws to execute.</param>
             <param name="stride">Stride between draw commands.</param>
+        </member>
+        <member name="M:VulkEase.VulkEase.DrawMeshTasks(VulkEase.VECommandBuffer,System.UInt32,System.UInt32,System.UInt32)">
+            <summary>
+            Issue a mesh shader draw command.
+            </summary>
+            <param name="cmd">Command buffer in recording state with mesh shaders bound.</param>
+            <param name="groupCountX">Number of workgroups in X dimension.</param>
+            <param name="groupCountY">Number of workgroups in Y dimension.</param>
+            <param name="groupCountZ">Number of workgroups in Z dimension.</param>
+            <returns>VE_SUCCESS on success, VE_ERROR_UNSUPPORTED if mesh shaders not available.</returns>
+            <remarks>
+            Requires mesh shader support (check IsMeshShaderSupported). 
+            The bound pipeline must include a mesh shader.
+            </remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.DrawMeshTasksIndirect(VulkEase.VECommandBuffer,VulkEase.VEBufferAddress,System.UInt64,System.UInt32,System.UInt32)">
+            <summary>
+            Issue an indirect mesh shader draw command.
+            </summary>
+            <param name="cmd">Command buffer in recording state with mesh shaders bound.</param>
+            <param name="indirectBuffer">Buffer containing VkDrawMeshTasksIndirectCommandEXT structures.</param>
+            <param name="offset">Byte offset into the indirect buffer.</param>
+            <param name="drawCount">Number of draws to execute.</param>
+            <param name="stride">Stride between draw commands (minimum sizeof(VkDrawMeshTasksIndirectCommandEXT)).</param>
+            <returns>VE_SUCCESS on success, VE_ERROR_UNSUPPORTED if mesh shaders not available.</returns>
+            <remarks>
+            Requires mesh shader support (check IsMeshShaderSupported).
+            Each indirect command contains groupCountX, groupCountY, groupCountZ.
+            </remarks>
+        </member>
+        <member name="M:VulkEase.VulkEase.DrawMeshTasksIndirectCount(VulkEase.VECommandBuffer,VulkEase.VEBufferAddress,System.UInt64,VulkEase.VEBufferAddress,System.UInt64,System.UInt32,System.UInt32)">
+            <summary>
+            Issue an indirect mesh shader draw command with GPU-determined draw count.
+            </summary>
+            <param name="cmd">Command buffer in recording state with mesh shaders bound.</param>
+            <param name="indirectBuffer">Buffer containing VkDrawMeshTasksIndirectCommandEXT structures.</param>
+            <param name="indirectOffset">Byte offset into the indirect buffer.</param>
+            <param name="countBuffer">Buffer containing the draw count (uint32_t).</param>
+            <param name="countOffset">Byte offset into the count buffer.</param>
+            <param name="maxDrawCount">Maximum number of draws to execute.</param>
+            <param name="stride">Stride between draw commands.</param>
+            <returns>VE_SUCCESS on success, VE_ERROR_UNSUPPORTED if mesh shaders not available.</returns>
+            <remarks>
+            Requires mesh shader support (check IsMeshShaderSupported).
+            The actual draw count is read from countBuffer at runtime and clamped to maxDrawCount.
+            </remarks>
         </member>
         <member name="M:VulkEase.VulkEase.ClearColorAttachment(VulkEase.VECommandBuffer,System.UInt32,VulkEase.VEColor,System.Nullable{VulkEase.VERect2D})">
             <summary>

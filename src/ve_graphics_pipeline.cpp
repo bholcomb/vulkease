@@ -22,6 +22,8 @@ VEGraphicsPipelineDesc veDefaultGraphicsPipelineDesc(void)
    desc.geometryShader = nullptr;
    desc.tessControlShader = nullptr;
    desc.tessEvalShader = nullptr;
+   desc.taskShader = nullptr;
+   desc.meshShader = nullptr;
 
    // Vertex input - must be provided by user
    desc.vertexBindingCount = 0;
@@ -154,6 +156,8 @@ VEResult veCreateGraphicsPipeline(VEDevice *device, const VEGraphicsPipelineDesc
    pipeline->geometryShader = desc->geometryShader;
    pipeline->tessControlShader = desc->tessControlShader;
    pipeline->tessEvalShader = desc->tessEvalShader;
+   pipeline->taskShader = desc->taskShader;
+   pipeline->meshShader = desc->meshShader;
 
    // Copy vertex input
    pipeline->vertexBindingCount = desc->vertexBindingCount;

@@ -287,6 +287,20 @@ namespace VulkEase
             return VulkEaseDll.veGetVulkanVersion(device.native);
         }
 
+        /// <summary>
+        /// Check if mesh shaders are supported on the device.
+        /// </summary>
+        /// <param name="device">Valid VulkEase device.</param>
+        /// <returns>True if mesh shaders (VK_EXT_mesh_shader) are supported, false otherwise.</returns>
+        /// <remarks>
+        /// Applications should check this before using mesh shader pipelines or draw commands.
+        /// Mesh shaders require VK_EXT_mesh_shader extension support.
+        /// </remarks>
+        public static bool IsMeshShaderSupported(VEDevice device)
+        {
+            return VulkEaseDll.veIsMeshShaderSupported(device.native);
+        }
+
         #endregion
 
         // =============================================================================
@@ -2966,6 +2980,61 @@ namespace VulkEase
         public static void DrawIndexedIndirectCount(VECommandBuffer cmd, VEBufferAddress indirectBuffer, UIntPtr indirectOffset, VEBufferAddress countBuffer, UInt64 countOffset, UInt32 maxDrawCount, UInt32 stride)
         {
             VulkEaseDll.veDrawIndexedIndirectCount(cmd.native, indirectBuffer.native, indirectOffset, countBuffer.native, countOffset, maxDrawCount, stride);
+        }
+
+        /// <summary>
+        /// Issue a mesh shader draw command.
+        /// </summary>
+        /// <param name="cmd">Command buffer in recording state with mesh shaders bound.</param>
+        /// <param name="groupCountX">Number of workgroups in X dimension.</param>
+        /// <param name="groupCountY">Number of workgroups in Y dimension.</param>
+        /// <param name="groupCountZ">Number of workgroups in Z dimension.</param>
+        /// <returns>VE_SUCCESS on success, VE_ERROR_UNSUPPORTED if mesh shaders not available.</returns>
+        /// <remarks>
+        /// Requires mesh shader support (check IsMeshShaderSupported). 
+        /// The bound pipeline must include a mesh shader.
+        /// </remarks>
+        public static VEResult DrawMeshTasks(VECommandBuffer cmd, UInt32 groupCountX, UInt32 groupCountY, UInt32 groupCountZ)
+        {
+            return VulkEaseDll.veDrawMeshTasks(cmd.native, groupCountX, groupCountY, groupCountZ);
+        }
+
+        /// <summary>
+        /// Issue an indirect mesh shader draw command.
+        /// </summary>
+        /// <param name="cmd">Command buffer in recording state with mesh shaders bound.</param>
+        /// <param name="indirectBuffer">Buffer containing VkDrawMeshTasksIndirectCommandEXT structures.</param>
+        /// <param name="offset">Byte offset into the indirect buffer.</param>
+        /// <param name="drawCount">Number of draws to execute.</param>
+        /// <param name="stride">Stride between draw commands (minimum sizeof(VkDrawMeshTasksIndirectCommandEXT)).</param>
+        /// <returns>VE_SUCCESS on success, VE_ERROR_UNSUPPORTED if mesh shaders not available.</returns>
+        /// <remarks>
+        /// Requires mesh shader support (check IsMeshShaderSupported).
+        /// Each indirect command contains groupCountX, groupCountY, groupCountZ.
+        /// </remarks>
+        public static VEResult DrawMeshTasksIndirect(VECommandBuffer cmd, VEBufferAddress indirectBuffer, UInt64 offset, UInt32 drawCount, UInt32 stride)
+        {
+            return VulkEaseDll.veDrawMeshTasksIndirect(cmd.native, indirectBuffer.native, offset, drawCount, stride);
+        }
+
+        /// <summary>
+        /// Issue an indirect mesh shader draw command with GPU-determined draw count.
+        /// </summary>
+        /// <param name="cmd">Command buffer in recording state with mesh shaders bound.</param>
+        /// <param name="indirectBuffer">Buffer containing VkDrawMeshTasksIndirectCommandEXT structures.</param>
+        /// <param name="indirectOffset">Byte offset into the indirect buffer.</param>
+        /// <param name="countBuffer">Buffer containing the draw count (uint32_t).</param>
+        /// <param name="countOffset">Byte offset into the count buffer.</param>
+        /// <param name="maxDrawCount">Maximum number of draws to execute.</param>
+        /// <param name="stride">Stride between draw commands.</param>
+        /// <returns>VE_SUCCESS on success, VE_ERROR_UNSUPPORTED if mesh shaders not available.</returns>
+        /// <remarks>
+        /// Requires mesh shader support (check IsMeshShaderSupported).
+        /// The actual draw count is read from countBuffer at runtime and clamped to maxDrawCount.
+        /// </remarks>
+        public static VEResult DrawMeshTasksIndirectCount(VECommandBuffer cmd, VEBufferAddress indirectBuffer, UInt64 indirectOffset, VEBufferAddress countBuffer, UInt64 countOffset, UInt32 maxDrawCount, UInt32 stride)
+        {
+            return VulkEaseDll.veDrawMeshTasksIndirectCount(cmd.native, indirectBuffer.native, indirectOffset, countBuffer.native, countOffset, maxDrawCount, stride);
         }
 
         #endregion

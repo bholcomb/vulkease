@@ -439,6 +439,8 @@ namespace VulkEase
         public VEShader geometryShader;
         public VEShader tessControlShader;
         public VEShader tessEvalShader;
+        public VEShader taskShader;   // Optional task shader (VK_SHADER_STAGE_TASK_BIT_EXT)
+        public VEShader meshShader;   // Mesh shader (VK_SHADER_STAGE_MESH_BIT_EXT)
         
         // Vertex input
         public UInt32 vertexBindingCount;

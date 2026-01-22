@@ -96,6 +96,10 @@ namespace VulkEase
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern UInt32 veGetVulkanVersion(IntPtr device);
 
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        internal static extern bool veIsMeshShaderSupported(IntPtr device);
+
         // Debug message callback / severity
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         internal delegate void VEMessageCallback(VEMessageSeverity severity, IntPtr message, IntPtr userData);
@@ -706,6 +710,16 @@ namespace VulkEase
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veDrawIndexedIndirectCount(IntPtr cmd, UInt64 indirectBuffer, UInt64 indirectOffset, UInt64 countBuffer, UInt64 countOffset, UInt32 maxDrawCount, UInt32 stride);
+
+        // Mesh shader drawing commands
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veDrawMeshTasks(IntPtr cmd, UInt32 groupCountX, UInt32 groupCountY, UInt32 groupCountZ);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veDrawMeshTasksIndirect(IntPtr cmd, UInt64 indirectBuffer, UInt64 offset, UInt32 drawCount, UInt32 stride);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veDrawMeshTasksIndirectCount(IntPtr cmd, UInt64 indirectBuffer, UInt64 indirectOffset, UInt64 countBuffer, UInt64 countOffset, UInt32 maxDrawCount, UInt32 stride);
         #endregion
 
         #region Compute

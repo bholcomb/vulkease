@@ -402,10 +402,15 @@ static void queryDevice14Features(VkPhysicalDevice physicalDevice, VEDeviceFeatu
    VkPhysicalDeviceHostImageCopyFeaturesEXT hostImageCopyFeatures{};
    hostImageCopyFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_FEATURES;
 
+   // Mesh shader features (optional - VK_EXT_mesh_shader)
+   VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures{};
+   meshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+   meshShaderFeatures.pNext = &hostImageCopyFeatures;
+
    // Vulkan 1.4 core features
    VkPhysicalDeviceVulkan14Features vulkan14Features{};
    vulkan14Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES;
-   vulkan14Features.pNext = &hostImageCopyFeatures;
+   vulkan14Features.pNext = &meshShaderFeatures;
 
    // Vulkan 1.3 core features
    VkPhysicalDeviceVulkan13Features vulkan13Features{};
@@ -460,6 +465,9 @@ static void queryDevice14Features(VkPhysicalDevice physicalDevice, VEDeviceFeatu
                                      extDynState3Features.extendedDynamicState3ColorBlendEnable;
    features->vertexInputDynamicState = vertexInputDynFeatures.vertexInputDynamicState;
    features->shaderObject = shaderObjectFeatures.shaderObject;
+
+   // Optional extension features
+   features->meshShader = meshShaderFeatures.meshShader && meshShaderFeatures.taskShader;
 
    // Basic features
    features->samplerAnisotropy = features2.features.samplerAnisotropy;
@@ -983,10 +991,17 @@ VEResult veCreateDevice(VEContext *context, VkPhysicalDevice preferredDevice,
    shaderObjectFeatures.pNext = &vertexInputDynFeatures;
    shaderObjectFeatures.shaderObject = VK_TRUE;
 
+   // Mesh shader features (optional - VK_EXT_mesh_shader)
+   VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures{};
+   meshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+   meshShaderFeatures.pNext = &shaderObjectFeatures;
+   meshShaderFeatures.meshShader = device->features.meshShader ? VK_TRUE : VK_FALSE;
+   meshShaderFeatures.taskShader = device->features.meshShader ? VK_TRUE : VK_FALSE;
+
    // Basic features
    VkPhysicalDeviceFeatures2 deviceFeatures2{};
    deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-   deviceFeatures2.pNext = &shaderObjectFeatures;
+   deviceFeatures2.pNext = &meshShaderFeatures;
    deviceFeatures2.features.samplerAnisotropy = device->features.samplerAnisotropy;
    deviceFeatures2.features.fillModeNonSolid = device->features.fillModeNonSolid;
    deviceFeatures2.features.wideLines = device->features.wideLines;
@@ -1008,6 +1023,12 @@ VEResult veCreateDevice(VEContext *context, VkPhysicalDevice preferredDevice,
    for (uint32_t i = 0; i < requiredCount && allDeviceExtensionCount < VE_MAX_EXTENSIONS; i++)
    {
       allDeviceExtensions[allDeviceExtensionCount++] = REQUIRED_DEVICE_EXTENSIONS[i];
+   }
+
+   // Add optional extensions if supported
+   if (device->features.meshShader && allDeviceExtensionCount < VE_MAX_EXTENSIONS)
+   {
+      allDeviceExtensions[allDeviceExtensionCount++] = VK_EXT_MESH_SHADER_EXTENSION_NAME;
    }
 
    // Add user-specified additional extensions
@@ -1433,6 +1454,16 @@ uint32_t veGetVulkanVersion(VEDevice *device)
    return internal->deviceProperties.apiVersion;
 }
 
+bool veIsMeshShaderSupported(VEDevice *device)
+{
+   if (!device)
+   {
+      return false;
+   }
+   VEDeviceInternal *internal = (VEDeviceInternal *)device;
+   return internal->features.meshShader;
+}
+
 VkInstance veGetVkInstance(VEContext *context)
 {
    if (!context)
@@ -1677,6 +1708,14 @@ bool initializeDeviceFunctions(VkDevice device)
    GET_DEVICE_FUNC(vkCopyMemoryToImageEXT);
    GET_DEVICE_FUNC(vkCopyImageToMemoryEXT);
    GET_DEVICE_FUNC(vkCopyImageToImageEXT);
+
+   // Mesh Shaders (optional extension - VK_EXT_mesh_shader)
+   // These are loaded but may be null if extension is not available
+   veFuncs.vkCmdDrawMeshTasksEXT = (PFN_vkCmdDrawMeshTasksEXT)vkGetDeviceProcAddr(device, "vkCmdDrawMeshTasksEXT");
+   veFuncs.vkCmdDrawMeshTasksIndirectEXT =
+       (PFN_vkCmdDrawMeshTasksIndirectEXT)vkGetDeviceProcAddr(device, "vkCmdDrawMeshTasksIndirectEXT");
+   veFuncs.vkCmdDrawMeshTasksIndirectCountEXT =
+       (PFN_vkCmdDrawMeshTasksIndirectCountEXT)vkGetDeviceProcAddr(device, "vkCmdDrawMeshTasksIndirectCountEXT");
 
    return true;
 }
