@@ -1,0 +1,185 @@
+# VulkEase Examples
+# Builds all example applications and their shaders
+
+project:
+  name: vulkease_examples
+  description: "VulkEase example applications"
+
+artifacts:
+  transform:
+    # Triangle example shaders
+    - name: triangle_shaders
+      tool: glslangValidator
+      inputs:
+        - "01_triangle/shaders/*.vert"
+        - "01_triangle/shaders/*.frag"
+      outputs: "${output_dir}/shaders/01_triangle/${filename}.spv"
+      
+    # Compute particles example shaders
+    - name: particles_shaders
+      tool: glslangValidator
+      inputs:
+        - "02_compute_particles/shaders/*.vert"
+        - "02_compute_particles/shaders/*.frag"
+        - "02_compute_particles/shaders/*.comp"
+      outputs: "${output_dir}/shaders/02_compute_particles/${filename}.spv"
+      
+    # Cube example shaders
+    - name: cube_shaders
+      tool: glslangValidator
+      inputs:
+        - "03_cube/shaders/*.vert"
+        - "03_cube/shaders/*.frag"
+      outputs: "${output_dir}/shaders/03_cube/${filename}.spv"
+      
+    # Asteroid example shaders
+    - name: asteroid_shaders
+      tool: glslangValidator
+      inputs:
+        - "04_asteroid/shaders/*.vert"
+        - "04_asteroid/shaders/*.frag"
+      outputs: "${output_dir}/shaders/04_asteroid/${filename}.spv"
+
+  copy:
+    # Cube example textures
+    - name: cube_textures
+      sources: ["03_cube/data/*.png"]
+      destination: "${output_dir}/textures/03_cube"
+      preserve_structure: false
+
+targets:
+  executables:
+    # Smoke test - no window, just API validation
+    - name: 00_smoke
+      language: c
+      sources:
+        - "00_smoke/00_smoke.c"
+      include_dirs:
+        - "../src"
+      deps:
+        - vulkan
+      libs:
+        - vulkease
+        - linux:
+            - m
+        - macos :
+            - m
+            - c++
+            
+    # Triangle example
+    - name: 01_triangle
+      language: c
+      sources:
+        - "01_triangle/01_triangle.c"
+      include_dirs:
+        - "../src"
+      deps:
+        - vulkan
+        - glfw3
+      libs:
+        - vulkease
+        - linux:
+            - m
+        - macos :
+            - m
+            - c++
+      depends_on:
+        artifacts: ["triangle_shaders"]
+
+    # Compute particles example
+    - name: 02_compute_particles
+      language: c
+      sources:
+        - "02_compute_particles/02_compute_particles.c"
+      include_dirs:
+        - "../src"
+      deps:
+        - vulkan
+        - glfw3
+      libs:
+        - vulkease
+        - linux:
+            - m
+        - macos :
+            - m
+            - c++
+      depends_on:
+        artifacts: ["particles_shaders"]
+
+    # Cube example
+    - name: 03_cube
+      language: c
+      sources:
+        - "03_cube/03_cube.c"
+      include_dirs:
+        - "../src"
+      deps:
+        - vulkan
+        - glfw3
+      libs:
+        - vulkease
+        - linux:
+            - m
+        - macos :
+            - m
+            - c++
+      depends_on:
+        artifacts: ["cube_shaders", "cube_textures"]
+
+    # Asteroid example (C++)
+    - name: 04_asteroid
+      language: cpp
+      sources:
+        - "04_asteroid/*.cpp"
+      include_dirs:
+        - "../src"
+      deps:
+        - vulkan
+        - glfw3
+      libs:
+        - vulkease
+        - linux:
+            - m
+        - macos :
+            - m
+            - c++
+      depends_on:
+        artifacts: ["asteroid_shaders"]
+
+staging:
+  name: examples_dist
+  destination: "../bin"
+  use_symlinks: false
+
+  contents:
+    # All example executables
+    - folder: "."
+      targets:
+        - 00_smoke
+        - 01_triangle
+        - 02_compute_particles
+        - 03_cube
+        - 04_asteroid
+
+    # Shaders and data organized per-example
+    - folder: data
+      contents:
+        - folder: 01_triangle/shaders
+          artifacts:
+            - triangle_shaders
+
+        - folder: 02_compute_particles/shaders
+          artifacts:
+            - particles_shaders
+
+        - folder: 03_cube/shaders
+          artifacts:
+            - cube_shaders
+            
+        - folder: 03_cube
+          files:
+            - "03_cube/data/*.png"
+
+        - folder: 04_asteroid/shaders
+          artifacts:
+            - asteroid_shaders

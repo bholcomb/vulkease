@@ -19,9 +19,9 @@
 #define WORKGROUP_SIZE 64
 
 // Shader file paths (compiled SPIR-V)
-#define COMPUTE_SHADER_PATH "examples/shaders/particles.comp.spv"
-#define VERTEX_SHADER_PATH "examples/shaders/particles.vert.spv"
-#define FRAGMENT_SHADER_PATH "examples/shaders/particles.frag.spv"
+#define COMPUTE_SHADER_PATH "data/02_compute_particles/shaders/particles.comp.spv"
+#define VERTEX_SHADER_PATH "data/02_compute_particles/shaders/particles.vert.spv"
+#define FRAGMENT_SHADER_PATH "data/02_compute_particles/shaders/particles.frag.spv"
 
 #if DEBUG
 bool vsync = true;

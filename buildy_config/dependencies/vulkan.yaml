@@ -1,0 +1,27 @@
+# Vulkan SDK dependency
+# Linux: uses system-installed Vulkan via apt packages
+# Windows: uses VULKAN_SDK environment variable
+
+vulkan:
+  description: "Vulkan graphics API"
+  
+  linux:
+    include_dirs: ["/usr/include"]
+    lib_dirs: ["/usr/lib/x86_64-linux-gnu"]
+    libs: ["vulkan"]
+    defines: ["VK_USE_PLATFORM_XCB_KHR"]
+    
+  linux-arm64:
+    lib_dirs: ["/usr/lib/aarch64-linux-gnu"]
+  
+  windows:
+    include_dirs: ["${VULKAN_SDK}/Include"]
+    lib_dirs: ["${VULKAN_SDK}/Lib"]
+    libs: ["vulkan-1.lib"]
+    defines: ["VK_USE_PLATFORM_WIN32_KHR"]
+  
+  macos:
+    include_dirs: ["${VULKAN_SDK}/include"]
+    lib_dirs: ["${VULKAN_SDK}/lib"]
+    libs: ["vulkan"]
+    defines: ["VK_USE_PLATFORM_MACOS_MVK"]

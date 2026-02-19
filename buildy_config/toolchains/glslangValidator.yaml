@@ -1,0 +1,51 @@
+# glslangValidator shader compiler toolchain
+# Compiles GLSL shaders to SPIR-V
+
+toolchain:
+  name: "glslangValidator"
+  description: "Khronos glslangValidator GLSL to SPIR-V compiler"
+  
+  variables:
+    VULKAN_TARGET_ENV: "vulkan1.4"
+  
+  target:
+    platform: any
+    architecture: any
+  
+  host:
+    platform: any
+    architecture: any
+  
+  execution:
+    type: native
+  
+  tools:
+    compile_vert:
+      action: transform
+      command:
+        linux: "glslangValidator -V --target-env ${VULKAN_TARGET_ENV} -o ${output} ${input}"
+        windows: "glslangValidator.exe -V --target-env ${VULKAN_TARGET_ENV} -o ${output} ${input}"
+        macos: "glslangValidator -V --target-env ${VULKAN_TARGET_ENV} -o ${output} ${input}"
+      input_extensions: [".vert"]
+      output_extension: ".vert.spv"
+      output_pattern: "${name}.vert.spv"
+      
+    compile_frag:
+      action: transform
+      command:
+        linux: "glslangValidator -V --target-env ${VULKAN_TARGET_ENV} -o ${output} ${input}"
+        windows: "glslangValidator.exe -V --target-env ${VULKAN_TARGET_ENV} -o ${output} ${input}"
+        macos: "glslangValidator -V --target-env ${VULKAN_TARGET_ENV} -o ${output} ${input}"
+      input_extensions: [".frag"]
+      output_extension: ".frag.spv"
+      output_pattern: "${name}.frag.spv"
+      
+    compile_comp:
+      action: transform
+      command:
+        linux: "glslangValidator -V --target-env ${VULKAN_TARGET_ENV} -o ${output} ${input}"
+        windows: "glslangValidator.exe -V --target-env ${VULKAN_TARGET_ENV} -o ${output} ${input}"
+        macos: "glslangValidator -V --target-env ${VULKAN_TARGET_ENV} -o ${output} ${input}"
+      input_extensions: [".comp"]
+      output_extension: ".comp.spv"
+      output_pattern: "${name}.comp.spv"

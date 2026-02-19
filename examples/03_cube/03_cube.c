@@ -124,16 +124,16 @@ static Mat4 mat4Identity() {
     return m;
 }
 
-static Mat4 mat4Perspective(float fov, float aspect, float near, float far) {
+static Mat4 mat4Perspective(float fov, float aspect, float nearPlane, float farPlane) {
     Mat4 m = {0};
     float tanHalfFov = tanf(fov * 0.5f);
 
-    //flipped Y for vulkan screen
+    // Flipped Y for Vulkan screen
     m.m[0] = 1.0f / (aspect * tanHalfFov);
-    m.m[5] = -1.0f / tanHalfFov;                   // ✅ Flip Y for Vulkan
-    m.m[10] = far / (near - far);                  // ✅ Z [0,1] mapping  
+    m.m[5] = -1.0f / tanHalfFov;                         // Flip Y for Vulkan
+    m.m[10] = farPlane / (nearPlane - farPlane);         // Z [0,1] mapping  
     m.m[11] = -1.0f;
-    m.m[14] = -(far * near) / (far - near);       // ✅ Z [0,1] mapping
+    m.m[14] = -(farPlane * nearPlane) / (farPlane - nearPlane); // Z [0,1] mapping
     return m;
 }
 
@@ -293,7 +293,7 @@ static bool initVulkEase(CubeApp* app) {
 // Load shaders
 static bool loadShaders(CubeApp* app) {
     // Load vertex shader
-    if (veLoadShaderFromFile(app->device, "examples/shaders/cube.vert.spv", VK_SHADER_STAGE_VERTEX_BIT, "main",
+    if (veLoadShaderFromFile(app->device, "data/03_cube/shaders/cube.vert.spv", VK_SHADER_STAGE_VERTEX_BIT, "main",
                              "CubeVertexShader", &app->vertexShader) != VE_SUCCESS ||
         !app->vertexShader) {
         fprintf(stderr, "Failed to load vertex shader\n");
@@ -301,7 +301,7 @@ static bool loadShaders(CubeApp* app) {
     }
     
     // Load fragment shader
-    if (veLoadShaderFromFile(app->device, "examples/shaders/cube.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT, "main",
+    if (veLoadShaderFromFile(app->device, "data/03_cube/shaders/cube.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT, "main",
                              "CubeFragmentShader", &app->fragmentShader) != VE_SUCCESS ||
         !app->fragmentShader) {
         fprintf(stderr, "Failed to load fragment shader\n");
@@ -340,7 +340,7 @@ static bool createGeometry(CubeApp* app) {
 // Load texture
 static bool loadTexture(CubeApp* app) {
     // Load texture from file
-    if (veLoadTexture(app->device, "examples/data/testCard.png", VK_IMAGE_USAGE_SAMPLED_BIT, true, &app->texture) != VE_SUCCESS ||
+    if (veLoadTexture(app->device, "data/03_cube/testCard.png", VK_IMAGE_USAGE_SAMPLED_BIT, true, &app->texture) != VE_SUCCESS ||
         app->texture == VE_INVALID_TEXTURE_INDEX) {
         fprintf(stderr, "Failed to load texture\n");
         // Create a simple fallback texture if file doesn't exist
@@ -353,7 +353,7 @@ static bool loadTexture(CubeApp* app) {
         
         // Fill with simple checkerboard pattern
         uint32_t pixels[4] = {0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFFFFFFFF};
-        VEResult result = veHostWriteTexture(app->device, app->texture, pixels, sizeof(pixels));
+        VEResult result = veHostWriteTextureRegion(app->device, app->texture, pixels, sizeof(pixels), NULL);
         if (result != VE_SUCCESS) {
             printf("Warning: Could not update fallback texture\n");
         }

@@ -75,6 +75,34 @@ namespace VulkEase
         public UInt32 layerCount;
     }
 
+    // Sparse texture information
+    [StructLayout(LayoutKind.Sequential)]
+    public struct VESparseTextureInfo
+    {
+        public UInt32 pageWidth;
+        public UInt32 pageHeight;
+        public UInt32 pageDepth;
+        public UInt32 pagesX;
+        public UInt32 pagesY;
+        public UInt32 pagesZ;
+        public UInt32 mipTailFirstLod;
+        public UInt64 pageSize;
+    }
+
+    // Sparse page region for commit/uncommit operations
+    [StructLayout(LayoutKind.Sequential)]
+    public struct VESparsePageRegion
+    {
+        public UInt32 mipLevel;
+        public UInt32 arrayLayer;
+        public UInt32 pageX;
+        public UInt32 pageY;
+        public UInt32 pageZ;
+        public UInt32 pageCountX;
+        public UInt32 pageCountY;
+        public UInt32 pageCountZ;
+    }
+
     // Frame timing info
     [StructLayout(LayoutKind.Sequential)]
     public struct VEFrameTimingInfo
@@ -251,6 +279,8 @@ namespace VulkEase
         public UInt64 initialDataSize;
         [MarshalAs(UnmanagedType.LPStr)]
         public string? debugName;
+        [MarshalAs(UnmanagedType.I1)]
+        public bool sparse;
     }
 
     // External texture import descriptor

@@ -1,0 +1,70 @@
+# VulkEase - Vulkan made easy
+# Root build configuration
+
+project:
+  name: vulkease
+  version: "2.0.0"
+  description: "VulkEase - A simplified Vulkan wrapper library"
+
+variables:
+  import_env_vars:
+    # These are only required on Windows; Linux uses system packages
+    - name: VULKAN_SDK
+      default: ""                   # Empty default for Linux (uses system paths)
+    - name: GLFW_ROOT
+      default: ""                   # Empty default for Linux (uses system paths)
+
+  SO_VERSION: "2"
+  
+  # Platform-specific dotnet runtime paths
+  platforms:
+    linux:
+      DOTNET_RUNTIME_DIR: "dotnet/src/runtimes/linux-x64/native"
+    windows:
+      DOTNET_RUNTIME_DIR: "dotnet/src/runtimes/win-x64/native"
+    macos:
+      DOTNET_RUNTIME_DIR: "dotnet/src/runtimes/osx-x64/native"
+
+workspace:
+  modules:
+    - src
+    - examples
+
+dependencies:
+  file: buildy_config/dependencies.yaml
+
+environment:
+  toolchains:
+    default: gcc-cpp-linux
+    windows: msvc-cpp-windows
+    macos: clang-cpp-macos
+    
+  compile:
+    cpp_standard: "c++17"
+    c_standard: "c11"
+    warnings: ["-Wall", "-Wextra", "-Wconversion", "-Werror"]
+    
+  configurations:
+    debug:
+      optimization: "-O0"
+      defines: ["DEBUG=1"]
+      flags: ["-g"]
+    release:
+      optimization: "-O3"
+      defines: ["NDEBUG=1"]
+
+staging:
+  name: vulkease_dist
+  destination: "bin"
+  use_symlinks: false
+
+  contents:
+    # Main library for distribution
+    - folder: "."
+      targets:
+        - vulkease
+    
+    # Public headers for library users
+    - folder: "include"
+      files:
+        - "src/vulkease.h"

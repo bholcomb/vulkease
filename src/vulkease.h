@@ -201,6 +201,7 @@ typedef struct VETextureDesc
    const void *initialData;        // Optional initial data
    uint64_t initialDataSize;
    const char *debugName; // Debug name (optional)
+   bool sparse;           // If true, create as sparse texture (no memory initially bound)
 } VETextureDesc;
 
 // External texture import descriptor
@@ -275,6 +276,36 @@ typedef struct VEBufferTextureCopyRegion
    uint32_t arrayLayer;
    uint32_t layerCount;
 } VEBufferTextureCopyRegion;
+
+// =============================================================================
+// SPARSE TEXTURE STRUCTURES
+// =============================================================================
+
+// Information about sparse texture page layout
+typedef struct VESparseTextureInfo
+{
+   uint32_t pageWidth;       // Page dimensions in texels (e.g., 256)
+   uint32_t pageHeight;
+   uint32_t pageDepth;       // 1 for 2D textures
+   uint32_t pagesX;          // Number of pages in X at mip 0
+   uint32_t pagesY;          // Number of pages in Y at mip 0
+   uint32_t pagesZ;          // Number of pages in Z at mip 0
+   uint32_t mipTailFirstLod; // First mip level in the mip tail (auto-committed)
+   uint64_t pageSize;        // Size of one page in bytes (typically 64KB)
+} VESparseTextureInfo;
+
+// Region for sparse page commit/uncommit operations
+typedef struct VESparsePageRegion
+{
+   uint32_t mipLevel;
+   uint32_t arrayLayer;
+   uint32_t pageX;      // Page index (not texel offset)
+   uint32_t pageY;
+   uint32_t pageZ;
+   uint32_t pageCountX; // Number of pages to commit (0 = 1)
+   uint32_t pageCountY;
+   uint32_t pageCountZ;
+} VESparsePageRegion;
 
 // =============================================================================
 // QUERY TYPES
@@ -741,61 +772,50 @@ typedef struct VEComputePushConstants
  * @brief Initialize VEGraphicsPushConstants with safe defaults.
  *
  * Example macro for use with the example VEGraphicsPushConstants structure.
+ * Uses positional initialization for C++17 compatibility (MSVC).
  */
 #define VE_INIT_GRAPHICS_PUSH_CONSTANTS()                                                                              \
    {                                                                                                                   \
-      .vertexBuffer = VE_INVALID_ADDRESS, .indexBuffer = VE_INVALID_ADDRESS,                                           \
-      .uniformBuffers = {VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,               \
-                         VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS},              \
-      .textures = {VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
-                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
-                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
-                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
-                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
-                   VE_INVALID_TEXTURE_INDEX},                                                                          \
-      .samplers = {VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
-                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
-                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
-                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
-                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
-                   VE_INVALID_SAMPLER_INDEX},                                                                          \
-      .objectScale = 1.0f, .activeTextureCount = 0, .activeSamplerCount = 0, .activeUniformCount = 0, .reserved = {    \
-         0,                                                                                                            \
-         0,                                                                                                            \
-         0,                                                                                                            \
-         0,                                                                                                            \
-         0,                                                                                                            \
-         0,                                                                                                            \
-         0                                                                                                             \
-      }                                                                                                                \
+      VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,                                                                          \
+      {VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,                                 \
+       VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS},                                \
+      {VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                                   \
+       VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                                   \
+       VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                                   \
+       VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                                   \
+       VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                                   \
+       VE_INVALID_TEXTURE_INDEX},                                                                                      \
+      {VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                                   \
+       VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                                   \
+       VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                                   \
+       VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                                   \
+       VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                                   \
+       VE_INVALID_SAMPLER_INDEX},                                                                                      \
+      1.0f, 0, 0, 0, {0, 0, 0, 0, 0, 0, 0}                                                                              \
    }
 
 /**
  * @brief Initialize VEComputePushConstants with safe defaults.
  *
  * Example macro for use with the example VEComputePushConstants structure.
+ * Uses positional initialization for C++17 compatibility (MSVC).
  */
 #define VE_INIT_COMPUTE_PUSH_CONSTANTS()                                                                               \
    {                                                                                                                   \
-      .buffers = {VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,                      \
-                  VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,                      \
-                  VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,                      \
-                  VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS},                     \
-      .textures = {VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
-                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
-                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
-                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
-                   VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                       \
-                   VE_INVALID_TEXTURE_INDEX},                                                                          \
-      .samplers = {VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
-                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                       \
-                   VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX},                                                \
-      .elementCount = 0, .activeBufferCount = 0, .activeTextureCount = 0, .activeSamplerCount = 0, .reserved = {       \
-         0,                                                                                                            \
-         0,                                                                                                            \
-         0,                                                                                                            \
-         0                                                                                                             \
-      }                                                                                                                \
+      {VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,                                 \
+       VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,                                 \
+       VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,                                 \
+       VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS},                                \
+      {VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                                   \
+       VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                                   \
+       VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                                   \
+       VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                                   \
+       VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                                   \
+       VE_INVALID_TEXTURE_INDEX},                                                                                      \
+      {VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                                   \
+       VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                                   \
+       VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX},                                                            \
+      0, 0, 0, 0, {0, 0, 0, 0}                                                                                          \
    }
 
 // =============================================================================
@@ -803,40 +823,41 @@ typedef struct VEComputePushConstants
 // =============================================================================
 // Predefined VEColor constants for common use cases such as clear colors,
 // debug visualization, and UI elements. All colors use full opacity (alpha=1.0).
+// Uses brace initialization for C++17 compatibility (MSVC).
 
 // --- Primary colors ---
-#define VE_COLOR_BLACK ((VEColor){0.0f, 0.0f, 0.0f, 1.0f})
-#define VE_COLOR_WHITE ((VEColor){1.0f, 1.0f, 1.0f, 1.0f})
-#define VE_COLOR_RED ((VEColor){1.0f, 0.0f, 0.0f, 1.0f})
-#define VE_COLOR_GREEN ((VEColor){0.0f, 1.0f, 0.0f, 1.0f})
-#define VE_COLOR_BLUE ((VEColor){0.0f, 0.0f, 1.0f, 1.0f})
+#define VE_COLOR_BLACK (VEColor{0.0f, 0.0f, 0.0f, 1.0f})
+#define VE_COLOR_WHITE (VEColor{1.0f, 1.0f, 1.0f, 1.0f})
+#define VE_COLOR_RED (VEColor{1.0f, 0.0f, 0.0f, 1.0f})
+#define VE_COLOR_GREEN (VEColor{0.0f, 1.0f, 0.0f, 1.0f})
+#define VE_COLOR_BLUE (VEColor{0.0f, 0.0f, 1.0f, 1.0f})
 
 // --- Secondary colors ---
-#define VE_COLOR_YELLOW ((VEColor){1.0f, 1.0f, 0.0f, 1.0f})
-#define VE_COLOR_CYAN ((VEColor){0.0f, 1.0f, 1.0f, 1.0f})
-#define VE_COLOR_MAGENTA ((VEColor){1.0f, 0.0f, 1.0f, 1.0f})
+#define VE_COLOR_YELLOW (VEColor{1.0f, 1.0f, 0.0f, 1.0f})
+#define VE_COLOR_CYAN (VEColor{0.0f, 1.0f, 1.0f, 1.0f})
+#define VE_COLOR_MAGENTA (VEColor{1.0f, 0.0f, 1.0f, 1.0f})
 
 // --- Extended colors ---
-#define VE_COLOR_ORANGE ((VEColor){1.0f, 0.5f, 0.0f, 1.0f})
-#define VE_COLOR_PURPLE ((VEColor){0.5f, 0.0f, 1.0f, 1.0f})
-#define VE_COLOR_PINK ((VEColor){1.0f, 0.4f, 0.7f, 1.0f})
-#define VE_COLOR_BROWN ((VEColor){0.6f, 0.3f, 0.1f, 1.0f})
-#define VE_COLOR_LIME ((VEColor){0.5f, 1.0f, 0.0f, 1.0f})
-#define VE_COLOR_TEAL ((VEColor){0.0f, 0.5f, 0.5f, 1.0f})
-#define VE_COLOR_NAVY ((VEColor){0.0f, 0.0f, 0.5f, 1.0f})
-#define VE_COLOR_MAROON ((VEColor){0.5f, 0.0f, 0.0f, 1.0f})
+#define VE_COLOR_ORANGE (VEColor{1.0f, 0.5f, 0.0f, 1.0f})
+#define VE_COLOR_PURPLE (VEColor{0.5f, 0.0f, 1.0f, 1.0f})
+#define VE_COLOR_PINK (VEColor{1.0f, 0.4f, 0.7f, 1.0f})
+#define VE_COLOR_BROWN (VEColor{0.6f, 0.3f, 0.1f, 1.0f})
+#define VE_COLOR_LIME (VEColor{0.5f, 1.0f, 0.0f, 1.0f})
+#define VE_COLOR_TEAL (VEColor{0.0f, 0.5f, 0.5f, 1.0f})
+#define VE_COLOR_NAVY (VEColor{0.0f, 0.0f, 0.5f, 1.0f})
+#define VE_COLOR_MAROON (VEColor{0.5f, 0.0f, 0.0f, 1.0f})
 
 // --- Grayscale ---
-#define VE_COLOR_GRAY_DARK ((VEColor){0.25f, 0.25f, 0.25f, 1.0f})
-#define VE_COLOR_GRAY ((VEColor){0.5f, 0.5f, 0.5f, 1.0f})
-#define VE_COLOR_GRAY_LIGHT ((VEColor){0.75f, 0.75f, 0.75f, 1.0f})
+#define VE_COLOR_GRAY_DARK (VEColor{0.25f, 0.25f, 0.25f, 1.0f})
+#define VE_COLOR_GRAY (VEColor{0.5f, 0.5f, 0.5f, 1.0f})
+#define VE_COLOR_GRAY_LIGHT (VEColor{0.75f, 0.75f, 0.75f, 1.0f})
 
 // --- Transparent ---
-#define VE_COLOR_TRANSPARENT ((VEColor){0.0f, 0.0f, 0.0f, 0.0f})
+#define VE_COLOR_TRANSPARENT (VEColor{0.0f, 0.0f, 0.0f, 0.0f})
 
 // --- Common clear colors ---
-#define VE_COLOR_CORNFLOWER_BLUE ((VEColor){0.392f, 0.584f, 0.929f, 1.0f}) // Classic XNA/DirectX clear color
-#define VE_COLOR_DARK_GRAY ((VEColor){0.1f, 0.1f, 0.1f, 1.0f})             // Good for dark themes
+#define VE_COLOR_CORNFLOWER_BLUE (VEColor{0.392f, 0.584f, 0.929f, 1.0f}) // Classic XNA/DirectX clear color
+#define VE_COLOR_DARK_GRAY (VEColor{0.1f, 0.1f, 0.1f, 1.0f})             // Good for dark themes
 
 // =============================================================================
 // =============================================================================
@@ -1917,83 +1938,151 @@ VULKEASE_API VEResult veReleaseExternalTexture(VEDevice *device, VETextureIndex 
  * @brief Write data to a region of a texture from the CPU.
  *
  * Uses VK_EXT_host_image_copy for efficient CPU-side texture updates
- * without GPU pipeline stalls.
+ * without GPU pipeline stalls. Supports texture arrays and mip levels.
  *
  * @param[in] device Valid VulkEase device.
  * @param[in] textureIndex Texture to write to.
  * @param[in] srcData Pointer to source pixel data.
  * @param[in] dataSize Size of source data in bytes.
- * @param[in] offsetX X offset in pixels.
- * @param[in] offsetY Y offset in pixels.
- * @param[in] offsetZ Z offset (for 3D textures, 0 for 2D).
- * @param[in] width Width of region in pixels.
- * @param[in] height Height of region in pixels.
- * @param[in] depth Depth of region (1 for 2D textures).
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veHostWriteTexture
- */
-VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETextureIndex textureIndex, const void *srcData,
-                                               size_t dataSize, uint32_t offsetX, uint32_t offsetY, uint32_t offsetZ,
-                                               uint32_t width, uint32_t height, uint32_t depth);
-
-/**
- * @brief Read data from a region of a texture to the CPU.
- *
- * Uses VK_EXT_host_image_copy for efficient CPU-side texture reads.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] textureIndex Texture to read from.
- * @param[out] dstData Buffer to receive pixel data.
- * @param[in] dataSize Size of destination buffer in bytes.
- * @param[in] offsetX X offset in pixels.
- * @param[in] offsetY Y offset in pixels.
- * @param[in] offsetZ Z offset (for 3D textures, 0 for 2D).
- * @param[in] width Width of region in pixels.
- * @param[in] height Height of region in pixels.
- * @param[in] depth Depth of region (1 for 2D textures).
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veHostReadTexture
- */
-VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETextureIndex textureIndex, void *dstData,
-                                              size_t dataSize, uint32_t offsetX, uint32_t offsetY, uint32_t offsetZ,
-                                              uint32_t width, uint32_t height, uint32_t depth);
-
-/**
- * @brief Write data to an entire texture from the CPU.
- *
- * Convenience function that writes to the entire base mip level.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] textureIndex Texture to write to.
- * @param[in] srcData Pointer to source pixel data.
- * @param[in] dataSize Size of source data in bytes.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veHostWriteTextureRegion
- */
-VULKEASE_API VEResult veHostWriteTexture(VEDevice *device, VETextureIndex textureIndex, const void *srcData,
-                                         size_t dataSize);
-
-/**
- * @brief Read data from an entire texture to the CPU.
- *
- * Convenience function that reads the entire base mip level.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] textureIndex Texture to read from.
- * @param[out] dstData Buffer to receive pixel data.
- * @param[in] dataSize Size of destination buffer in bytes.
+ * @param[in] region Region specifying the texture area to write to. If NULL, writes to the
+ *                   entire base mip level (layer 0). The bufferOffset, bufferRowLength, and
+ *                   bufferImageHeight fields are ignored (data is assumed tightly packed).
+ *                   Use layerCount=0 for single layer.
  *
  * @return VE_SUCCESS on success, or an error code on failure.
  *
  * @see veHostReadTextureRegion
  */
-VULKEASE_API VEResult veHostReadTexture(VEDevice *device, VETextureIndex textureIndex, void *dstData, size_t dataSize);
+VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETextureIndex textureIndex, const void *srcData,
+                                               size_t dataSize, const VEBufferTextureCopyRegion *region);
+
+/**
+ * @brief Read data from a region of a texture to the CPU.
+ *
+ * Uses VK_EXT_host_image_copy for efficient CPU-side texture reads.
+ * Supports texture arrays and mip levels.
+ *
+ * @param[in] device Valid VulkEase device.
+ * @param[in] textureIndex Texture to read from.
+ * @param[out] dstData Buffer to receive pixel data.
+ * @param[in] dataSize Size of destination buffer in bytes.
+ * @param[in] region Region specifying the texture area to read from. If NULL, reads the
+ *                   entire base mip level (layer 0). The bufferOffset, bufferRowLength, and
+ *                   bufferImageHeight fields are ignored (data is assumed tightly packed).
+ *                   Use layerCount=0 for single layer.
+ *
+ * @return VE_SUCCESS on success, or an error code on failure.
+ *
+ * @see veHostWriteTextureRegion
+ */
+VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETextureIndex textureIndex, void *dstData,
+                                              size_t dataSize, const VEBufferTextureCopyRegion *region);
+
+// =============================================================================
+// SPARSE TEXTURE FUNCTIONS
+// =============================================================================
+
+/**
+ * @brief Get information about a sparse texture's page layout.
+ *
+ * @param[in] device Valid VulkEase device.
+ * @param[in] texture Sparse texture index.
+ * @param[out] outInfo Receives the sparse texture information.
+ *
+ * @return VE_SUCCESS on success, or:
+ *         - VE_ERROR_INVALID_PARAMETER if device, outInfo is NULL, or texture is not sparse
+ */
+VULKEASE_API VEResult veGetSparseTextureInfo(VEDevice *device, VETextureIndex texture, VESparseTextureInfo *outInfo);
+
+/**
+ * @brief Commit pages for a sparse texture.
+ *
+ * Allocates memory and binds it to the specified page regions. This operation
+ * is non-blocking; the bindings are queued and will be flushed either explicitly
+ * via veFlushSparseBindings() or automatically before command buffer submission.
+ *
+ * @param[in] device Valid VulkEase device.
+ * @param[in] texture Sparse texture index.
+ * @param[in] regions Array of page regions to commit.
+ * @param[in] regionCount Number of regions in the array.
+ *
+ * @return VE_SUCCESS on success, or:
+ *         - VE_ERROR_INVALID_PARAMETER if device is NULL, texture is not sparse, or regions is NULL
+ *         - VE_ERROR_OUT_OF_MEMORY if memory allocation failed
+ */
+VULKEASE_API VEResult veCommitSparsePages(VEDevice *device, VETextureIndex texture,
+                                          const VESparsePageRegion *regions, uint32_t regionCount);
+
+/**
+ * @brief Uncommit pages for a sparse texture.
+ *
+ * Unbinds memory from the specified page regions. Memory is retained in a pool
+ * for potential reuse and freed after a timeout period.
+ *
+ * @param[in] device Valid VulkEase device.
+ * @param[in] texture Sparse texture index.
+ * @param[in] regions Array of page regions to uncommit.
+ * @param[in] regionCount Number of regions in the array.
+ *
+ * @return VE_SUCCESS on success, or:
+ *         - VE_ERROR_INVALID_PARAMETER if device is NULL, texture is not sparse, or regions is NULL
+ */
+VULKEASE_API VEResult veUncommitSparsePages(VEDevice *device, VETextureIndex texture,
+                                            const VESparsePageRegion *regions, uint32_t regionCount);
+
+/**
+ * @brief Flush all pending sparse bindings and wait for completion.
+ *
+ * This function is BLOCKING - it waits for all pending sparse bind operations
+ * to complete on the GPU. Required before veHostWriteTextureRegion() on sparse
+ * textures. Not required before veSubmitCommandBuffer() (auto-flushed with semaphores).
+ *
+ * @param[in] device Valid VulkEase device.
+ *
+ * @return VE_SUCCESS on success, or:
+ *         - VE_ERROR_INVALID_PARAMETER if device is NULL
+ */
+VULKEASE_API VEResult veFlushSparseBindings(VEDevice *device);
+
+/**
+ * @brief Check if a specific sparse page is committed.
+ *
+ * @param[in] device Valid VulkEase device.
+ * @param[in] texture Sparse texture index.
+ * @param[in] mipLevel Mip level of the page.
+ * @param[in] arrayLayer Array layer of the page.
+ * @param[in] pageX X index of the page.
+ * @param[in] pageY Y index of the page.
+ * @param[in] pageZ Z index of the page.
+ *
+ * @return true if committed, false if not committed or if texture is invalid/not sparse.
+ */
+VULKEASE_API bool veIsSparsePagesCommitted(VEDevice *device, VETextureIndex texture,
+                                           uint32_t mipLevel, uint32_t arrayLayer,
+                                           uint32_t pageX, uint32_t pageY, uint32_t pageZ);
+
+/**
+ * @brief Get total number of committed pages for a sparse texture.
+ *
+ * @param[in] device Valid VulkEase device.
+ * @param[in] texture Sparse texture index.
+ *
+ * @return Number of committed pages, or 0 if texture is invalid/not sparse.
+ */
+VULKEASE_API uint32_t veGetSparseCommittedPageCount(VEDevice *device, VETextureIndex texture);
+
+/**
+ * @brief Get total number of addressable pages for a sparse texture.
+ *
+ * Returns the total page count across all mip levels and array layers,
+ * excluding the mip tail (which is auto-committed).
+ *
+ * @param[in] device Valid VulkEase device.
+ * @param[in] texture Sparse texture index.
+ *
+ * @return Total page count, or 0 if texture is invalid/not sparse.
+ */
+VULKEASE_API uint32_t veGetSparseTotalPageCount(VEDevice *device, VETextureIndex texture);
 
 /**
  * @brief Generate mipmaps for a texture (deferred/command buffer version).

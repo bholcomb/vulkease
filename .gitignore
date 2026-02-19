@@ -50,6 +50,7 @@ tags
 TAGS
 .clangd/
 compile_commands.json
+.buildy_cache/
 
 dotnet/*/obj
 dotnet/*/bin

@@ -919,8 +919,8 @@ static VEResult veUploadTextureData(VEDeviceInternal *device, VETextureInternal 
    region.imageSubresource.mipLevel = 0;
    region.imageSubresource.baseArrayLayer = 0;
    region.imageSubresource.layerCount = texture->arrayLayers;
-   region.imageOffset = (VkOffset3D){0, 0, 0};
-   region.imageExtent = (VkExtent3D){texture->width, texture->height, texture->depth};
+   region.imageOffset = {0, 0, 0};
+   region.imageExtent = {texture->width, texture->height, texture->depth};
 
    vkCmdCopyBufferToImage(cmd->commandBuffer, stagingBuffer, texture->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
                           &region);
@@ -1028,17 +1028,189 @@ VEResult veCreateTexture(VEDevice *device, const VETextureDesc *desc, VETextureI
       imageInfo.flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
    }
 
-   VmaAllocationCreateInfo allocInfo{};
-   allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+   // Handle sparse texture creation
+   texture->isSparse = desc->sparse;
+   texture->sparseData = nullptr;
 
-   VkResult result = vmaCreateImage(deviceInternal->allocator, &imageInfo, &allocInfo, &texture->image,
-                                    &texture->allocation, &texture->allocationInfo);
-
-   if (result != VK_SUCCESS)
+   if (desc->sparse)
    {
-      veSetError("Failed to create texture (VkResult: %d)", result);
-      deviceInternal->freeTextureIndex(index);
-      return VE_ERROR_OUT_OF_MEMORY;
+      // Check for sparse support
+      if (!deviceInternal->supportsSparseBinding())
+      {
+         veSetError("Sparse binding not supported on this device");
+         deviceInternal->freeTextureIndex(index);
+         return VE_ERROR_FEATURE_NOT_SUPPORTED;
+      }
+
+      if (imageInfo.imageType == VK_IMAGE_TYPE_2D && !deviceInternal->supportsSparseResidencyImage2D())
+      {
+         veSetError("Sparse residency for 2D images not supported on this device");
+         deviceInternal->freeTextureIndex(index);
+         return VE_ERROR_FEATURE_NOT_SUPPORTED;
+      }
+
+      if (imageInfo.imageType == VK_IMAGE_TYPE_3D && !deviceInternal->features.sparseResidencyImage3D)
+      {
+         veSetError("Sparse residency for 3D images not supported on this device");
+         deviceInternal->freeTextureIndex(index);
+         return VE_ERROR_FEATURE_NOT_SUPPORTED;
+      }
+
+      imageInfo.flags |= VK_IMAGE_CREATE_SPARSE_BINDING_BIT | VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT;
+
+      // Create sparse image without memory
+      VkResult result = vkCreateImage(deviceInternal->device, &imageInfo, nullptr, &texture->image);
+      if (result != VK_SUCCESS)
+      {
+         veSetError("Failed to create sparse image (VkResult: %d)", result);
+         deviceInternal->freeTextureIndex(index);
+         return VE_ERROR_OUT_OF_MEMORY;
+      }
+
+      // Query sparse memory requirements
+      uint32_t sparseMemReqCount = 0;
+      vkGetImageSparseMemoryRequirements(deviceInternal->device, texture->image, &sparseMemReqCount, nullptr);
+
+      if (sparseMemReqCount == 0)
+      {
+         veSetError("No sparse memory requirements returned");
+         vkDestroyImage(deviceInternal->device, texture->image, nullptr);
+         deviceInternal->freeTextureIndex(index);
+         return VE_ERROR_UNKNOWN;
+      }
+
+      std::vector<VkSparseImageMemoryRequirements> sparseReqs(sparseMemReqCount);
+      vkGetImageSparseMemoryRequirements(deviceInternal->device, texture->image, &sparseMemReqCount, sparseReqs.data());
+
+      // Find the color aspect requirements
+      VkSparseImageMemoryRequirements *colorReqs = nullptr;
+      for (auto &req : sparseReqs)
+      {
+         if (req.formatProperties.aspectMask & VK_IMAGE_ASPECT_COLOR_BIT)
+         {
+            colorReqs = &req;
+            break;
+         }
+      }
+
+      if (!colorReqs)
+      {
+         veSetError("No sparse memory requirements for color aspect");
+         vkDestroyImage(deviceInternal->device, texture->image, nullptr);
+         deviceInternal->freeTextureIndex(index);
+         return VE_ERROR_UNKNOWN;
+      }
+
+      // Initialize sparse texture data
+      texture->sparseData = new VESparseTextureData();
+      VESparseTextureData *sparseData = texture->sparseData;
+
+      sparseData->requirements = *colorReqs;
+      sparseData->pageWidth = colorReqs->formatProperties.imageGranularity.width;
+      sparseData->pageHeight = colorReqs->formatProperties.imageGranularity.height;
+      sparseData->pageDepth = colorReqs->formatProperties.imageGranularity.depth;
+      sparseData->pagesX = (texture->width + sparseData->pageWidth - 1) / sparseData->pageWidth;
+      sparseData->pagesY = (texture->height + sparseData->pageHeight - 1) / sparseData->pageHeight;
+      sparseData->pagesZ = (texture->depth + sparseData->pageDepth - 1) / sparseData->pageDepth;
+      sparseData->mipTailFirstLod = colorReqs->imageMipTailFirstLod;
+      sparseData->mipTailAllocation = VK_NULL_HANDLE;
+      sparseData->committedPageCount = 0;
+
+      // Get memory requirements for page size
+      VkMemoryRequirements memReqs;
+      vkGetImageMemoryRequirements(deviceInternal->device, texture->image, &memReqs);
+      sparseData->pageSize = memReqs.alignment; // Typically 64KB
+
+      // Calculate total page count (excluding mip tail)
+      sparseData->totalPageCount = 0;
+      for (uint32_t mip = 0; mip < sparseData->mipTailFirstLod && mip < texture->mipLevels; mip++)
+      {
+         uint32_t mipPagesX = std::max(1u, sparseData->pagesX >> mip);
+         uint32_t mipPagesY = std::max(1u, sparseData->pagesY >> mip);
+         uint32_t mipPagesZ = std::max(1u, sparseData->pagesZ >> mip);
+         sparseData->totalPageCount += mipPagesX * mipPagesY * mipPagesZ;
+      }
+      sparseData->totalPageCount *= texture->arrayLayers;
+
+      // Initialize page tracking
+      sparseData->pages.resize(sparseData->totalPageCount);
+      for (auto &page : sparseData->pages)
+      {
+         page.allocation = VK_NULL_HANDLE;
+         page.uncommitTime = 0;
+         page.isCommitted = false;
+      }
+
+      // Auto-commit mip tail if present
+      if (sparseData->mipTailFirstLod < texture->mipLevels && colorReqs->imageMipTailSize > 0)
+      {
+         // Find suitable memory type
+         uint32_t memoryTypeIndex = UINT32_MAX;
+         for (uint32_t i = 0; i < deviceInternal->memoryProperties.memoryTypeCount; i++)
+         {
+            if ((memReqs.memoryTypeBits & (1 << i)) &&
+                (deviceInternal->memoryProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+            {
+               memoryTypeIndex = i;
+               break;
+            }
+         }
+
+         if (memoryTypeIndex != UINT32_MAX)
+         {
+            VmaAllocationCreateInfo mipTailAllocInfo{};
+            mipTailAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+            mipTailAllocInfo.memoryTypeBits = (1u << memoryTypeIndex);
+
+            VkMemoryRequirements mipTailReqs = memReqs;
+            mipTailReqs.size = colorReqs->imageMipTailSize;
+
+            VmaAllocationInfo allocInfoOut;
+            VkResult allocResult = vmaAllocateMemory(deviceInternal->allocator, &mipTailReqs, &mipTailAllocInfo,
+                                                     &sparseData->mipTailAllocation, &allocInfoOut);
+            if (allocResult == VK_SUCCESS)
+            {
+               // Bind mip tail using opaque bind
+               VkSparseMemoryBind opaqueBind{};
+               opaqueBind.resourceOffset = colorReqs->imageMipTailOffset;
+               opaqueBind.size = colorReqs->imageMipTailSize;
+               opaqueBind.memory = allocInfoOut.deviceMemory;
+               opaqueBind.memoryOffset = allocInfoOut.offset;
+
+               VkSparseImageOpaqueMemoryBindInfo opaqueBindInfo{};
+               opaqueBindInfo.image = texture->image;
+               opaqueBindInfo.bindCount = 1;
+               opaqueBindInfo.pBinds = &opaqueBind;
+
+               VkBindSparseInfo bindSparseInfo{};
+               bindSparseInfo.sType = VK_STRUCTURE_TYPE_BIND_SPARSE_INFO;
+               bindSparseInfo.imageOpaqueBindCount = 1;
+               bindSparseInfo.pImageOpaqueBinds = &opaqueBindInfo;
+
+               vkResetFences(deviceInternal->device, 1, &deviceInternal->sparseBindFence);
+               vkQueueBindSparse(deviceInternal->sparseBindingQueue, 1, &bindSparseInfo,
+                                 deviceInternal->sparseBindFence);
+               vkWaitForFences(deviceInternal->device, 1, &deviceInternal->sparseBindFence, VK_TRUE, UINT64_MAX);
+            }
+         }
+      }
+
+      texture->allocation = VK_NULL_HANDLE; // Sparse textures don't use VMA for the main allocation
+   }
+   else
+   {
+      VmaAllocationCreateInfo allocInfo{};
+      allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+      VkResult result = vmaCreateImage(deviceInternal->allocator, &imageInfo, &allocInfo, &texture->image,
+                                       &texture->allocation, &texture->allocationInfo);
+
+      if (result != VK_SUCCESS)
+      {
+         veSetError("Failed to create texture (VkResult: %d)", result);
+         deviceInternal->freeTextureIndex(index);
+         return VE_ERROR_OUT_OF_MEMORY;
+      }
    }
 
    // Create image view
@@ -1068,17 +1240,30 @@ VEResult veCreateTexture(VEDevice *device, const VETextureDesc *desc, VETextureI
       }
    }
 
-   result = vkCreateImageView(deviceInternal->device, &viewInfo, NULL, &texture->imageView);
-   if (result != VK_SUCCESS)
+   VkResult viewResult = vkCreateImageView(deviceInternal->device, &viewInfo, NULL, &texture->imageView);
+   if (viewResult != VK_SUCCESS)
    {
-      veSetError("Failed to create image view (VkResult: %d)", result);
-      vmaDestroyImage(deviceInternal->allocator, texture->image, texture->allocation);
+      veSetError("Failed to create image view (VkResult: %d)", viewResult);
+      if (texture->isSparse)
+      {
+         if (texture->sparseData)
+         {
+            if (texture->sparseData->mipTailAllocation)
+               vmaFreeMemory(deviceInternal->allocator, texture->sparseData->mipTailAllocation);
+            delete texture->sparseData;
+         }
+         vkDestroyImage(deviceInternal->device, texture->image, nullptr);
+      }
+      else
+      {
+         vmaDestroyImage(deviceInternal->allocator, texture->image, texture->allocation);
+      }
       deviceInternal->freeTextureIndex(index);
       return VE_ERROR_UNKNOWN;
    }
 
-   // Upload initial data if provided
-   if (desc->initialData && desc->initialDataSize > 0)
+   // Upload initial data if provided (ignored for sparse textures)
+   if (!texture->isSparse && desc->initialData && desc->initialDataSize > 0)
    {
       VEResult uploadResult = veUploadTextureData(deviceInternal, texture, desc->initialData, desc->initialDataSize);
       if (uploadResult != VE_SUCCESS)
@@ -1126,8 +1311,37 @@ void veDestroyTextureImmediate(VEDeviceInternal *deviceInternal, VETextureIndex 
       vkDestroyImageView(deviceInternal->device, texture->imageView, NULL);
    }
 
+   // Handle sparse texture cleanup
+   if (texture->isSparse && texture->sparseData)
+   {
+      VESparseTextureData *sparseData = texture->sparseData;
+
+      // Free all committed page allocations
+      for (auto &page : sparseData->pages)
+      {
+         if (page.allocation != VK_NULL_HANDLE)
+         {
+            vmaFreeMemory(deviceInternal->allocator, page.allocation);
+         }
+      }
+
+      // Free mip tail allocation
+      if (sparseData->mipTailAllocation != VK_NULL_HANDLE)
+      {
+         vmaFreeMemory(deviceInternal->allocator, sparseData->mipTailAllocation);
+      }
+
+      delete sparseData;
+      texture->sparseData = nullptr;
+
+      // Destroy the sparse image
+      if (texture->image)
+      {
+         vkDestroyImage(deviceInternal->device, texture->image, nullptr);
+      }
+   }
    // Only destroy VkImage and VMA allocation if we own it (not external)
-   if (!texture->isExternal && texture->image)
+   else if (!texture->isExternal && texture->image)
    {
       vmaDestroyImage(deviceInternal->allocator, texture->image, texture->allocation);
    }
@@ -1644,7 +1858,7 @@ VEResult veImportExternalTexture(VEDevice *device, const VEExternalTextureDesc *
       VkDebugUtilsObjectNameInfoEXT nameInfo{};
       nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
       nameInfo.objectType = VK_OBJECT_TYPE_IMAGE_VIEW;
-      nameInfo.objectHandle = reinterpret_cast<uint64_t>(texture->imageView);
+      nameInfo.objectHandle = (uint64_t)(uintptr_t)texture->imageView;
       nameInfo.pObjectName = texture->debugName;
       if (veFuncs.vkSetDebugUtilsObjectNameEXT)
       {
@@ -1824,15 +2038,15 @@ VEResult veCmdGenerateMipmaps(VECommandBuffer *cmd, VETextureIndex texture)
 
       // Blit from previous level to current level
       VkImageBlit blit{};
-      blit.srcOffsets[0] = (VkOffset3D){0, 0, 0};
-      blit.srcOffsets[1] = (VkOffset3D){(int32_t)mipWidth, (int32_t)mipHeight, 1};
+      blit.srcOffsets[0] = {0, 0, 0};
+      blit.srcOffsets[1] = {static_cast<int32_t>(mipWidth), static_cast<int32_t>(mipHeight), 1};
       blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
       blit.srcSubresource.mipLevel = i - 1;
       blit.srcSubresource.baseArrayLayer = 0;
       blit.srcSubresource.layerCount = textureInternal->arrayLayers;
 
-      blit.dstOffsets[0] = (VkOffset3D){0, 0, 0};
-      blit.dstOffsets[1] = (VkOffset3D){(int32_t)nextMipWidth, (int32_t)nextMipHeight, 1};
+      blit.dstOffsets[0] = {0, 0, 0};
+      blit.dstOffsets[1] = {static_cast<int32_t>(nextMipWidth), static_cast<int32_t>(nextMipHeight), 1};
       blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
       blit.dstSubresource.mipLevel = i;
       blit.dstSubresource.baseArrayLayer = 0;

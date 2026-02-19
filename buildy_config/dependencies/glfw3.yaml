@@ -1,0 +1,41 @@
+# GLFW - OpenGL/Vulkan window and input library
+# https://www.glfw.org/
+#
+# This example demonstrates fetching and building GLFW from source
+# using a custom buildy script on Linux and Windows.
+# macOS uses the system-installed GLFW via Homebrew.
+
+glfw3:
+  description: "GLFW - OpenGL window and input library"
+  version: "3.4"
+  defines: ["GLFW_ENABLED"]
+  
+  linux:
+    url: "https://github.com/glfw/glfw/releases/download/3.4/glfw-3.4.zip"
+    build:
+      system: buildy
+      override: glfw3_build.yaml
+    # Headers are in the fetched source, library is in build output
+    include_dirs: ["${dep_dir}/include"]
+    lib_dirs: ["${workspace_root}/build/linux-x86_64-debug/lib"]
+    libs: ["glfw3"]
+    defines: ["GLFW_EXPOSE_NATIVE_X11"]
+  
+  windows:
+    url: "https://github.com/glfw/glfw/releases/download/3.4/glfw-3.4.zip"
+    build:
+      system: buildy
+      override: glfw3_build.yaml
+    # Headers are in the fetched source, library is in build output
+    include_dirs: ["${dep_dir}/include"]
+    lib_dirs: ["${workspace_root}/build/windows-x86_64-debug/lib"]
+    libs: ["glfw3", "user32.lib", "gdi32.lib", "shell32.lib"]
+    defines: ["GLFW_EXPOSE_NATIVE_WIN32"]
+  
+  macos:
+    root: "/opt/homebrew"
+    include_dirs: ["${root}/include"]
+    lib_dirs: ["${root}/lib"]
+    libs: ["glfw"]
+    frameworks: ["Cocoa", "IOKit", "CoreVideo", "OpenGL"]
+    defines: ["GLFW_EXPOSE_NATIVE_COCOA"]

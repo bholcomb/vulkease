@@ -379,7 +379,10 @@ static VkShaderEXT createShaderObject(VEDeviceInternal *deviceInternal, VkShader
    VkShaderStageFlagBits stageFlags =
        (stage == VK_SHADER_STAGE_COMPUTE_BIT) ? VK_SHADER_STAGE_COMPUTE_BIT : VK_SHADER_STAGE_ALL_GRAPHICS;
 
-   VkPushConstantRange shaderPushRange = {.stageFlags = stageFlags, .offset = 0, .size = VE_MAX_PUSH_CONSTANT_BYTES};
+   VkPushConstantRange shaderPushRange = {};
+   shaderPushRange.stageFlags = stageFlags;
+   shaderPushRange.offset = 0;
+   shaderPushRange.size = VE_MAX_PUSH_CONSTANT_BYTES;
 
    VkShaderCreateInfoEXT shaderCreateInfo{};
    shaderCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT;

@@ -245,21 +245,47 @@ namespace VulkEase
         // Host image copy functions
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veHostWriteTextureRegion(IntPtr device, UInt32 textureIndex, IntPtr srcData,
-            UIntPtr dataSize, UInt32 offsetX, UInt32 offsetY, UInt32 offsetZ,
-            UInt32 width, UInt32 height, UInt32 depth);
+            UIntPtr dataSize, ref VEBufferTextureCopyRegion region);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veHostWriteTextureRegion(IntPtr device, UInt32 textureIndex, IntPtr srcData,
+            UIntPtr dataSize, IntPtr region);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veHostReadTextureRegion(IntPtr device, UInt32 textureIndex, IntPtr dstData,
-            UIntPtr dataSize, UInt32 offsetX, UInt32 offsetY, UInt32 offsetZ,
-            UInt32 width, UInt32 height, UInt32 depth);
+            UIntPtr dataSize, ref VEBufferTextureCopyRegion region);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veHostWriteTexture(IntPtr device, UInt32 textureIndex, IntPtr srcData,
-            UIntPtr dataSize);
+        internal static extern VEResult veHostReadTextureRegion(IntPtr device, UInt32 textureIndex, IntPtr dstData,
+            UIntPtr dataSize, IntPtr region);
+        #endregion
+
+        #region Sparse Texture Operations
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veGetSparseTextureInfo(IntPtr device, UInt32 textureIndex,
+            out VESparseTextureInfo outInfo);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veHostReadTexture(IntPtr device, UInt32 textureIndex, IntPtr dstData,
-            UIntPtr dataSize);
+        internal static extern VEResult veCommitSparsePages(IntPtr device, UInt32 textureIndex,
+            [In] VESparsePageRegion[] regions, UInt32 regionCount);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veUncommitSparsePages(IntPtr device, UInt32 textureIndex,
+            [In] VESparsePageRegion[] regions, UInt32 regionCount);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veFlushSparseBindings(IntPtr device);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        internal static extern bool veIsSparsePagesCommitted(IntPtr device, UInt32 textureIndex,
+            UInt32 mipLevel, UInt32 arrayLayer, UInt32 pageX, UInt32 pageY, UInt32 pageZ);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern UInt32 veGetSparseCommittedPageCount(IntPtr device, UInt32 textureIndex);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern UInt32 veGetSparseTotalPageCount(IntPtr device, UInt32 textureIndex);
         #endregion
 
         #region Buffer and Texture Transfer Operations

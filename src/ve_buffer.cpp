@@ -784,12 +784,13 @@ extern "C" VkBufferUsageFlags veGetBufferUsage(VEDevice *device, VEBufferAddress
 extern "C" VEResult veCreateVertexBuffer(VEDevice *device, const void *vertices, uint64_t size, const char *debugName,
                                          VEBufferAddress *outAddress)
 {
-   VEBufferDesc desc = {.size = size,
-                        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                        .initialData = vertices,
-                        .initialDataSize = size,
-                        .persistentlyMapped = false,
-                        .debugName = debugName ? debugName : "VertexBuffer"};
+   VEBufferDesc desc = {};
+   desc.size = size;
+   desc.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+   desc.initialData = vertices;
+   desc.initialDataSize = size;
+   desc.persistentlyMapped = false;
+   desc.debugName = debugName ? debugName : "VertexBuffer";
 
    return veCreateBuffer(device, &desc, outAddress);
 }
@@ -797,12 +798,13 @@ extern "C" VEResult veCreateVertexBuffer(VEDevice *device, const void *vertices,
 extern "C" VEResult veCreateIndexBuffer(VEDevice *device, const void *indices, uint64_t size, const char *debugName,
                                         VEBufferAddress *outAddress)
 {
-   VEBufferDesc desc = {.size = size,
-                        .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                        .initialData = indices,
-                        .initialDataSize = size,
-                        .persistentlyMapped = false,
-                        .debugName = debugName ? debugName : "IndexBuffer"};
+   VEBufferDesc desc = {};
+   desc.size = size;
+   desc.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+   desc.initialData = indices;
+   desc.initialDataSize = size;
+   desc.persistentlyMapped = false;
+   desc.debugName = debugName ? debugName : "IndexBuffer";
 
    return veCreateBuffer(device, &desc, outAddress);
 }
@@ -810,12 +812,13 @@ extern "C" VEResult veCreateIndexBuffer(VEDevice *device, const void *indices, u
 extern "C" VEResult veCreateUniformBuffer(VEDevice *device, uint64_t size, bool persistentlyMapped,
                                           const char *debugName, VEBufferAddress *outAddress)
 {
-   VEBufferDesc desc = {.size = size,
-                        .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                        .initialData = nullptr,
-                        .initialDataSize = 0,
-                        .persistentlyMapped = persistentlyMapped,
-                        .debugName = debugName ? debugName : "UniformBuffer"};
+   VEBufferDesc desc = {};
+   desc.size = size;
+   desc.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+   desc.initialData = nullptr;
+   desc.initialDataSize = 0;
+   desc.persistentlyMapped = persistentlyMapped;
+   desc.debugName = debugName ? debugName : "UniformBuffer";
 
    return veCreateBuffer(device, &desc, outAddress);
 }
@@ -823,12 +826,13 @@ extern "C" VEResult veCreateUniformBuffer(VEDevice *device, uint64_t size, bool 
 extern "C" VEResult veCreateStorageBuffer(VEDevice *device, uint64_t size, const char *debugName,
                                           VEBufferAddress *outAddress)
 {
-   VEBufferDesc desc = {.size = size,
-                        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                        .initialData = nullptr,
-                        .initialDataSize = 0,
-                        .persistentlyMapped = false,
-                        .debugName = debugName ? debugName : "StorageBuffer"};
+   VEBufferDesc desc = {};
+   desc.size = size;
+   desc.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+   desc.initialData = nullptr;
+   desc.initialDataSize = 0;
+   desc.persistentlyMapped = false;
+   desc.debugName = debugName ? debugName : "StorageBuffer";
 
    return veCreateBuffer(device, &desc, outAddress);
 }
@@ -836,12 +840,13 @@ extern "C" VEResult veCreateStorageBuffer(VEDevice *device, uint64_t size, const
 extern "C" VEResult veCreateIndirectBuffer(VEDevice *device, uint64_t size, const char *debugName,
                                            VEBufferAddress *outAddress)
 {
-   VEBufferDesc desc = {.size = size,
-                        .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                        .initialData = nullptr,
-                        .initialDataSize = 0,
-                        .persistentlyMapped = false,
-                        .debugName = debugName ? debugName : "IndirectBuffer"};
+   VEBufferDesc desc = {};
+   desc.size = size;
+   desc.usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+   desc.initialData = nullptr;
+   desc.initialDataSize = 0;
+   desc.persistentlyMapped = false;
+   desc.debugName = debugName ? debugName : "IndirectBuffer";
 
    return veCreateBuffer(device, &desc, outAddress);
 }

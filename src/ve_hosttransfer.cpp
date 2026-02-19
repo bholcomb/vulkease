@@ -189,12 +189,18 @@ static VEResult ensureTextureInGeneralLayout(VEDevice *device, VETextureIndex te
    return r;
 }
 
+// Helper to calculate mip level dimensions
+static uint32_t getMipDimension(uint32_t baseDim, uint32_t mipLevel)
+{
+   uint32_t dim = baseDim >> mipLevel;
+   return dim > 0 ? dim : 1;
+}
+
 /**
  * Copy data from host memory to texture using VK_EXT_host_image_copy
  */
 VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETextureIndex textureIndex, const void *srcData,
-                                               size_t dataSize, uint32_t offsetX, uint32_t offsetY, uint32_t offsetZ,
-                                               uint32_t width, uint32_t height, uint32_t depth)
+                                               size_t dataSize, const VEBufferTextureCopyRegion *region)
 {
    if (!device)
    {
@@ -224,6 +230,38 @@ VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETextureIndex 
       return result;
    }
 
+   // Extract region parameters with defaults for NULL region
+   uint32_t mipLevel = region ? region->mipLevel : 0;
+   uint32_t arrayLayer = region ? region->arrayLayer : 0;
+   uint32_t layerCount = region ? (region->layerCount > 0 ? region->layerCount : 1) : 1;
+
+   // Calculate mip-adjusted texture dimensions
+   uint32_t mipWidth = getMipDimension(texture->width, mipLevel);
+   uint32_t mipHeight = getMipDimension(texture->height, mipLevel);
+   uint32_t mipDepth = getMipDimension(texture->depth, mipLevel);
+
+   uint32_t offsetX = region ? region->textureOffsetX : 0;
+   uint32_t offsetY = region ? region->textureOffsetY : 0;
+   uint32_t offsetZ = region ? region->textureOffsetZ : 0;
+   uint32_t width = region ? region->width : mipWidth;
+   uint32_t height = region ? region->height : mipHeight;
+   uint32_t depth = region ? region->depth : mipDepth;
+
+   // Validate mip level
+   if (mipLevel >= texture->mipLevels)
+   {
+      veSetError("Mip level %u exceeds texture mip levels (%u)", mipLevel, texture->mipLevels);
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   // Validate array layer range
+   if (arrayLayer + layerCount > texture->arrayLayers)
+   {
+      veSetError("Array layer range [%u, %u) exceeds texture array layers (%u)", arrayLayer, arrayLayer + layerCount,
+                 texture->arrayLayers);
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    // Ensure the image is in GENERAL layout as required by VK_EXT_host_image_copy.
    result = ensureTextureInGeneralLayout(device, textureIndex, texture);
    if (result != VE_SUCCESS)
@@ -232,16 +270,16 @@ VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETextureIndex 
       return result;
    }
 
-   // Validate copy region bounds
-   if (offsetX + width > texture->width || offsetY + height > texture->height || offsetZ + depth > texture->depth)
+   // Validate copy region bounds against mip dimensions
+   if (offsetX + width > mipWidth || offsetY + height > mipHeight || offsetZ + depth > mipDepth)
    {
-      veSetError("Copy region exceeds texture bounds");
+      veSetError("Copy region exceeds texture bounds at mip level %u", mipLevel);
       return VE_ERROR_INVALID_PARAMETER;
    }
 
    // Calculate expected data size
    uint32_t formatSize = getFormatBlockSize(texture->format);
-   size_t expectedSize = (size_t)width * height * depth * formatSize;
+   size_t expectedSize = (size_t)width * height * depth * layerCount * formatSize;
    if (dataSize < expectedSize)
    {
       veSetError("Source data size (%zu bytes) is less than required (%zu bytes)", dataSize, expectedSize);
@@ -255,9 +293,9 @@ VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETextureIndex 
    copyRegion.memoryRowLength = width;    // Tightly packed
    copyRegion.memoryImageHeight = height; // Tightly packed
    copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-   copyRegion.imageSubresource.mipLevel = 0;
-   copyRegion.imageSubresource.baseArrayLayer = 0;
-   copyRegion.imageSubresource.layerCount = 1;
+   copyRegion.imageSubresource.mipLevel = mipLevel;
+   copyRegion.imageSubresource.baseArrayLayer = arrayLayer;
+   copyRegion.imageSubresource.layerCount = layerCount;
    copyRegion.imageOffset.x = (int32_t)offsetX;
    copyRegion.imageOffset.y = (int32_t)offsetY;
    copyRegion.imageOffset.z = (int32_t)offsetZ;
@@ -289,8 +327,7 @@ VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETextureIndex 
  * Copy data from texture to host memory using VK_EXT_host_image_copy
  */
 VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETextureIndex textureIndex, void *dstData,
-                                              size_t dataSize, uint32_t offsetX, uint32_t offsetY, uint32_t offsetZ,
-                                              uint32_t width, uint32_t height, uint32_t depth)
+                                              size_t dataSize, const VEBufferTextureCopyRegion *region)
 {
    if (!device)
    {
@@ -320,6 +357,38 @@ VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETextureIndex t
       return result;
    }
 
+   // Extract region parameters with defaults for NULL region
+   uint32_t mipLevel = region ? region->mipLevel : 0;
+   uint32_t arrayLayer = region ? region->arrayLayer : 0;
+   uint32_t layerCount = region ? (region->layerCount > 0 ? region->layerCount : 1) : 1;
+
+   // Calculate mip-adjusted texture dimensions
+   uint32_t mipWidth = getMipDimension(texture->width, mipLevel);
+   uint32_t mipHeight = getMipDimension(texture->height, mipLevel);
+   uint32_t mipDepth = getMipDimension(texture->depth, mipLevel);
+
+   uint32_t offsetX = region ? region->textureOffsetX : 0;
+   uint32_t offsetY = region ? region->textureOffsetY : 0;
+   uint32_t offsetZ = region ? region->textureOffsetZ : 0;
+   uint32_t width = region ? region->width : mipWidth;
+   uint32_t height = region ? region->height : mipHeight;
+   uint32_t depth = region ? region->depth : mipDepth;
+
+   // Validate mip level
+   if (mipLevel >= texture->mipLevels)
+   {
+      veSetError("Mip level %u exceeds texture mip levels (%u)", mipLevel, texture->mipLevels);
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   // Validate array layer range
+   if (arrayLayer + layerCount > texture->arrayLayers)
+   {
+      veSetError("Array layer range [%u, %u) exceeds texture array layers (%u)", arrayLayer, arrayLayer + layerCount,
+                 texture->arrayLayers);
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    // Ensure the image is in GENERAL layout as required by VK_EXT_host_image_copy.
    result = ensureTextureInGeneralLayout(device, textureIndex, texture);
    if (result != VE_SUCCESS)
@@ -328,16 +397,16 @@ VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETextureIndex t
       return result;
    }
 
-   // Validate copy region bounds
-   if (offsetX + width > texture->width || offsetY + height > texture->height || offsetZ + depth > texture->depth)
+   // Validate copy region bounds against mip dimensions
+   if (offsetX + width > mipWidth || offsetY + height > mipHeight || offsetZ + depth > mipDepth)
    {
-      veSetError("Copy region exceeds texture bounds");
+      veSetError("Copy region exceeds texture bounds at mip level %u", mipLevel);
       return VE_ERROR_INVALID_PARAMETER;
    }
 
    // Calculate expected data size
    uint32_t formatSize = getFormatBlockSize(texture->format);
-   size_t expectedSize = (size_t)width * height * depth * formatSize;
+   size_t expectedSize = (size_t)width * height * depth * layerCount * formatSize;
    if (dataSize < expectedSize)
    {
       veSetError("Destination buffer size (%zu bytes) is less than required (%zu bytes)", dataSize, expectedSize);
@@ -351,9 +420,9 @@ VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETextureIndex t
    copyRegion.memoryRowLength = width;    // Tightly packed
    copyRegion.memoryImageHeight = height; // Tightly packed
    copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-   copyRegion.imageSubresource.mipLevel = 0;
-   copyRegion.imageSubresource.baseArrayLayer = 0;
-   copyRegion.imageSubresource.layerCount = 1;
+   copyRegion.imageSubresource.mipLevel = mipLevel;
+   copyRegion.imageSubresource.baseArrayLayer = arrayLayer;
+   copyRegion.imageSubresource.layerCount = layerCount;
    copyRegion.imageOffset.x = (int32_t)offsetX;
    copyRegion.imageOffset.y = (int32_t)offsetY;
    copyRegion.imageOffset.z = (int32_t)offsetZ;
@@ -379,52 +448,4 @@ VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETextureIndex t
    }
 
    return VE_SUCCESS;
-}
-
-/**
- * Convenience function to copy entire texture to host memory
- */
-VEResult veHostReadTexture(VEDevice *device, VETextureIndex textureIndex, void *dstData, size_t dataSize)
-{
-   if (!device)
-   {
-      veSetError("Device cannot be NULL");
-      return VE_ERROR_INVALID_PARAMETER;
-   }
-
-   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
-   VETextureInternal *texture = deviceInternal->getTexture(textureIndex);
-
-   if (!texture || !texture->isValid)
-   {
-      veSetError("Invalid texture");
-      return VE_ERROR_INVALID_PARAMETER;
-   }
-
-   return veHostReadTextureRegion(device, textureIndex, dstData, dataSize, 0, 0, 0, texture->width, texture->height,
-                                  texture->depth);
-}
-
-/**
- * Convenience function to update entire texture from host memory
- */
-VEResult veHostWriteTexture(VEDevice *device, VETextureIndex textureIndex, const void *srcData, size_t dataSize)
-{
-   if (!device)
-   {
-      veSetError("Device cannot be NULL");
-      return VE_ERROR_INVALID_PARAMETER;
-   }
-
-   VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
-   VETextureInternal *texture = deviceInternal->getTexture(textureIndex);
-
-   if (!texture || !texture->isValid)
-   {
-      veSetError("Invalid texture");
-      return VE_ERROR_INVALID_PARAMETER;
-   }
-
-   return veHostWriteTextureRegion(device, textureIndex, srcData, dataSize, 0, 0, 0, texture->width, texture->height,
-                                   texture->depth);
 }

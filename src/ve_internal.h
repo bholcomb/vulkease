@@ -9,6 +9,16 @@
 #ifndef VE_INTERNAL_H
 #define VE_INTERNAL_H
 
+// Prevent Windows min/max macros from conflicting with std::numeric_limits
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#endif
+
 #include "vulkease.h"
 
 // VMA integration - declare interface only
@@ -122,6 +132,11 @@ struct VEDeviceFeatures
 
    // Optional extension features
    bool meshShader; // VK_EXT_mesh_shader (task and mesh shaders)
+
+   // Sparse texture features
+   bool sparseBinding;          // Basic sparse binding support
+   bool sparseResidencyImage2D; // Partial residency for 2D textures
+   bool sparseResidencyImage3D; // Partial residency for 3D textures
 };
 
 // =============================================================================
@@ -265,6 +280,9 @@ struct VEBufferInternal
    bool isValid;
 };
 
+// Forward declaration for sparse texture data
+struct VESparseTextureData;
+
 struct VETextureInternal
 {
    VkImage image;
@@ -283,7 +301,60 @@ struct VETextureInternal
    char debugName[VE_MAX_DEBUG_NAME_LENGTH];
    bool isValid;
    bool isExternal; // If true, VkImage is not owned by VulkEase (imported from external source)
+   bool isSparse;   // If true, texture uses sparse binding
    uint32_t index;
+   VESparseTextureData *sparseData; // Only set if isSparse is true
+};
+
+// Sparse page info for tracking individual page allocations
+struct VESparsePageInfo
+{
+   VmaAllocation allocation;  // Memory allocation for this page
+   uint64_t uncommitTime;     // Timestamp when uncommitted (0 if committed)
+   bool isCommitted;
+};
+
+// Per-texture sparse data
+struct VESparseTextureData
+{
+   std::vector<VESparsePageInfo> pages;        // Indexed by linear page index
+   VmaAllocation mipTailAllocation;            // Mip tail memory (auto-committed)
+   VkSparseImageMemoryRequirements requirements;
+   uint32_t pageWidth;
+   uint32_t pageHeight;
+   uint32_t pageDepth;
+   uint32_t pagesX;    // At mip 0
+   uint32_t pagesY;
+   uint32_t pagesZ;
+   uint32_t mipTailFirstLod;
+   uint64_t pageSize;
+   uint32_t totalPageCount;       // Total addressable pages (excluding mip tail)
+   uint32_t committedPageCount;   // Currently committed pages
+};
+
+// Pending sparse bind operation
+struct VESparsePendingBind
+{
+   VETextureIndex texture;
+   std::vector<VkSparseImageMemoryBind> imageBinds;
+   std::vector<VkSparseMemoryBind> opaqueBinds;
+};
+
+// Sparse memory pool for page reuse
+struct VESparseMemoryPool
+{
+   struct FreePage
+   {
+      VmaAllocation allocation;
+      uint64_t freedTime;  // Timestamp when freed
+   };
+   std::vector<FreePage> freePages;
+   uint64_t recycleThresholdMs{5000};  // Return to system after 5 seconds
+   std::mutex mutex;
+
+   VmaAllocation acquire(VmaAllocator allocator, VkMemoryRequirements memReqs, uint32_t memoryTypeIndex);
+   void release(VmaAllocation alloc);
+   void cleanup(VmaAllocator allocator, uint64_t currentTimeMs);
 };
 
 struct VESamplerInternal
@@ -583,6 +654,15 @@ struct VEDeviceInternal
 
    VEThreadCommandPools threadCommandPools;
 
+   // Sparse texture support
+   std::unique_ptr<VESparseMemoryPool> sparseMemoryPool;
+   std::vector<VESparsePendingBind> pendingSparseBinds;
+   std::unique_ptr<std::mutex> sparseBindMutex;
+   VkQueue sparseBindingQueue{VK_NULL_HANDLE};  // Queue with sparse binding support
+   uint32_t sparseBindingQueueFamily{UINT32_MAX};
+   VkFence sparseBindFence{VK_NULL_HANDLE};
+   VkSemaphore sparseBindSemaphore{VK_NULL_HANDLE};
+
    VEResult initializeVma();
    void cleanupVma();
    VEBufferInternal *getBufferFromAddress(VEBufferAddress address);
@@ -609,6 +689,16 @@ struct VEDeviceInternal
    [[nodiscard]] bool supportsShaderObjects() const noexcept { return features.shaderObject; }
    [[nodiscard]] bool supportsExtendedDynamicState3() const noexcept { return features.extendedDynamicState3; }
    [[nodiscard]] bool supportsVertexInputDynamicState() const noexcept { return features.vertexInputDynamicState; }
+   [[nodiscard]] bool supportsSparseBinding() const noexcept { return features.sparseBinding; }
+   [[nodiscard]] bool supportsSparseResidencyImage2D() const noexcept { return features.sparseResidencyImage2D; }
+
+   // Sparse texture helpers
+   VEResult initializeSparseBindingSupport();
+   void cleanupSparseBindingSupport();
+   VEResult flushPendingSparseBinds(bool blocking);
+   bool hasPendingSparseBinds() const;
+   void queueSparseBind(VETextureIndex texture, const VkSparseImageMemoryBind &bind);
+   void queueSparseUnbind(VETextureIndex texture, const VkSparseImageMemoryBind &bind);
 };
 
 // =============================================================================

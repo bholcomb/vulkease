@@ -3,13 +3,21 @@
  * @brief Debug and Profiling Implementation
  */
 
-// For clock_gettime
+// For clock_gettime on POSIX, QueryPerformanceCounter on Windows
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 199309L
 #endif
+#include <time.h>
+#endif
 
 #include "ve_internal.h"
-#include <time.h>
 
 // =============================================================================
 // Debug Utilities
@@ -297,9 +305,20 @@ void veLogMessage(VEDevice *device, VEMessageSeverity severity, const char *mess
 
 static double getCurrentTimeSeconds(void)
 {
+#ifdef _WIN32
+   static LARGE_INTEGER frequency = {};
+   if (frequency.QuadPart == 0)
+   {
+      QueryPerformanceFrequency(&frequency);
+   }
+   LARGE_INTEGER now;
+   QueryPerformanceCounter(&now);
+   return (double)now.QuadPart / (double)frequency.QuadPart;
+#else
    struct timespec ts;
    clock_gettime(CLOCK_MONOTONIC, &ts);
    return (double)ts.tv_sec + (double)ts.tv_nsec / (double)1e9;
+#endif
 }
 
 VEResult veGetPerformanceStats(VEDevice *device, VEPerformanceStats *stats)
