@@ -1,3 +1,14 @@
+// Prevent Windows min/max macros from conflicting with std::min/std::max
+// Must be defined before any Windows headers are included
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#endif
+
 #include "AsteroidApp.h"
 
 #if defined(_WIN32)
@@ -38,8 +49,8 @@ constexpr uint32_t kMaxWorkerThreads = 8;  // Cap workers to avoid contention
 constexpr float kCameraRadius = 55.0f;
 constexpr float kPi = 3.14159265359f;
 
-constexpr const char *kVertexShaderPath = "examples/shaders/asteroid.vert.spv";
-constexpr const char *kFragmentShaderPath = "examples/shaders/asteroid.frag.spv";
+constexpr const char *kVertexShaderPath = "data/04_asteroid/shaders/asteroid.vert.spv";
+constexpr const char *kFragmentShaderPath = "data/04_asteroid/shaders/asteroid.frag.spv";
 
 void fatal(const char *fmt, ...)
 {

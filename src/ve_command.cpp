@@ -420,10 +420,36 @@ VEResult veSubmitCommandBuffer(VECommandBuffer *cmd, const VESubmitInfo *submitI
       }
    }
 
+   // Auto-flush any pending sparse bindings (non-blocking, uses semaphore)
+   bool hasPendingSparseBinds = internal->device->hasPendingSparseBinds();
+   if (hasPendingSparseBinds)
+   {
+      VEResult sparseFlushResult = internal->device->flushPendingSparseBinds(false);
+      if (sparseFlushResult != VE_SUCCESS)
+      {
+         veSetError("Failed to flush pending sparse bindings");
+         return sparseFlushResult;
+      }
+   }
+
    std::vector<VkSemaphoreSubmitInfo> waitInfos;
+
+   // If we flushed sparse bindings, we need to wait on the sparse bind semaphore
+   if (hasPendingSparseBinds && internal->device->sparseBindSemaphore != VK_NULL_HANDLE)
+   {
+      VkSemaphoreSubmitInfo sparseWaitInfo{};
+      sparseWaitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+      sparseWaitInfo.semaphore = internal->device->sparseBindSemaphore;
+      sparseWaitInfo.value = 0;
+      sparseWaitInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+      sparseWaitInfo.deviceIndex = 0;
+      waitInfos.push_back(sparseWaitInfo);
+   }
+
    if (info.waitSemaphoreCount > 0)
    {
-      waitInfos.resize(info.waitSemaphoreCount);
+      size_t offset = waitInfos.size();
+      waitInfos.resize(offset + info.waitSemaphoreCount);
       for (uint32_t i = 0; i < info.waitSemaphoreCount; ++i)
       {
          if (info.waitSemaphores[i] == VK_NULL_HANDLE)
@@ -432,7 +458,7 @@ VEResult veSubmitCommandBuffer(VECommandBuffer *cmd, const VESubmitInfo *submitI
             return VE_ERROR_INVALID_PARAMETER;
          }
 
-         VkSemaphoreSubmitInfo &waitInfo = waitInfos[i];
+         VkSemaphoreSubmitInfo &waitInfo = waitInfos[offset + i];
          waitInfo = {};
          waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
          waitInfo.semaphore = info.waitSemaphores[i];

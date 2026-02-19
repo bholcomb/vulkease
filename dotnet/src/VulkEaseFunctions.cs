@@ -1283,73 +1283,163 @@ namespace VulkEase
 
         /// <summary>
         /// Write data to a texture region using host transfer.
+        /// Supports texture arrays and mip levels.
         /// </summary>
         /// <param name="device">Valid VulkEase device.</param>
         /// <param name="texture">Texture to write to.</param>
         /// <param name="srcData">Pointer to source data.</param>
         /// <param name="dataSize">Size of the source data in bytes.</param>
-        /// <param name="offsetX">X offset into the texture.</param>
-        /// <param name="offsetY">Y offset into the texture.</param>
-        /// <param name="offsetZ">Z offset into the texture.</param>
-        /// <param name="width">Width of the region to write.</param>
-        /// <param name="height">Height of the region to write.</param>
-        /// <param name="depth">Depth of the region to write.</param>
+        /// <param name="region">Region specifying the texture area to write to.
+        /// The bufferOffset, bufferRowLength, and bufferImageHeight fields are ignored.
+        /// Use layerCount=0 for single layer.</param>
         /// <returns>VE_SUCCESS on success.</returns>
         public static VEResult HostWriteTextureRegion(VEDevice device, VETextureIndex texture, IntPtr srcData,
-            UIntPtr dataSize, UInt32 offsetX, UInt32 offsetY, UInt32 offsetZ,
-            UInt32 width, UInt32 height, UInt32 depth)
+            UIntPtr dataSize, ref VEBufferTextureCopyRegion region)
         {
-            return VulkEaseDll.veHostWriteTextureRegion(device.native, texture.native, srcData, dataSize,
-                offsetX, offsetY, offsetZ, width, height, depth);
+            return VulkEaseDll.veHostWriteTextureRegion(device.native, texture.native, srcData, dataSize, ref region);
+        }
+
+        /// <summary>
+        /// Write data to the entire base mip level of a texture using host transfer.
+        /// </summary>
+        /// <param name="device">Valid VulkEase device.</param>
+        /// <param name="texture">Texture to write to.</param>
+        /// <param name="srcData">Pointer to source data.</param>
+        /// <param name="dataSize">Size of the source data in bytes.</param>
+        /// <returns>VE_SUCCESS on success.</returns>
+        public static VEResult HostWriteTextureRegion(VEDevice device, VETextureIndex texture, IntPtr srcData,
+            UIntPtr dataSize)
+        {
+            return VulkEaseDll.veHostWriteTextureRegion(device.native, texture.native, srcData, dataSize, IntPtr.Zero);
         }
 
         /// <summary>
         /// Read data from a texture region using host transfer.
+        /// Supports texture arrays and mip levels.
         /// </summary>
         /// <param name="device">Valid VulkEase device.</param>
         /// <param name="texture">Texture to read from.</param>
         /// <param name="dstData">Pointer to destination buffer.</param>
         /// <param name="dataSize">Size of the destination buffer in bytes.</param>
-        /// <param name="offsetX">X offset into the texture.</param>
-        /// <param name="offsetY">Y offset into the texture.</param>
-        /// <param name="offsetZ">Z offset into the texture.</param>
-        /// <param name="width">Width of the region to read.</param>
-        /// <param name="height">Height of the region to read.</param>
-        /// <param name="depth">Depth of the region to read.</param>
+        /// <param name="region">Region specifying the texture area to read from.
+        /// The bufferOffset, bufferRowLength, and bufferImageHeight fields are ignored.
+        /// Use layerCount=0 for single layer.</param>
         /// <returns>VE_SUCCESS on success.</returns>
         public static VEResult HostReadTextureRegion(VEDevice device, VETextureIndex texture, IntPtr dstData,
-            UIntPtr dataSize, UInt32 offsetX, UInt32 offsetY, UInt32 offsetZ,
-            UInt32 width, UInt32 height, UInt32 depth)
+            UIntPtr dataSize, ref VEBufferTextureCopyRegion region)
         {
-            return VulkEaseDll.veHostReadTextureRegion(device.native, texture.native, dstData, dataSize,
-                offsetX, offsetY, offsetZ, width, height, depth);
+            return VulkEaseDll.veHostReadTextureRegion(device.native, texture.native, dstData, dataSize, ref region);
         }
 
         /// <summary>
-        /// Write data to an entire texture using host transfer.
-        /// </summary>
-        /// <param name="device">Valid VulkEase device.</param>
-        /// <param name="texture">Texture to write to.</param>
-        /// <param name="srcData">Pointer to source data.</param>
-        /// <param name="dataSize">Size of the source data in bytes.</param>
-        /// <returns>VE_SUCCESS on success.</returns>
-        public static VEResult HostWriteTexture(VEDevice device, VETextureIndex texture, IntPtr srcData, UIntPtr dataSize)
-        {
-            return VulkEaseDll.veHostWriteTexture(device.native, texture.native, srcData, dataSize);
-        }
-
-        /// <summary>
-        /// Read data from an entire texture using host transfer.
+        /// Read data from the entire base mip level of a texture using host transfer.
         /// </summary>
         /// <param name="device">Valid VulkEase device.</param>
         /// <param name="texture">Texture to read from.</param>
         /// <param name="dstData">Pointer to destination buffer.</param>
         /// <param name="dataSize">Size of the destination buffer in bytes.</param>
         /// <returns>VE_SUCCESS on success.</returns>
-        public static VEResult HostReadTexture(VEDevice device, VETextureIndex texture, IntPtr dstData, UIntPtr dataSize)
+        public static VEResult HostReadTextureRegion(VEDevice device, VETextureIndex texture, IntPtr dstData,
+            UIntPtr dataSize)
         {
-            return VulkEaseDll.veHostReadTexture(device.native, texture.native, dstData, dataSize);
+            return VulkEaseDll.veHostReadTextureRegion(device.native, texture.native, dstData, dataSize, IntPtr.Zero);
         }
+
+        #region Sparse Texture Operations
+        /// <summary>
+        /// Get information about a sparse texture's page layout.
+        /// </summary>
+        /// <param name="device">Valid VulkEase device.</param>
+        /// <param name="texture">Sparse texture index.</param>
+        /// <param name="info">Receives the sparse texture information.</param>
+        /// <returns>VE_SUCCESS on success, or VE_ERROR_INVALID_PARAMETER if texture is not sparse.</returns>
+        public static VEResult GetSparseTextureInfo(VEDevice device, VETextureIndex texture, out VESparseTextureInfo info)
+        {
+            return VulkEaseDll.veGetSparseTextureInfo(device.native, texture.native, out info);
+        }
+
+        /// <summary>
+        /// Commit pages for a sparse texture.
+        /// Allocates memory and binds it to the specified page regions. This operation
+        /// is non-blocking; bindings are queued and flushed before command buffer submission
+        /// or explicitly via FlushSparseBindings().
+        /// </summary>
+        /// <param name="device">Valid VulkEase device.</param>
+        /// <param name="texture">Sparse texture index.</param>
+        /// <param name="regions">Array of page regions to commit.</param>
+        /// <returns>VE_SUCCESS on success, or VE_ERROR_OUT_OF_MEMORY if allocation failed.</returns>
+        public static VEResult CommitSparsePages(VEDevice device, VETextureIndex texture, VESparsePageRegion[] regions)
+        {
+            return VulkEaseDll.veCommitSparsePages(device.native, texture.native, regions, (uint)regions.Length);
+        }
+
+        /// <summary>
+        /// Uncommit pages for a sparse texture.
+        /// Unbinds memory from the specified page regions. Memory is retained for reuse.
+        /// </summary>
+        /// <param name="device">Valid VulkEase device.</param>
+        /// <param name="texture">Sparse texture index.</param>
+        /// <param name="regions">Array of page regions to uncommit.</param>
+        /// <returns>VE_SUCCESS on success.</returns>
+        public static VEResult UncommitSparsePages(VEDevice device, VETextureIndex texture, VESparsePageRegion[] regions)
+        {
+            return VulkEaseDll.veUncommitSparsePages(device.native, texture.native, regions, (uint)regions.Length);
+        }
+
+        /// <summary>
+        /// Flush all pending sparse bindings and wait for completion.
+        /// This function is BLOCKING. Required before HostWriteTextureRegion() on sparse textures.
+        /// Not required before SubmitCommandBuffer() (auto-flushed with semaphores).
+        /// </summary>
+        /// <param name="device">Valid VulkEase device.</param>
+        /// <returns>VE_SUCCESS on success.</returns>
+        public static VEResult FlushSparseBindings(VEDevice device)
+        {
+            return VulkEaseDll.veFlushSparseBindings(device.native);
+        }
+
+        /// <summary>
+        /// Check if a specific sparse page is committed.
+        /// </summary>
+        /// <param name="device">Valid VulkEase device.</param>
+        /// <param name="texture">Sparse texture index.</param>
+        /// <param name="mipLevel">Mip level of the page.</param>
+        /// <param name="arrayLayer">Array layer of the page.</param>
+        /// <param name="pageX">X index of the page.</param>
+        /// <param name="pageY">Y index of the page.</param>
+        /// <param name="pageZ">Z index of the page.</param>
+        /// <returns>True if committed, false if not committed or if texture is invalid/not sparse.</returns>
+        public static bool IsSparsePagesCommitted(VEDevice device, VETextureIndex texture,
+            uint mipLevel, uint arrayLayer, uint pageX, uint pageY, uint pageZ)
+        {
+            return VulkEaseDll.veIsSparsePagesCommitted(device.native, texture.native,
+                mipLevel, arrayLayer, pageX, pageY, pageZ);
+        }
+
+        /// <summary>
+        /// Get total number of committed pages for a sparse texture.
+        /// </summary>
+        /// <param name="device">Valid VulkEase device.</param>
+        /// <param name="texture">Sparse texture index.</param>
+        /// <returns>Number of committed pages, or 0 if texture is invalid/not sparse.</returns>
+        public static uint GetSparseCommittedPageCount(VEDevice device, VETextureIndex texture)
+        {
+            return VulkEaseDll.veGetSparseCommittedPageCount(device.native, texture.native);
+        }
+
+        /// <summary>
+        /// Get total number of addressable pages for a sparse texture.
+        /// Returns the total page count across all mip levels and array layers,
+        /// excluding the mip tail (which is auto-committed).
+        /// </summary>
+        /// <param name="device">Valid VulkEase device.</param>
+        /// <param name="texture">Sparse texture index.</param>
+        /// <returns>Total page count, or 0 if texture is invalid/not sparse.</returns>
+        public static uint GetSparseTotalPageCount(VEDevice device, VETextureIndex texture)
+        {
+            return VulkEaseDll.veGetSparseTotalPageCount(device.native, texture.native);
+        }
+        #endregion
 
         /// <summary>
         /// Generate mipmaps for a texture (command buffer version).

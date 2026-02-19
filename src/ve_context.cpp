@@ -474,6 +474,11 @@ static void queryDevice14Features(VkPhysicalDevice physicalDevice, VEDeviceFeatu
    features->fillModeNonSolid = features2.features.fillModeNonSolid;
    features->wideLines = features2.features.wideLines;
    features->depthClamp = features2.features.depthClamp;
+
+   // Sparse texture features
+   features->sparseBinding = features2.features.sparseBinding;
+   features->sparseResidencyImage2D = features2.features.sparseResidencyImage2D;
+   features->sparseResidencyImage3D = features2.features.sparseResidencyImage3D;
 }
 
 // =============================================================================
@@ -1102,6 +1107,17 @@ VEResult veCreateDevice(VEContext *context, VkPhysicalDevice preferredDevice,
       delete device;
       return bindlessResult;
    }
+
+   // Initialize sparse binding support (optional, may not be supported)
+   VEResult sparseResult = device->initializeSparseBindingSupport();
+   if (sparseResult != VE_SUCCESS && sparseResult != VE_ERROR_FEATURE_NOT_SUPPORTED)
+   {
+      device->cleanupBindlessDescriptors();
+      device->cleanupVma();
+      vkDestroyDevice(device->device, NULL);
+      delete device;
+      return sparseResult;
+   }
    if (device->textureDescriptorSetLayout == VK_NULL_HANDLE || device->samplerDescriptorSetLayout == VK_NULL_HANDLE ||
        device->textureDescriptorSet == VK_NULL_HANDLE || device->samplerDescriptorSet == VK_NULL_HANDLE)
    {
@@ -1221,6 +1237,7 @@ VEResult veDestroyDevice(VEDevice *device)
 
    veDestroyQueueLocks(internal);
 
+   internal->cleanupSparseBindingSupport();
    internal->cleanupBindlessDescriptors();
    internal->cleanupVma();
 

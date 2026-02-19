@@ -22,8 +22,8 @@ typedef struct {
 } Vertex;
 
 // Shader file paths (compiled SPIR-V)
-#define VERTEX_SHADER_PATH "examples/shaders/triangle.vert.spv"
-#define FRAGMENT_SHADER_PATH "examples/shaders/triangle.frag.spv"
+#define VERTEX_SHADER_PATH "data/01_triangle/shaders/triangle.vert.spv"
+#define FRAGMENT_SHADER_PATH "data/01_triangle/shaders/triangle.frag.spv"
 
 // Global state
 static VEContext* g_context = NULL;

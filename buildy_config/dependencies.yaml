@@ -1,0 +1,44 @@
+# External dependencies for game_engine project
+# 
+# Dependencies can be defined here or in separate files under dependencies/
+# See dependencies/glfw3.yaml for an example of a separate dependency file
+#
+# Platform filtering: Dependencies only have settings for platforms where they
+# apply. If a dependency has no section for the current platform, it provides
+# no include_dirs, libs, etc. (effectively a no-op for that platform).
+
+zlib:
+  description: "zlib compression library"
+  linux:
+    include_dirs: ["/usr/include"]
+    lib_dirs: ["/usr/lib/x86_64-linux-gnu"]
+    libs: ["z"]
+  linux-arm64:
+    lib_dirs: ["/usr/lib/aarch64-linux-gnu"]
+  macos:
+    pkg_config: zlib
+  windows:
+    root: "${THIRD_PARTY_ROOT}/zlib"
+    include_dirs: ["${root}/include"]
+    lib_dirs: ["${root}/lib"]
+    libs: ["zlibstatic"]
+
+pthread:
+  description: "POSIX threads (Linux only)"
+  linux:
+    libs: ["pthread"]
+
+dl:
+  description: "Dynamic linking library (Linux only)"
+  linux:
+    libs: ["dl"]
+
+winsock:
+  description: "Windows sockets (Windows only)"
+  windows:
+    libs: ["ws2_32"]
+
+cocoa:
+  description: "macOS Cocoa frameworks (macOS only)"
+  macos:
+    frameworks: ["Cocoa", "IOKit"]

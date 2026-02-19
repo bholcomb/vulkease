@@ -1,0 +1,30 @@
+# VulkEase Library
+# Builds libvulkease shared library
+
+project:
+  name: vulkease_lib
+  description: "VulkEase shared library"
+
+targets:
+  shared_libraries:
+    - name: vulkease
+      language: cpp
+      sources:
+        - "*.cpp"
+      include_dirs:
+        - "."
+        - "../external"
+      defines:
+        - VULKEASE_EXPORT
+      deps:
+        - vulkan
+      libs:
+        - linux:
+            - pthread
+            - dl
+            - m
+            - stdc++
+        - macos:
+            - pthread
+            - m
+            - c++

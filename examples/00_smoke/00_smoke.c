@@ -8,13 +8,25 @@
 
 #include "vulkease.h"
 
-#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+// MSVC C compiler doesn't fully support C11 atomics - use platform-specific alternatives
+#ifdef _MSC_VER
+#include <windows.h>
+static volatile LONG g_errorMessages = 0;
+#define ATOMIC_FETCH_ADD(ptr, val) InterlockedExchangeAdd((ptr), (val))
+#define ATOMIC_LOAD(ptr) InterlockedCompareExchange((ptr), 0, 0)
+#define ATOMIC_STORE(ptr, val) InterlockedExchange((ptr), (val))
+#else
+#include <stdatomic.h>
 static atomic_uint g_errorMessages = 0;
+#define ATOMIC_FETCH_ADD(ptr, val) atomic_fetch_add((ptr), (val))
+#define ATOMIC_LOAD(ptr) atomic_load((ptr))
+#define ATOMIC_STORE(ptr, val) atomic_store((ptr), (val))
+#endif
 
 static void onMessage(VEMessageSeverity severity, const char *message, void *userData)
 {
@@ -22,7 +34,7 @@ static void onMessage(VEMessageSeverity severity, const char *message, void *use
    if (!message)
       return;
    if (severity == VE_MESSAGE_SEVERITY_ERROR)
-      atomic_fetch_add(&g_errorMessages, 1);
+      ATOMIC_FETCH_ADD(&g_errorMessages, 1);
    fprintf(stderr, "[smoke] severity=%d msg=%s\n", (int)severity, message);
 }
 
@@ -78,19 +90,21 @@ int main(void)
    // Verify invalid-input paths emit ERROR messages now (sentinel return remains).
    (void)veGetBufferSize(NULL, addr);
    (void)veGetSwapchainSize(NULL);
-   if (atomic_load(&g_errorMessages) == 0)
+   if (ATOMIC_LOAD(&g_errorMessages) == 0)
    {
       fprintf(stderr, "[smoke] FAIL: expected at least one ERROR message from invalid input\n");
       return 1;
    }
    // Those errors were intentional; reset so we can detect unexpected errors later.
-   atomic_store(&g_errorMessages, 0);
+   ATOMIC_STORE(&g_errorMessages, 0);
    
 
    // Texture create + escape hatches + host copy
    VETextureIndex tex = VE_INVALID_TEXTURE_INDEX;
-   const uint32_t w = 4, h = 4;
-   uint8_t pixels[w * h * 4];
+#define SMOKE_TEX_W 4
+#define SMOKE_TEX_H 4
+   const uint32_t w = SMOKE_TEX_W, h = SMOKE_TEX_H;
+   uint8_t pixels[SMOKE_TEX_W * SMOKE_TEX_H * 4];
    for (uint32_t i = 0; i < w * h; ++i)
    {
       pixels[i * 4 + 0] = (uint8_t)(i);
@@ -126,14 +140,14 @@ int main(void)
    }
 
    // Host write/read (may be unsupported depending on device/driver).
-   result = veHostWriteTexture(device, tex, pixels, sizeof(pixels));
+   result = veHostWriteTextureRegion(device, tex, pixels, sizeof(pixels), NULL);
    if (result == VE_SUCCESS)
    {
       uint8_t readback[sizeof(pixels)];
       memset(readback, 0, sizeof(readback));
-      result = veHostReadTexture(device, tex, readback, sizeof(readback));
+      result = veHostReadTextureRegion(device, tex, readback, sizeof(readback), NULL);
       if (result != VE_SUCCESS)
-         return fail("veHostReadTexture", result);
+         return fail("veHostReadTextureRegion", result);
       if (memcmp(pixels, readback, sizeof(pixels)) != 0)
       {
          fprintf(stderr, "[smoke] FAIL: host readback data mismatch\n");
@@ -142,7 +156,7 @@ int main(void)
    }
    else if (result != VE_ERROR_FEATURE_NOT_SUPPORTED && result != VE_ERROR_UNSUPPORTED)
    {
-      return fail("veHostWriteTexture", result);
+      return fail("veHostWriteTextureRegion", result);
    }
 
    // Barrier + submission
@@ -186,7 +200,7 @@ int main(void)
    (void)veDestroyDevice(device);
    (void)veDestroyContext(context);
 
-   if (atomic_load(&g_errorMessages) > 0)
+   if (ATOMIC_LOAD(&g_errorMessages) > 0)
    {
       fprintf(stderr, "[smoke] FAIL: expected no ERROR messages\n");
       return 1;
