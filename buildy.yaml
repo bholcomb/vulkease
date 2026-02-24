@@ -55,16 +55,31 @@ environment:
 
 staging:
   name: vulkease_dist
-  destination: "bin"
+  destination: "dist"
   use_symlinks: false
 
   contents:
     # Main library for distribution
-    - folder: "."
-      targets:
-        - vulkease
+    - folder: "bin"
+      files:
+        - linux:
+            - "${out_dir}/bin/libvulkease.so"
+        - windows:
+            - "${out_dir}/bin/vulkease.dll"
+        - macos:
+            - "${out_dir}/bin/libvulkease.dylib"
+
+    - folder: "lib"
+      files:
+        - windows:
+            - "${out_dir}/lib/vulkease.lib"
     
     # Public headers for library users
     - folder: "include"
       files:
         - "src/vulkease.h"
+
+    # docs
+    - folder: "docs"
+      files:
+        - "README.md"

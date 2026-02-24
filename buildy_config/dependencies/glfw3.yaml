@@ -17,7 +17,7 @@ glfw3:
       override: glfw3_build.yaml
     # Headers are in the fetched source, library is in build output
     include_dirs: ["${dep_dir}/include"]
-    lib_dirs: ["${workspace_root}/build/linux-x86_64-debug/lib"]
+    lib_dirs: ["${dep_dir}/build/${platform}-${arch}-${config}/lib"]
     libs: ["glfw3"]
     defines: ["GLFW_EXPOSE_NATIVE_X11"]
   
@@ -28,7 +28,7 @@ glfw3:
       override: glfw3_build.yaml
     # Headers are in the fetched source, library is in build output
     include_dirs: ["${dep_dir}/include"]
-    lib_dirs: ["${workspace_root}/build/windows-x86_64-debug/lib"]
+    lib_dirs: ["${dep_dir}/build/${platform}-${arch}-${config}/lib"]
     libs: ["glfw3", "user32.lib", "gdi32.lib", "shell32.lib"]
     defines: ["GLFW_EXPOSE_NATIVE_WIN32"]
   
