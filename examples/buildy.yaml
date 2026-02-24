@@ -160,6 +160,7 @@ staging:
         - 02_compute_particles
         - 03_cube
         - 04_asteroid
+        - vulkease
 
     # Shaders and data organized per-example
     - folder: data

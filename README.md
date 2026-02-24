@@ -12,10 +12,4 @@ A few of the design choices:
 
 This is a work in progress.  The examples should build and run without validation errors, but don't exercise every feature yet.  It still has a bit of AI slop that needs to be cleaned up.
 
-Upcoming features:
-  - Thread safety.  Command buffer and resource creation, submission, and destruction should be available to do from any thread
-  - Performance.  There are some less than optimal implementations internally that can be improved
-  - Better error reporting.
-  - Better documentation  This is AI slop.  It needs to be regenerated and then reviewed.
-  - More examples.  the few we have are nice, but we need more to show how to use all the features
-  
+ 
