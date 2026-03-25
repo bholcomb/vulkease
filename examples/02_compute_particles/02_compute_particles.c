@@ -5,8 +5,7 @@
 
 #include "vulkease.h"
 #include <GLFW/glfw3.h>
-#ifdef __linux__
-#define GLFW_EXPOSE_NATIVE_X11
+#if defined(__linux__) || defined(_WIN32)
 #include <GLFW/glfw3native.h>
 #endif
 #include <stdio.h>

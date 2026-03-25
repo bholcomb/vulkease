@@ -16,14 +16,14 @@ project:
 environment:
   compile:
     c_standard: "c11"
-    warnings: ["-Wall"]
+    warnings: default
   
   configurations:
     debug:
-      optimization: "-O0"
-      flags: ["-g"]
+      optimization: none
+      symbols: true
     release:
-      optimization: "-O2"
+      optimization: speed
 
 targets:
   static_libraries:
