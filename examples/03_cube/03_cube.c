@@ -10,13 +10,8 @@
 #include <vulkease.h>
 #include <GLFW/glfw3.h>
 
-// Platform-specific includes for GLFW window handle
-#ifdef _WIN32
-    #define GLFW_EXPOSE_NATIVE_WIN32
-    #include <GLFW/glfw3native.h>
-#elif defined(__linux__)
-    #define GLFW_EXPOSE_NATIVE_X11
-    #include <GLFW/glfw3native.h>
+#if defined(_WIN32) || defined(__linux__)
+#include <GLFW/glfw3native.h>
 #endif
 
 #include <stdio.h>
