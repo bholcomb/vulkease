@@ -112,11 +112,16 @@ struct VEDeviceFeatures
    bool descriptorIndexing;
    bool scalarBlockLayout; // Mandatory in 1.4
    bool updateAfterBind;
+   bool updateUnusedWhilePending;
+   bool runtimeDescriptorArray;
+   bool sampledImageNonUniformIndexing;
    bool shaderInt8;  // Mandatory in 1.4
    bool shaderInt16; // Mandatory in 1.4
+   bool shaderInt64;
 
    // Core Vulkan 1.3 features (mandatory)
    bool dynamicRendering;
+   bool synchronization2;
 
    // Core Vulkan 1.4 features (new mandatory features)
    bool pushDescriptor;            // Mandatory in 1.4 - replaces VK_KHR_push_descriptor
@@ -145,9 +150,9 @@ struct VEDeviceFeatures
 
 struct VEDeviceQueueLocks
 {
-   std::mutex graphics;
-   std::mutex compute;
-   std::mutex transfer;
+   // A queue handle requires external synchronization. Queue families can
+   // alias the same handle, so use one device-wide submission mutex.
+   std::mutex queue;
 
    [[nodiscard]] std::mutex &graphicsMutex() noexcept;
    [[nodiscard]] std::mutex &computeMutex() noexcept;
@@ -717,6 +722,8 @@ void veFreeCommandBuffer(VECommandBufferInternal *cmd);
 void veInitializeQueueLocks(VEDeviceInternal *device);
 void veDestroyQueueLocks(VEDeviceInternal *device);
 void veNotifyCommandBufferFenceSignaled(VEDeviceInternal *device, VkFence fence);
+bool veQueryBindlessDescriptorCapacities(VkPhysicalDevice physicalDevice, uint32_t *textureCapacity,
+                                         uint32_t *samplerCapacity);
 
 // Shader hot reload internals
 void veShutdownShaderHotReload(VEDeviceInternal *device);
@@ -747,10 +754,6 @@ struct VEFuncs
    PFN_vkCmdSetAlphaToCoverageEnableEXT vkCmdSetAlphaToCoverageEnableEXT;
    PFN_vkCmdSetAlphaToOneEnableEXT vkCmdSetAlphaToOneEnableEXT;
    PFN_vkCmdSetPatchControlPointsEXT vkCmdSetPatchControlPointsEXT;
-   PFN_vkCmdSetConservativeRasterizationModeEXT vkCmdSetConservativeRasterizationModeEXT;
-   PFN_vkCmdSetLineRasterizationModeEXT vkCmdSetLineRasterizationModeEXT;
-   PFN_vkCmdSetProvokingVertexModeEXT vkCmdSetProvokingVertexModeEXT;
-
    // extended dynamic state 2 logic op
    PFN_vkCmdSetLogicOpEnableEXT vkCmdSetLogicOpEnableEXT;
    PFN_vkCmdSetLogicOpEXT vkCmdSetLogicOpEXT;
@@ -762,10 +765,10 @@ struct VEFuncs
    PFN_vkCmdPushDescriptorSet vkCmdPushDescriptorSet;
    PFN_vkCmdPushDescriptorSetWithTemplate vkCmdPushDescriptorSetWithTemplate;
 
-   // Host Image Copy (optional extension)
-   PFN_vkCopyMemoryToImageEXT vkCopyMemoryToImageEXT;
-   PFN_vkCopyImageToMemoryEXT vkCopyImageToMemoryEXT;
-   PFN_vkCopyImageToImageEXT vkCopyImageToImageEXT;
+   // Host image copy (core Vulkan 1.4, optional feature)
+   PFN_vkCopyMemoryToImage vkCopyMemoryToImage;
+   PFN_vkCopyImageToMemory vkCopyImageToMemory;
+   PFN_vkCopyImageToImage vkCopyImageToImage;
 
    // Mesh Shaders (optional extension - VK_EXT_mesh_shader)
    PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT;

@@ -172,7 +172,10 @@ VkBuffer VEDeviceInternal::getVkBufferFromAddress(VEBufferAddress address) const
 VECommandBufferInternal *VEDeviceInternal::beginTransferCommandBuffer()
 {
    VECommandBufferInternal *cmd = nullptr;
-   VECommandPool *pool = threadCommandPools.acquire(this, VECommandPoolKind::Transfer);
+   // Buffers use exclusive sharing. Record uploads for the graphics family so
+   // the destination can be consumed there without a queue-family ownership
+   // transfer.
+   VECommandPool *pool = threadCommandPools.acquire(this, VECommandPoolKind::Graphics);
    if (!pool)
    {
       return nullptr;
@@ -276,13 +279,6 @@ VEResult VEDeviceInternal::submitTransferCommandBuffer(VECommandBufferInternal *
       cmd->inFlightFence = fence;
    }
 
-   result = vkResetFences(device, 1, &fence);
-   if (result != VK_SUCCESS)
-   {
-      veSetError("Failed to reset transfer fence (VkResult: %d)", result);
-      return VE_ERROR_OUT_OF_MEMORY;
-   }
-
    VEDeviceQueueLocks *locks = queueLocks.get();
    if (!locks)
    {
@@ -295,19 +291,30 @@ VEResult VEDeviceInternal::submitTransferCommandBuffer(VECommandBufferInternal *
    submitInfo.commandBufferCount = 1;
    submitInfo.pCommandBuffers = &cmd->commandBuffer;
 
-   // Track fence even on synchronous submissions so idle checks see pending work.
-   cmd->markFenceActive(fence);
-
    {
-      std::lock_guard<std::mutex> lock(locks->transferMutex());
-      result = vkQueueSubmit(transferQueue, 1, &submitInfo, fence);
+      std::lock_guard<std::mutex> lock(locks->graphicsMutex());
+      result = vkResetFences(device, 1, &fence);
+      if (result != VK_SUCCESS)
+      {
+         veSetError("Failed to reset transfer fence (VkResult: %d)", result);
+         return VE_ERROR_UNKNOWN;
+      }
+      result = vkQueueSubmit(graphicsQueue, 1, &submitInfo, fence);
    }
 
    if (result != VK_SUCCESS)
    {
+      vkDestroyFence(device, cmd->inFlightFence, NULL);
+      cmd->inFlightFence = VK_NULL_HANDLE;
+      VkFenceCreateInfo fenceInfo{};
+      fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+      fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+      vkCreateFence(device, &fenceInfo, NULL, &cmd->inFlightFence);
       veSetError("Failed to submit command buffer (VkResult: %d)", result);
-      return VE_ERROR_OUT_OF_MEMORY;
+      return VE_ERROR_UNKNOWN;
    }
+
+   cmd->markFenceActive(fence);
 
    if (waitForCompletion)
    {
@@ -418,6 +425,12 @@ extern "C" VEResult veCreateBuffer(VEDevice *device, const VEBufferDesc *desc, V
    addressInfo.buffer = buffer->buffer;
 
    VEBufferAddress deviceAddress = vkGetBufferDeviceAddress(deviceInternal->device, &addressInfo);
+   if (deviceAddress == VE_INVALID_ADDRESS)
+   {
+      veSetError("Failed to obtain a non-zero buffer device address");
+      vmaDestroyBuffer(deviceInternal->allocator, buffer->buffer, buffer->allocation);
+      return VE_ERROR_UNKNOWN;
+   }
    buffer->deviceAddress = deviceAddress;
 
    if (deviceInternal->context->validationEnabled)
@@ -446,12 +459,18 @@ extern "C" VEResult veCreateBuffer(VEDevice *device, const VEBufferDesc *desc, V
       VEResult uploadResult = veUpdateBuffer(device, deviceAddress, desc->initialData, desc->initialDataSize, 0);
       if (uploadResult != VE_SUCCESS)
       {
-         // Fix: Remove from map before destroying to prevent dangling entry
+         std::unique_ptr<VEBufferInternal> failedBuffer;
          {
             std::lock_guard<std::mutex> lock(*deviceInternal->bufferMapMutex);
-            bufferMap->erase(deviceAddress);
+            auto it = bufferMap->find(deviceAddress);
+            if (it != bufferMap->end())
+            {
+               failedBuffer = std::move(it->second);
+               bufferMap->erase(it);
+            }
          }
-         vmaDestroyBuffer(deviceInternal->allocator, bufferPtr->buffer, bufferPtr->allocation);
+         if (failedBuffer)
+            vmaDestroyBuffer(deviceInternal->allocator, failedBuffer->buffer, failedBuffer->allocation);
          return uploadResult;
       }
    }
@@ -658,7 +677,7 @@ static VEResult veUpdateBufferWithStaging(VEDeviceInternal *device, VEBufferInte
       memoryBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
 
       // Determine destination stage based on buffer usage
-      memoryBarrier.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+      memoryBarrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
       memoryBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
 
       VkDependencyInfo dependencyInfo = {};

@@ -77,6 +77,12 @@ void veBindComputeShader(VECommandBuffer *cmd, VEShader *shader)
    if (internal->device)
    {
       internal->device->frameStats.pipelineBinds += 1;
+
+      VkDescriptorSet descriptorSets[2] = {internal->device->textureDescriptorSet,
+                                           internal->device->samplerDescriptorSet};
+      vkCmdBindDescriptorSets(internal->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                              internal->device->globalComputePipelineLayout, 0, 2, descriptorSets, 0, NULL);
+      internal->device->frameStats.descriptorBinds += 1;
    }
    veFuncs.vkCmdBindShadersEXT(internal->commandBuffer, 1, &stageBit, &shaderInternal->shaderObject);
 }

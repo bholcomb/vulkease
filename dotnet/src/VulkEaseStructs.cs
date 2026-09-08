@@ -307,7 +307,7 @@ namespace VulkEase
     {
         public VkFilter minFilter;
         public VkFilter magFilter;
-        public VkFilter mipmapFilter;
+        public VkSamplerMipmapMode mipmapFilter;
         public VkSamplerAddressMode addressModeU;
         public VkSamplerAddressMode addressModeV;
         public VkSamplerAddressMode addressModeW;

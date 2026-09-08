@@ -5,6 +5,7 @@
 
 #include "ve_internal.h"
 
+#include <cmath>
 #include <cstring>
 
 // =============================================================================
@@ -87,6 +88,22 @@ VEResult veCreateSampler(VEDevice *device, const VESamplerDesc *desc, VESamplerI
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
 
+   if (!std::isfinite(desc->maxAnisotropy) || !std::isfinite(desc->minLod) || !std::isfinite(desc->maxLod) ||
+       desc->maxAnisotropy < 1.0f || desc->minLod > desc->maxLod)
+   {
+      veSetError("Sampler anisotropy and LOD values must be finite, with minLod <= maxLod");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   if (desc->maxAnisotropy > 1.0f &&
+       (!deviceInternal->features.samplerAnisotropy ||
+        desc->maxAnisotropy > deviceInternal->deviceProperties.limits.maxSamplerAnisotropy))
+   {
+      veSetError("Requested sampler anisotropy %.2f is unsupported (device maximum %.2f)", desc->maxAnisotropy,
+                 deviceInternal->deviceProperties.limits.maxSamplerAnisotropy);
+      return VE_ERROR_FEATURE_NOT_SUPPORTED;
+   }
+
    uint32_t index = deviceInternal->allocateSamplerIndex();
    if (index == VE_INVALID_SAMPLER_INDEX)
    {
@@ -118,7 +135,7 @@ VEResult veCreateSampler(VEDevice *device, const VESamplerDesc *desc, VESamplerI
    samplerInfo.addressModeW = desc->addressModeW;
    samplerInfo.mipLodBias = 0.0f;
    samplerInfo.anisotropyEnable = desc->maxAnisotropy > 1.0f ? VK_TRUE : VK_FALSE;
-   samplerInfo.maxAnisotropy = desc->maxAnisotropy;
+   samplerInfo.maxAnisotropy = desc->maxAnisotropy > 1.0f ? desc->maxAnisotropy : 1.0f;
    samplerInfo.compareEnable = desc->compareEnable ? VK_TRUE : VK_FALSE;
    samplerInfo.compareOp = desc->compareOp;
    samplerInfo.minLod = desc->minLod;

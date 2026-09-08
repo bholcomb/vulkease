@@ -2,23 +2,23 @@
 
 #include <new>
 
-std::mutex &VEDeviceQueueLocks::graphicsMutex() noexcept { return graphics; }
+std::mutex &VEDeviceQueueLocks::graphicsMutex() noexcept { return queue; }
 
-std::mutex &VEDeviceQueueLocks::computeMutex() noexcept { return compute; }
+std::mutex &VEDeviceQueueLocks::computeMutex() noexcept { return queue; }
 
-std::mutex &VEDeviceQueueLocks::transferMutex() noexcept { return transfer; }
+std::mutex &VEDeviceQueueLocks::transferMutex() noexcept { return queue; }
 
-void VEDeviceQueueLocks::lockGraphics() { graphics.lock(); }
+void VEDeviceQueueLocks::lockGraphics() { queue.lock(); }
 
-void VEDeviceQueueLocks::unlockGraphics() { graphics.unlock(); }
+void VEDeviceQueueLocks::unlockGraphics() { queue.unlock(); }
 
-void VEDeviceQueueLocks::lockCompute() { compute.lock(); }
+void VEDeviceQueueLocks::lockCompute() { queue.lock(); }
 
-void VEDeviceQueueLocks::unlockCompute() { compute.unlock(); }
+void VEDeviceQueueLocks::unlockCompute() { queue.unlock(); }
 
-void VEDeviceQueueLocks::lockTransfer() { transfer.lock(); }
+void VEDeviceQueueLocks::lockTransfer() { queue.lock(); }
 
-void VEDeviceQueueLocks::unlockTransfer() { transfer.unlock(); }
+void VEDeviceQueueLocks::unlockTransfer() { queue.unlock(); }
 
 static VEDeviceQueueLocks *ensureQueueLocks(VEDeviceInternal *device)
 {

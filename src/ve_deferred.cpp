@@ -96,6 +96,12 @@ void VEDeferredDeletionQueue::processPending(VEDeviceInternal *device)
       }
    }
 
+   // A frame delay alone does not prove completion for compute, transfer, or
+   // non-swapchain submissions.  Until retirements are timeline-backed, wait
+   // before releasing any batch that has reached the delay threshold.
+   if (!toDelete.empty())
+      vkDeviceWaitIdle(device->device);
+
    // Delete resources outside the lock
    for (const auto &deletion : toDelete)
    {
