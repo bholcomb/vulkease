@@ -1,5 +1,7 @@
 #include "ve_internal.h"
 
+#include <limits>
+
 // Helper function to get format block size in bytes
 static uint32_t getFormatBlockSize(VkFormat format)
 {
@@ -196,6 +198,21 @@ static uint32_t getMipDimension(uint32_t baseDim, uint32_t mipLevel)
    return dim > 0 ? dim : 1;
 }
 
+static bool calculateCopySize(uint32_t width, uint32_t height, uint32_t depth, uint32_t layerCount,
+                              uint32_t formatSize, size_t *outSize)
+{
+   size_t size = formatSize;
+   const uint32_t factors[] = {width, height, depth, layerCount};
+   for (uint32_t factor : factors)
+   {
+      if (factor == 0 || size > std::numeric_limits<size_t>::max() / factor)
+         return false;
+      size *= factor;
+   }
+   *outSize = size;
+   return true;
+}
+
 /**
  * Copy data from host memory to texture using VK_EXT_host_image_copy
  */
@@ -235,6 +252,12 @@ VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETextureIndex 
    uint32_t arrayLayer = region ? region->arrayLayer : 0;
    uint32_t layerCount = region ? (region->layerCount > 0 ? region->layerCount : 1) : 1;
 
+   if (mipLevel >= texture->mipLevels)
+   {
+      veSetError("Mip level %u exceeds texture mip levels (%u)", mipLevel, texture->mipLevels);
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    // Calculate mip-adjusted texture dimensions
    uint32_t mipWidth = getMipDimension(texture->width, mipLevel);
    uint32_t mipHeight = getMipDimension(texture->height, mipLevel);
@@ -247,31 +270,16 @@ VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETextureIndex 
    uint32_t height = region ? region->height : mipHeight;
    uint32_t depth = region ? region->depth : mipDepth;
 
-   // Validate mip level
-   if (mipLevel >= texture->mipLevels)
-   {
-      veSetError("Mip level %u exceeds texture mip levels (%u)", mipLevel, texture->mipLevels);
-      return VE_ERROR_INVALID_PARAMETER;
-   }
-
    // Validate array layer range
-   if (arrayLayer + layerCount > texture->arrayLayers)
+   if (arrayLayer >= texture->arrayLayers || layerCount > texture->arrayLayers - arrayLayer)
    {
-      veSetError("Array layer range [%u, %u) exceeds texture array layers (%u)", arrayLayer, arrayLayer + layerCount,
-                 texture->arrayLayers);
+      veSetError("Array layer range exceeds texture array layers (%u)", texture->arrayLayers);
       return VE_ERROR_INVALID_PARAMETER;
-   }
-
-   // Ensure the image is in GENERAL layout as required by VK_EXT_host_image_copy.
-   result = ensureTextureInGeneralLayout(device, textureIndex, texture);
-   if (result != VE_SUCCESS)
-   {
-      veSetError("Failed to transition texture to GENERAL layout for host write");
-      return result;
    }
 
    // Validate copy region bounds against mip dimensions
-   if (offsetX + width > mipWidth || offsetY + height > mipHeight || offsetZ + depth > mipDepth)
+   if (width == 0 || height == 0 || depth == 0 || offsetX >= mipWidth || width > mipWidth - offsetX ||
+       offsetY >= mipHeight || height > mipHeight - offsetY || offsetZ >= mipDepth || depth > mipDepth - offsetZ)
    {
       veSetError("Copy region exceeds texture bounds at mip level %u", mipLevel);
       return VE_ERROR_INVALID_PARAMETER;
@@ -279,16 +287,28 @@ VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETextureIndex 
 
    // Calculate expected data size
    uint32_t formatSize = getFormatBlockSize(texture->format);
-   size_t expectedSize = (size_t)width * height * depth * layerCount * formatSize;
+   size_t expectedSize = 0;
+   if (!calculateCopySize(width, height, depth, layerCount, formatSize, &expectedSize))
+   {
+      veSetError("Host copy dimensions overflow the addressable data size");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
    if (dataSize < expectedSize)
    {
       veSetError("Source data size (%zu bytes) is less than required (%zu bytes)", dataSize, expectedSize);
       return VE_ERROR_INVALID_PARAMETER;
    }
 
+   result = ensureTextureInGeneralLayout(device, textureIndex, texture);
+   if (result != VE_SUCCESS)
+   {
+      veSetError("Failed to transition texture to GENERAL layout for host write");
+      return result;
+   }
+
    // Prepare copy region
-   VkMemoryToImageCopyEXT copyRegion{};
-   copyRegion.sType = VK_STRUCTURE_TYPE_MEMORY_TO_IMAGE_COPY_EXT;
+   VkMemoryToImageCopy copyRegion{};
+   copyRegion.sType = VK_STRUCTURE_TYPE_MEMORY_TO_IMAGE_COPY;
    copyRegion.pHostPointer = srcData;
    copyRegion.memoryRowLength = width;    // Tightly packed
    copyRegion.memoryImageHeight = height; // Tightly packed
@@ -304,8 +324,8 @@ VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETextureIndex 
    copyRegion.imageExtent.depth = depth;
 
    // Setup copy info
-   VkCopyMemoryToImageInfoEXT copyInfo{};
-   copyInfo.sType = VK_STRUCTURE_TYPE_COPY_MEMORY_TO_IMAGE_INFO_EXT;
+   VkCopyMemoryToImageInfo copyInfo{};
+   copyInfo.sType = VK_STRUCTURE_TYPE_COPY_MEMORY_TO_IMAGE_INFO;
    copyInfo.flags = 0;
    copyInfo.dstImage = texture->image;
    copyInfo.dstImageLayout = VK_IMAGE_LAYOUT_GENERAL; // Host copy requires GENERAL layout
@@ -313,7 +333,7 @@ VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETextureIndex 
    copyInfo.pRegions = &copyRegion;
 
    // Perform the host copy
-   VkResult vkResult = veFuncs.vkCopyMemoryToImageEXT(deviceInternal->device, &copyInfo);
+   VkResult vkResult = veFuncs.vkCopyMemoryToImage(deviceInternal->device, &copyInfo);
    if (vkResult != VK_SUCCESS)
    {
       veSetError("Failed to copy memory to image (VkResult: %d)", vkResult);
@@ -362,6 +382,12 @@ VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETextureIndex t
    uint32_t arrayLayer = region ? region->arrayLayer : 0;
    uint32_t layerCount = region ? (region->layerCount > 0 ? region->layerCount : 1) : 1;
 
+   if (mipLevel >= texture->mipLevels)
+   {
+      veSetError("Mip level %u exceeds texture mip levels (%u)", mipLevel, texture->mipLevels);
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    // Calculate mip-adjusted texture dimensions
    uint32_t mipWidth = getMipDimension(texture->width, mipLevel);
    uint32_t mipHeight = getMipDimension(texture->height, mipLevel);
@@ -374,31 +400,16 @@ VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETextureIndex t
    uint32_t height = region ? region->height : mipHeight;
    uint32_t depth = region ? region->depth : mipDepth;
 
-   // Validate mip level
-   if (mipLevel >= texture->mipLevels)
-   {
-      veSetError("Mip level %u exceeds texture mip levels (%u)", mipLevel, texture->mipLevels);
-      return VE_ERROR_INVALID_PARAMETER;
-   }
-
    // Validate array layer range
-   if (arrayLayer + layerCount > texture->arrayLayers)
+   if (arrayLayer >= texture->arrayLayers || layerCount > texture->arrayLayers - arrayLayer)
    {
-      veSetError("Array layer range [%u, %u) exceeds texture array layers (%u)", arrayLayer, arrayLayer + layerCount,
-                 texture->arrayLayers);
+      veSetError("Array layer range exceeds texture array layers (%u)", texture->arrayLayers);
       return VE_ERROR_INVALID_PARAMETER;
-   }
-
-   // Ensure the image is in GENERAL layout as required by VK_EXT_host_image_copy.
-   result = ensureTextureInGeneralLayout(device, textureIndex, texture);
-   if (result != VE_SUCCESS)
-   {
-      veSetError("Failed to transition texture to GENERAL layout for host read");
-      return result;
    }
 
    // Validate copy region bounds against mip dimensions
-   if (offsetX + width > mipWidth || offsetY + height > mipHeight || offsetZ + depth > mipDepth)
+   if (width == 0 || height == 0 || depth == 0 || offsetX >= mipWidth || width > mipWidth - offsetX ||
+       offsetY >= mipHeight || height > mipHeight - offsetY || offsetZ >= mipDepth || depth > mipDepth - offsetZ)
    {
       veSetError("Copy region exceeds texture bounds at mip level %u", mipLevel);
       return VE_ERROR_INVALID_PARAMETER;
@@ -406,16 +417,28 @@ VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETextureIndex t
 
    // Calculate expected data size
    uint32_t formatSize = getFormatBlockSize(texture->format);
-   size_t expectedSize = (size_t)width * height * depth * layerCount * formatSize;
+   size_t expectedSize = 0;
+   if (!calculateCopySize(width, height, depth, layerCount, formatSize, &expectedSize))
+   {
+      veSetError("Host copy dimensions overflow the addressable data size");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
    if (dataSize < expectedSize)
    {
       veSetError("Destination buffer size (%zu bytes) is less than required (%zu bytes)", dataSize, expectedSize);
       return VE_ERROR_INVALID_PARAMETER;
    }
 
+   result = ensureTextureInGeneralLayout(device, textureIndex, texture);
+   if (result != VE_SUCCESS)
+   {
+      veSetError("Failed to transition texture to GENERAL layout for host read");
+      return result;
+   }
+
    // Prepare copy region
-   VkImageToMemoryCopyEXT copyRegion{};
-   copyRegion.sType = VK_STRUCTURE_TYPE_IMAGE_TO_MEMORY_COPY_EXT;
+   VkImageToMemoryCopy copyRegion{};
+   copyRegion.sType = VK_STRUCTURE_TYPE_IMAGE_TO_MEMORY_COPY;
    copyRegion.pHostPointer = dstData;
    copyRegion.memoryRowLength = width;    // Tightly packed
    copyRegion.memoryImageHeight = height; // Tightly packed
@@ -431,8 +454,8 @@ VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETextureIndex t
    copyRegion.imageExtent.depth = depth;
 
    // Setup copy info
-   VkCopyImageToMemoryInfoEXT copyInfo{};
-   copyInfo.sType = VK_STRUCTURE_TYPE_COPY_IMAGE_TO_MEMORY_INFO_EXT;
+   VkCopyImageToMemoryInfo copyInfo{};
+   copyInfo.sType = VK_STRUCTURE_TYPE_COPY_IMAGE_TO_MEMORY_INFO;
    copyInfo.flags = 0;
    copyInfo.srcImage = texture->image;
    copyInfo.srcImageLayout = VK_IMAGE_LAYOUT_GENERAL; // Host copy requires GENERAL layout
@@ -440,7 +463,7 @@ VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETextureIndex t
    copyInfo.pRegions = &copyRegion;
 
    // Perform the host copy
-   VkResult vkResult = veFuncs.vkCopyImageToMemoryEXT(deviceInternal->device, &copyInfo);
+   VkResult vkResult = veFuncs.vkCopyImageToMemory(deviceInternal->device, &copyInfo);
    if (vkResult != VK_SUCCESS)
    {
       veSetError("Failed to copy image to memory (VkResult: %d)", vkResult);

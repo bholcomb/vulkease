@@ -316,6 +316,13 @@ VEResult veBeginCommandBuffer(VEDevice *device, VECommandBuffer **outCmd)
    cmd->isRecording = true;
    cmd->isOneTime = true;
 
+   VkDescriptorSet descriptorSets[2] = {deviceInternal->textureDescriptorSet, deviceInternal->samplerDescriptorSet};
+   vkCmdBindDescriptorSets(cmd->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                           deviceInternal->globalGraphicsPipelineLayout, 0, 2, descriptorSets, 0, NULL);
+   vkCmdBindDescriptorSets(cmd->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                           deviceInternal->globalComputePipelineLayout, 0, 2, descriptorSets, 0, NULL);
+   deviceInternal->frameStats.descriptorBinds += 2;
+
    *outCmd = (VECommandBuffer *)cmd;
    return VE_SUCCESS;
 }
@@ -410,26 +417,19 @@ VEResult veSubmitCommandBuffer(VECommandBuffer *cmd, const VESubmitInfo *submitI
       }
    }
 
-   if (fence != VK_NULL_HANDLE)
-   {
-      VkResult fenceReset = vkResetFences(internal->device->device, 1, &fence);
-      if (fenceReset != VK_SUCCESS)
-      {
-         veSetError("Failed to reset command buffer fence (VkResult: %d)", fenceReset);
-         return VE_ERROR_OUT_OF_MEMORY;
-      }
-   }
-
-   // Auto-flush any pending sparse bindings (non-blocking, uses semaphore)
+   // Flush sparse bindings before command submission. Keep this blocking until
+   // sparse completion is represented by per-submit timeline values; reusing
+   // one binary semaphore across concurrent submissions is not safe.
    bool hasPendingSparseBinds = internal->device->hasPendingSparseBinds();
    if (hasPendingSparseBinds)
    {
-      VEResult sparseFlushResult = internal->device->flushPendingSparseBinds(false);
+      VEResult sparseFlushResult = internal->device->flushPendingSparseBinds(true);
       if (sparseFlushResult != VE_SUCCESS)
       {
          veSetError("Failed to flush pending sparse bindings");
          return sparseFlushResult;
       }
+      hasPendingSparseBinds = false;
    }
 
    std::vector<VkSemaphoreSubmitInfo> waitInfos;
@@ -515,13 +515,34 @@ VEResult veSubmitCommandBuffer(VECommandBuffer *cmd, const VESubmitInfo *submitI
    VkResult submitResult = VK_SUCCESS;
    {
       std::lock_guard<std::mutex> lock(locks->graphicsMutex());
+      if (fence != VK_NULL_HANDLE)
+      {
+         VkResult fenceReset = vkResetFences(internal->device->device, 1, &fence);
+         if (fenceReset != VK_SUCCESS)
+         {
+            veSetError("Failed to reset command buffer fence (VkResult: %d)", fenceReset);
+            return VE_ERROR_UNKNOWN;
+         }
+      }
       submitResult = vkQueueSubmit2(internal->device->graphicsQueue, 1, &submitInfo2, fence);
    }
 
    if (submitResult != VK_SUCCESS)
    {
+      // A failed submit never signals its fence. Replace an internally-owned
+      // fence with a signaled one so this command buffer cannot hang forever
+      // when it is next reclaimed.
+      if (usingInternalFence)
+      {
+         vkDestroyFence(internal->device->device, internal->inFlightFence, NULL);
+         internal->inFlightFence = VK_NULL_HANDLE;
+         VkFenceCreateInfo fenceInfo{};
+         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+         fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+         vkCreateFence(internal->device->device, &fenceInfo, NULL, &internal->inFlightFence);
+      }
       veSetError("Failed to submit command buffer (VkResult: %d)", submitResult);
-      return VE_ERROR_OUT_OF_MEMORY;
+      return VE_ERROR_UNKNOWN;
    }
 
    if (info.waitForCompletion && fence != VK_NULL_HANDLE)

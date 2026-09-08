@@ -94,7 +94,6 @@ VETextureIndex VESwapchainInternal::acquireNextImage()
       return VE_INVALID_TEXTURE_INDEX;
    }
 
-   vkResetFences(device->device, 1, &inFlightFences[currentFrame]);
    currentImageIndex = imageIndex;
 
    return textureIndices[imageIndex];
@@ -114,6 +113,12 @@ VEResult VESwapchainInternal::present(VECommandBufferInternal &cmd, bool release
       return VE_ERROR_INVALID_PARAMETER;
    }
 
+   if (cmd.device != device)
+   {
+      veSetError("Command buffer belongs to a different device");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
    if (cmd.isRecording)
    {
       VkResult result = vkEndCommandBuffer(cmd.commandBuffer);
@@ -126,7 +131,8 @@ VEResult VESwapchainInternal::present(VECommandBufferInternal &cmd, bool release
    }
    else
    {
-      printf("Could not transition the image because the command buffer was not recording\n");
+      veSetError("Command buffer is not recording");
+      return VE_ERROR_INVALID_PARAMETER;
    }
 
    VkSemaphore acquireSemaphore = imageAvailableSemaphores[currentFrame];
@@ -154,9 +160,24 @@ VEResult VESwapchainInternal::present(VECommandBufferInternal &cmd, bool release
 
    std::unique_lock<std::mutex> queueLock(locks->graphicsMutex());
 
+   VkResult resetResult = vkResetFences(device->device, 1, &frameFence);
+   if (resetResult != VK_SUCCESS)
+   {
+      veSetError("Failed to reset frame fence (VkResult: %d)", resetResult);
+      return VE_ERROR_UNKNOWN;
+   }
+
    VkResult submitResult = vkQueueSubmit(device->graphicsQueue, 1, &submitInfo, frameFence);
    if (submitResult != VK_SUCCESS)
    {
+      // Restore the per-frame invariant: the fence must be signaled whenever
+      // there is no submission that can signal it.
+      vkDestroyFence(device->device, frameFence, NULL);
+      inFlightFences[currentFrame] = VK_NULL_HANDLE;
+      VkFenceCreateInfo fenceInfo{};
+      fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+      fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+      vkCreateFence(device->device, &fenceInfo, NULL, &inFlightFences[currentFrame]);
       veSetError("Failed to submit draw command buffer (VkResult: %d)", submitResult);
       return VE_ERROR_UNKNOWN;
    }
@@ -293,6 +314,19 @@ VEResult VESwapchainInternal::waitForCurrentFrameFence()
    }
 
    VkFence currentFrameFence = inFlightFences[currentFrame];
+   if (currentFrameFence == VK_NULL_HANDLE)
+   {
+      VkFenceCreateInfo fenceInfo{};
+      fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+      fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+      VkResult createResult = vkCreateFence(device->device, &fenceInfo, NULL, &currentFrameFence);
+      if (createResult != VK_SUCCESS)
+      {
+         veSetError("Failed to restore frame fence (VkResult: %d)", createResult);
+         return VE_ERROR_OUT_OF_MEMORY;
+      }
+      inFlightFences[currentFrame] = currentFrameFence;
+   }
    VkResult status = vkGetFenceStatus(device->device, currentFrameFence);
 
    if (status != VK_SUCCESS && status != VK_NOT_READY)
@@ -303,7 +337,12 @@ VEResult VESwapchainInternal::waitForCurrentFrameFence()
 
    if (status == VK_NOT_READY)
    {
-      vkWaitForFences(device->device, 1, &currentFrameFence, VK_TRUE, UINT64_MAX);
+      VkResult waitResult = vkWaitForFences(device->device, 1, &currentFrameFence, VK_TRUE, UINT64_MAX);
+      if (waitResult != VK_SUCCESS)
+      {
+         veSetError("Failed to wait for frame fence (VkResult: %d)", waitResult);
+         return VE_ERROR_UNKNOWN;
+      }
    }
 
    // Reclaim any command buffers associated with this fence before it is reset

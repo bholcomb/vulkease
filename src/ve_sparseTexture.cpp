@@ -258,28 +258,51 @@ VEResult VEDeviceInternal::flushPendingSparseBinds(bool blocking)
    {
       bindSparseInfo.signalSemaphoreCount = 0;
 
-      vkResetFences(device, 1, &sparseBindFence);
+      VEDeviceQueueLocks *locks = queueLocks.get();
+      if (!locks)
+      {
+         veSetError("Device queue locks not initialized");
+         return VE_ERROR_NOT_INITIALIZED;
+      }
 
-      VkResult result = vkQueueBindSparse(sparseBindingQueue, 1, &bindSparseInfo, sparseBindFence);
+      VkResult result;
+      {
+         std::lock_guard<std::mutex> queueLock(locks->graphicsMutex());
+         result = vkResetFences(device, 1, &sparseBindFence);
+         if (result == VK_SUCCESS)
+            result = vkQueueBindSparse(sparseBindingQueue, 1, &bindSparseInfo, sparseBindFence);
+         if (result == VK_SUCCESS)
+            result = vkWaitForFences(device, 1, &sparseBindFence, VK_TRUE, UINT64_MAX);
+      }
       if (result != VK_SUCCESS)
       {
-         veSetError("vkQueueBindSparse failed: %s", veVkResultToString(result));
+         vkDestroyFence(device, sparseBindFence, NULL);
+         sparseBindFence = VK_NULL_HANDLE;
+         VkFenceCreateInfo fenceInfo{};
+         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+         fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+         vkCreateFence(device, &fenceInfo, NULL, &sparseBindFence);
+         veSetError("Failed to reset sparse fence or bind sparse memory: %s", veVkResultToString(result));
          return VE_ERROR_UNKNOWN;
       }
 
-      result = vkWaitForFences(device, 1, &sparseBindFence, VK_TRUE, UINT64_MAX);
-      if (result != VK_SUCCESS)
-      {
-         veSetError("vkWaitForFences failed for sparse binding: %s", veVkResultToString(result));
-         return VE_ERROR_UNKNOWN;
-      }
    }
    else
    {
       bindSparseInfo.signalSemaphoreCount = 1;
       bindSparseInfo.pSignalSemaphores = &sparseBindSemaphore;
 
-      VkResult result = vkQueueBindSparse(sparseBindingQueue, 1, &bindSparseInfo, VK_NULL_HANDLE);
+      VEDeviceQueueLocks *locks = queueLocks.get();
+      if (!locks)
+      {
+         veSetError("Device queue locks not initialized");
+         return VE_ERROR_NOT_INITIALIZED;
+      }
+      VkResult result;
+      {
+         std::lock_guard<std::mutex> queueLock(locks->graphicsMutex());
+         result = vkQueueBindSparse(sparseBindingQueue, 1, &bindSparseInfo, VK_NULL_HANDLE);
+      }
       if (result != VK_SUCCESS)
       {
          veSetError("vkQueueBindSparse failed: %s", veVkResultToString(result));

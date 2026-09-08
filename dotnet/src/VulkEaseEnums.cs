@@ -356,6 +356,12 @@ namespace VulkEase
         VK_FILTER_CUBIC_IMG = 1000015000
     }
 
+    public enum VkSamplerMipmapMode : Int32
+    {
+        VK_SAMPLER_MIPMAP_MODE_NEAREST = 0,
+        VK_SAMPLER_MIPMAP_MODE_LINEAR = 1
+    }
+
     public enum VkSamplerAddressMode : Int32
     {
         VK_SAMPLER_ADDRESS_MODE_REPEAT = 0,
