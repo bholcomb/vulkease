@@ -12,68 +12,173 @@
 // Deferred Deletion Queue Implementation
 // =============================================================================
 
-void VEDeferredDeletionQueue::enqueueBuffer(VEBufferAddress address)
+namespace
+{
+uint64_t veRetireValue(const VEDeviceInternal *device)
+{
+   if (!device || !device->queueLocks)
+      return 0;
+   std::lock_guard<std::mutex> lock(device->queueLocks->graphicsMutex());
+   return device->lastSubmittedSerial.load(std::memory_order_acquire);
+}
+
+void veProcessDeletion(VEDeviceInternal *device, const VEDeferredDeletion &deletion)
+{
+   switch (deletion.type)
+   {
+   case VEDeferredResourceType::Buffer:
+      veDestroyBufferImmediate(device, deletion.bufferAddress);
+      break;
+   case VEDeferredResourceType::Texture:
+      veDestroyTextureImmediate(device, deletion.textureIndex);
+      break;
+   case VEDeferredResourceType::TextureView:
+      veDestroyTextureViewImmediate(device, deletion.textureView);
+      break;
+   case VEDeferredResourceType::Sampler:
+      veDestroySamplerImmediate(device, deletion.samplerIndex);
+      break;
+   case VEDeferredResourceType::Shader:
+      veDestroyShaderImmediate(deletion.shader);
+      break;
+   case VEDeferredResourceType::ShaderObject:
+      if (deletion.shaderObject != VK_NULL_HANDLE)
+         veFuncs.vkDestroyShaderEXT(device->device, deletion.shaderObject, nullptr);
+      break;
+   case VEDeferredResourceType::QueryPool:
+      veDestroyQueryPoolImmediate(deletion.queryPool);
+      break;
+   }
+}
+} // namespace
+
+void VEDeferredDeletionQueue::enqueueBuffer(VEDeviceInternal *device, VEBufferAddress address)
 {
    if (address == VE_INVALID_ADDRESS)
       return;
 
-   std::lock_guard<std::mutex> lock(mutex);
-   VEDeferredDeletion deletion{};
-   deletion.type = VEDeferredResourceType::Buffer;
-   deletion.frameIndex = currentFrame;
-   deletion.bufferAddress = address;
-   pending.push_back(deletion);
+   {
+      std::lock_guard<std::mutex> lock(mutex);
+      VEDeferredDeletion deletion{};
+      deletion.type = VEDeferredResourceType::Buffer;
+      deletion.retireValue = veRetireValue(device);
+      deletion.bufferAddress = address;
+      pending.push_back(deletion);
+   }
+   processPending(device);
 }
 
-void VEDeferredDeletionQueue::enqueueTexture(VETexture index)
+void VEDeferredDeletionQueue::enqueueTexture(VEDeviceInternal *device, VETexture index)
 {
    if (index == VE_INVALID_TEXTURE)
       return;
 
-   std::lock_guard<std::mutex> lock(mutex);
-   VEDeferredDeletion deletion{};
-   deletion.type = VEDeferredResourceType::Texture;
-   deletion.frameIndex = currentFrame;
-   deletion.textureIndex = index;
-   pending.push_back(deletion);
+   {
+      std::lock_guard<std::mutex> lock(mutex);
+      VEDeferredDeletion deletion{};
+      deletion.type = VEDeferredResourceType::Texture;
+      deletion.retireValue = veRetireValue(device);
+      deletion.textureIndex = index;
+      pending.push_back(deletion);
+   }
+   processPending(device);
 }
 
-void VEDeferredDeletionQueue::enqueueSampler(VESamplerIndex index)
+void VEDeferredDeletionQueue::enqueueTextureView(VEDeviceInternal *device, VETextureView view)
+{
+   if (view == VE_INVALID_TEXTURE_VIEW)
+      return;
+
+   {
+      std::lock_guard<std::mutex> lock(mutex);
+      VEDeferredDeletion deletion{};
+      deletion.type = VEDeferredResourceType::TextureView;
+      deletion.retireValue = veRetireValue(device);
+      deletion.textureView = view;
+      pending.push_back(deletion);
+   }
+   processPending(device);
+}
+
+void VEDeferredDeletionQueue::enqueueSampler(VEDeviceInternal *device, VESamplerIndex index)
 {
    if (index == VE_INVALID_SAMPLER_INDEX)
       return;
 
-   std::lock_guard<std::mutex> lock(mutex);
-   VEDeferredDeletion deletion{};
-   deletion.type = VEDeferredResourceType::Sampler;
-   deletion.frameIndex = currentFrame;
-   deletion.samplerIndex = index;
-   pending.push_back(deletion);
+   {
+      std::lock_guard<std::mutex> lock(mutex);
+      VEDeferredDeletion deletion{};
+      deletion.type = VEDeferredResourceType::Sampler;
+      deletion.retireValue = veRetireValue(device);
+      deletion.samplerIndex = index;
+      pending.push_back(deletion);
+   }
+   processPending(device);
 }
 
-void VEDeferredDeletionQueue::enqueueShader(VEShader *shader)
+void VEDeferredDeletionQueue::enqueueShader(VEDeviceInternal *device, VEShader *shader)
 {
    if (!shader)
       return;
 
-   std::lock_guard<std::mutex> lock(mutex);
-   VEDeferredDeletion deletion{};
-   deletion.type = VEDeferredResourceType::Shader;
-   deletion.frameIndex = currentFrame;
-   deletion.shader = shader;
-   pending.push_back(deletion);
+   {
+      std::lock_guard<std::mutex> lock(mutex);
+      VEDeferredDeletion deletion{};
+      deletion.type = VEDeferredResourceType::Shader;
+      deletion.retireValue = veRetireValue(device);
+      deletion.shader = shader;
+      pending.push_back(deletion);
+   }
+   processPending(device);
 }
 
-void VEDeferredDeletionQueue::advanceFrame()
+void VEDeferredDeletionQueue::enqueueQueryPool(VEDeviceInternal *device, VEQueryPool *pool)
 {
-   std::lock_guard<std::mutex> lock(mutex);
-   currentFrame++;
+   if (!pool)
+      return;
+
+   {
+      std::lock_guard<std::mutex> lock(mutex);
+      VEDeferredDeletion deletion{};
+      deletion.type = VEDeferredResourceType::QueryPool;
+      deletion.retireValue = veRetireValue(device);
+      deletion.queryPool = pool;
+      pending.push_back(deletion);
+   }
+   processPending(device);
+}
+
+void VEDeferredDeletionQueue::enqueueShaderObject(VEDeviceInternal *device, VkShaderEXT shaderObject)
+{
+   if (shaderObject == VK_NULL_HANDLE)
+      return;
+
+   {
+      std::lock_guard<std::mutex> lock(mutex);
+      VEDeferredDeletion deletion{};
+      deletion.type = VEDeferredResourceType::ShaderObject;
+      deletion.retireValue = veRetireValue(device);
+      deletion.shaderObject = shaderObject;
+      pending.push_back(deletion);
+   }
+   processPending(device);
 }
 
 void VEDeferredDeletionQueue::processPending(VEDeviceInternal *device)
 {
    if (!device)
       return;
+
+   uint64_t completedValue = 0;
+   if (device->retirementTimeline != VK_NULL_HANDLE)
+   {
+      VkResult result = vkGetSemaphoreCounterValue(device->device, device->retirementTimeline, &completedValue);
+      if (result != VK_SUCCESS)
+      {
+         veSetError("Failed to query deferred deletion timeline (VkResult: %d)", result);
+         return;
+      }
+   }
 
    std::vector<VEDeferredDeletion> toDelete;
 
@@ -84,7 +189,7 @@ void VEDeferredDeletionQueue::processPending(VEDeviceInternal *device)
       auto it = pending.begin();
       while (it != pending.end())
       {
-         if (currentFrame - it->frameIndex >= kFrameDelay)
+         if (it->retireValue <= completedValue)
          {
             toDelete.push_back(*it);
             it = pending.erase(it);
@@ -96,34 +201,10 @@ void VEDeferredDeletionQueue::processPending(VEDeviceInternal *device)
       }
    }
 
-   // A frame delay alone does not prove completion for compute, transfer, or
-   // non-swapchain submissions.  Until retirements are timeline-backed, wait
-   // before releasing any batch that has reached the delay threshold.
-   if (!toDelete.empty())
-      vkDeviceWaitIdle(device->device);
-
-   // Delete resources outside the lock
+   // Delete resources outside the lock. The timeline value proves that every
+   // earlier VulkEase queue submission has completed.
    for (const auto &deletion : toDelete)
-   {
-      switch (deletion.type)
-      {
-      case VEDeferredResourceType::Buffer:
-         veDestroyBufferImmediate(device, deletion.bufferAddress);
-         break;
-
-      case VEDeferredResourceType::Texture:
-         veDestroyTextureImmediate(device, deletion.textureIndex);
-         break;
-
-      case VEDeferredResourceType::Sampler:
-         veDestroySamplerImmediate(device, deletion.samplerIndex);
-         break;
-
-      case VEDeferredResourceType::Shader:
-         veDestroyShaderImmediate(deletion.shader);
-         break;
-      }
-   }
+      veProcessDeletion(device, deletion);
 }
 
 void VEDeferredDeletionQueue::flush(VEDeviceInternal *device)
@@ -147,26 +228,7 @@ void VEDeferredDeletionQueue::flush(VEDeviceInternal *device)
 
    // Delete all remaining resources
    for (const auto &deletion : toDelete)
-   {
-      switch (deletion.type)
-      {
-      case VEDeferredResourceType::Buffer:
-         veDestroyBufferImmediate(device, deletion.bufferAddress);
-         break;
-
-      case VEDeferredResourceType::Texture:
-         veDestroyTextureImmediate(device, deletion.textureIndex);
-         break;
-
-      case VEDeferredResourceType::Sampler:
-         veDestroySamplerImmediate(device, deletion.samplerIndex);
-         break;
-
-      case VEDeferredResourceType::Shader:
-         veDestroyShaderImmediate(deletion.shader);
-         break;
-      }
-   }
+      veProcessDeletion(device, deletion);
 }
 
 // =============================================================================
@@ -182,6 +244,5 @@ void veAdvanceDeferredDeletions(VEDeviceInternal *device)
    if (!queue)
       return;
 
-   queue->advanceFrame();
    queue->processPending(device);
 }

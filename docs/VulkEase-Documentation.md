@@ -76,10 +76,22 @@ VulkEase is intentionally lightweight, which means you still need to be clear ab
   - Owns: `VkDevice`, queues, and all resources created from it (buffers/textures/samplers/configs/shaders).
   - Destroy with: `veDestroyDevice(device)` after destroying swapchains/render targets and freeing other objects created from the device.
 
+- **Buffers, textures, views, samplers, and shaders**
+  - Caller-created resources become invalid as soon as their destroy function succeeds.
+  - Native Vulkan objects are retired automatically after earlier VulkEase submissions finish; ordinary destruction does not wait for the entire device.
+  - A texture owns its default view and all additional views. The default view cannot be destroyed separately.
+  - Device default samplers and swapchain texture handles are borrowed and cannot be destroyed by the caller.
+  - Graphics pipelines borrow their shaders, so pipelines must be destroyed before their shaders.
+
+- **Render targets**
+  - `VERenderTarget` is a copyable, non-owning description of attachment views.
+  - Destroying attachment textures invalidates the corresponding render target; the render target never extends their lifetime.
+
 - **Escape hatch Vulkan handles**
   - APIs like `veGetVkDevice()`, `veGetVkImageFromTexture()`, etc return raw Vulkan handles.
   - **Returned handles are owned by VulkEase**. Do **not** destroy them directly.
   - Handle lifetime matches the owning VulkEase object (`VEContext`, `VEDevice`, etc).
+  - Work submitted directly with native Vulkan handles is not visible to VulkEase lifetime tracking and must be synchronized by the caller.
 
 ## Threading Model (current)
 
@@ -963,7 +975,7 @@ vePresentImage(swapchain, cmd, releaseCommandBuffer);
 
 The complete API reference is available directly in the header file with comprehensive Doxygen-style documentation:
 
-- **C/C++**: See [`src/vulkease.h`](../src/vulkease.h) for all function signatures, parameter descriptions, return values, and usage notes.
+- **C/C++**: See [`src/vulkease.h`](../src/vulkease.h), [`src/vulkease_util.h`](../src/vulkease_util.h), and [`src/vulkease_vk.h`](../src/vulkease_vk.h) for function signatures, parameter descriptions, return values, and usage notes.
 - **.NET**: See [`dotnet/src/VulkEaseFunctions.cs`](../dotnet/src/VulkEaseFunctions.cs) for C# wrapper methods with XML documentation.
 
 The header is organized into 41 sections covering all aspects of the API:
@@ -1023,4 +1035,4 @@ The following functions are available for mesh shader rendering (requires `VK_EX
 
 Use `taskShader` and `meshShader` fields in `VEGraphicsPipelineDesc` to create mesh shader pipelines.
 
-To generate HTML documentation from the header, run Doxygen with the provided configuration (if available) or use a tool like `doxygen -g` to generate a config and point it at `src/vulkease.h`.
+To generate HTML documentation from the headers, run Doxygen with the provided configuration (if available) or use a tool like `doxygen -g` and point it at the three public headers in `src/`.

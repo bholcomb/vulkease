@@ -155,8 +155,23 @@ VEResult VESwapchainInternal::present(VECommandBufferInternal &cmd, bool release
    submitInfo.pWaitDstStageMask = waitStages;
    submitInfo.commandBufferCount = 1;
    submitInfo.pCommandBuffers = &cmd.commandBuffer;
-   submitInfo.signalSemaphoreCount = 1;
-   submitInfo.pSignalSemaphores = &renderSemaphore;
+   VkSemaphore signalSemaphores[2] = {renderSemaphore, device->retirementTimeline};
+   uint64_t signalValues[2] = {0, 0};
+   VkTimelineSemaphoreSubmitInfo timelineInfo{};
+   if (device->retirementTimeline != VK_NULL_HANDLE)
+   {
+      timelineInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+      timelineInfo.signalSemaphoreValueCount = 2;
+      timelineInfo.pSignalSemaphoreValues = signalValues;
+      submitInfo.pNext = &timelineInfo;
+      submitInfo.signalSemaphoreCount = 2;
+      submitInfo.pSignalSemaphores = signalSemaphores;
+   }
+   else
+   {
+      submitInfo.signalSemaphoreCount = 1;
+      submitInfo.pSignalSemaphores = signalSemaphores;
+   }
 
    std::unique_lock<std::mutex> queueLock(locks->graphicsMutex());
 
@@ -167,7 +182,16 @@ VEResult VESwapchainInternal::present(VECommandBufferInternal &cmd, bool release
       return VE_ERROR_UNKNOWN;
    }
 
+   uint64_t submissionSerial = 0;
+   if (device->retirementTimeline != VK_NULL_HANDLE)
+   {
+      submissionSerial = ++device->nextSubmissionSerial;
+      signalValues[1] = submissionSerial;
+   }
+
    VkResult submitResult = vkQueueSubmit(device->graphicsQueue, 1, &submitInfo, frameFence);
+   if (submitResult == VK_SUCCESS && submissionSerial != 0)
+      device->lastSubmittedSerial.store(submissionSerial, std::memory_order_release);
    if (submitResult != VK_SUCCESS)
    {
       // Restore the per-frame invariant: the fence must be signaled whenever
@@ -784,6 +808,8 @@ VEResult veCreateSwapchain(VEDevice *device, const VESwapchainDesc *desc, VESwap
          texture->index = textureIndex;
          texture->isValid = true;
          texture->isExternal = true;
+         texture->isSwapchainImage = true;
+         texture->pendingDestroy = false;
          texture->defaultView = VE_INVALID_TEXTURE_VIEW;
          texture->firstView = VE_INVALID_TEXTURE_VIEW;
          snprintf(texture->debugName, sizeof(texture->debugName), "SwapchainImage_%u", i);
@@ -1106,6 +1132,8 @@ VEResult VESwapchainInternal::createSwapchainResources()
          texture->index = textureIndex;
          texture->isValid = true;
          texture->isExternal = true;
+         texture->isSwapchainImage = true;
+         texture->pendingDestroy = false;
          texture->defaultView = VE_INVALID_TEXTURE_VIEW;
          texture->firstView = VE_INVALID_TEXTURE_VIEW;
          snprintf(texture->debugName, sizeof(texture->debugName), "SwapchainImage_%u", i);

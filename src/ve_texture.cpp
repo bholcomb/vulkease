@@ -810,7 +810,7 @@ VETextureInternal *VEDeviceInternal::getTexture(VETexture index)
    }
 
    VETextureInternal *texture = &textures[index];
-   return texture->isValid ? texture : NULL;
+   return texture->isValid && !texture->pendingDestroy ? texture : NULL;
 }
 
 const VETextureInternal *VEDeviceInternal::getTexture(VETexture index) const
@@ -856,7 +856,11 @@ VETextureViewInternal *VEDeviceInternal::getTextureView(VETextureView view)
 {
    if (view == VE_INVALID_TEXTURE_VIEW || view >= maxTextureViews)
       return nullptr;
-   return textureViews[view].isValid ? &textureViews[view] : nullptr;
+   VETextureViewInternal *textureView = &textureViews[view];
+   if (!textureView->isValid || textureView->pendingDestroy || textureView->texture >= maxTextures)
+      return nullptr;
+   VETextureInternal *texture = &textures[textureView->texture];
+   return texture->isValid && !texture->pendingDestroy ? textureView : nullptr;
 }
 
 const VETextureViewInternal *VEDeviceInternal::getTextureView(VETextureView view) const
@@ -894,7 +898,7 @@ VEResult veCreateTextureViewInternal(VEDeviceInternal *device, VETexture texture
                                      VETextureView *outView)
 {
    VETextureInternal *texture = device ? device->getTexture(textureHandle) : nullptr;
-   if (!texture || !outView)
+   if (!texture || texture->pendingDestroy || !outView)
       return VE_ERROR_INVALID_PARAMETER;
 
    auto destroyExistingView = [&]()
@@ -966,6 +970,7 @@ VEResult veCreateTextureViewInternal(VEDeviceInternal *device, VETexture texture
    internal.nextView = texture->firstView;
    internal.ownsImageView = ownsImageView;
    internal.isValid = true;
+   internal.pendingDestroy = false;
    texture->firstView = view;
 
    if (desc.debugName && device->context->validationEnabled)
@@ -988,18 +993,24 @@ VEResult veCreateTextureViewInternal(VEDeviceInternal *device, VETexture texture
 
 void veDestroyTextureViewImmediate(VEDeviceInternal *device, VETextureView view)
 {
-   VETextureViewInternal *textureView = device ? device->getTextureView(view) : nullptr;
+   VETextureViewInternal *textureView =
+       device && view < device->maxTextureViews ? &device->textureViews[view] : nullptr;
+   if (textureView && !textureView->isValid)
+      textureView = nullptr;
    if (!textureView)
       return;
 
-   VETextureInternal *texture = device->getTexture(textureView->texture);
+   VETextureInternal *texture =
+       textureView->texture < device->maxTextures ? &device->textures[textureView->texture] : nullptr;
+   if (texture && !texture->isValid)
+      texture = nullptr;
    if (texture)
    {
       VETextureView *link = &texture->firstView;
       while (*link != VE_INVALID_TEXTURE_VIEW && *link != 0)
       {
-         VETextureViewInternal *candidate = device->getTextureView(*link);
-         if (!candidate)
+         VETextureViewInternal *candidate = *link < device->maxTextureViews ? &device->textureViews[*link] : nullptr;
+         if (!candidate || !candidate->isValid)
             break;
          if (*link == view)
          {
@@ -1145,6 +1156,7 @@ static VEResult veCreateTextureInternal(VEDevice *device, const VETextureDesc *d
       veSetError("outIndex cannot be NULL");
       return VE_ERROR_INVALID_PARAMETER;
    }
+   *outIndex = VE_INVALID_TEXTURE;
 
    if (!device || !desc)
    {
@@ -1544,7 +1556,7 @@ void veDestroyTextureImmediate(VEDeviceInternal *deviceInternal, VETexture index
       return;
    }
 
-   VETextureInternal *texture = deviceInternal->getTexture(index);
+   VETextureInternal *texture = index < deviceInternal->maxTextures ? &deviceInternal->textures[index] : nullptr;
 
    if (!texture || !texture->isValid)
    {
@@ -1597,11 +1609,13 @@ void veDestroyTextureImmediate(VEDeviceInternal *deviceInternal, VETexture index
 
 VEResult veDestroyTexture(VEDevice *device, VETexture index)
 {
-   if (!device || index == VE_INVALID_TEXTURE)
+   if (!device)
    {
       veSetError("Invalid parameters for texture destruction");
       return VE_ERROR_INVALID_PARAMETER;
    }
+   if (index == VE_INVALID_TEXTURE)
+      return VE_SUCCESS;
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
    if (!deviceInternal->deferredDeletionQueue)
@@ -1609,7 +1623,22 @@ VEResult veDestroyTexture(VEDevice *device, VETexture index)
       veSetError("Deferred deletion queue not initialized");
       return VE_ERROR_NOT_INITIALIZED;
    }
-   deviceInternal->deferredDeletionQueue->enqueueTexture(index);
+
+   VETextureInternal *texture = deviceInternal->getTexture(index);
+   if (!texture || texture->pendingDestroy)
+   {
+      veSetError("Texture is invalid or already pending destruction");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+   if (texture->isExternal)
+   {
+      veSetError(texture->isSwapchainImage ? "Swapchain textures are borrowed and owned by the swapchain"
+                                           : "Imported textures must be released with veReleaseExternalTexture");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   texture->pendingDestroy = true;
+   deviceInternal->deferredDeletionQueue->enqueueTexture(deviceInternal, index);
    return VE_SUCCESS;
 }
 
@@ -1673,21 +1702,34 @@ VETexture veGetTextureFromView(VEDevice *device, VETextureView view)
 
 VEResult veCreateTextureView(VEDevice *device, VETexture texture, const VETextureViewDesc *desc, VETextureView *outView)
 {
-   if (!device || !desc || !outView)
+   if (!outView)
    {
       veSetError("veCreateTextureView: invalid parameter");
       return VE_ERROR_INVALID_PARAMETER;
    }
    *outView = VE_INVALID_TEXTURE_VIEW;
+
+   if (!device || !desc)
+   {
+      veSetError("veCreateTextureView: invalid parameter");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
    return veCreateTextureViewInternal(reinterpret_cast<VEDeviceInternal *>(device), texture, *desc, VK_NULL_HANDLE,
                                       true, outView);
 }
 
 VEResult veDestroyTextureView(VEDevice *device, VETextureView view)
 {
-   if (!device || view == VE_INVALID_TEXTURE_VIEW)
+   if (!device)
       return VE_ERROR_INVALID_PARAMETER;
+   if (view == VE_INVALID_TEXTURE_VIEW)
+      return VE_SUCCESS;
    VEDeviceInternal *internal = reinterpret_cast<VEDeviceInternal *>(device);
+   if (!internal->deferredDeletionQueue)
+   {
+      veSetError("Deferred deletion queue not initialized");
+      return VE_ERROR_NOT_INITIALIZED;
+   }
    VETextureViewInternal *textureView = internal->getTextureView(view);
    if (!textureView)
       return VE_ERROR_INVALID_PARAMETER;
@@ -1697,8 +1739,13 @@ VEResult veDestroyTextureView(VEDevice *device, VETextureView view)
       veSetError("A texture's default view is destroyed with the texture");
       return VE_ERROR_INVALID_PARAMETER;
    }
-   vkDeviceWaitIdle(internal->device);
-   veDestroyTextureViewImmediate(internal, view);
+   if (textureView->pendingDestroy)
+   {
+      veSetError("Texture view is already pending destruction");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+   textureView->pendingDestroy = true;
+   internal->deferredDeletionQueue->enqueueTextureView(internal, view);
    return VE_SUCCESS;
 }
 
@@ -2084,7 +2131,14 @@ VEResult veLoadCubeTexture(VEDevice *device, const char *filenames[6], VkImageUs
 
 VEResult veImportExternalTexture(VEDevice *device, const VEExternalTextureDesc *desc, VETexture *outIndex)
 {
-   if (!device || !desc || !outIndex)
+   if (!outIndex)
+   {
+      veSetError("veImportExternalTexture: NULL parameter");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+   *outIndex = VE_INVALID_TEXTURE;
+
+   if (!device || !desc)
    {
       veSetError("veImportExternalTexture: NULL parameter");
       return VE_ERROR_INVALID_PARAMETER;
@@ -2149,6 +2203,8 @@ VEResult veImportExternalTexture(VEDevice *device, const VEExternalTextureDesc *
    texture->currentLayout = VK_IMAGE_LAYOUT_UNDEFINED; // Unknown initial layout
    texture->isValid = true;
    texture->isExternal = true; // Mark as external - do not destroy VkImage
+   texture->isSwapchainImage = false;
+   texture->pendingDestroy = false;
    texture->index = index;
    texture->defaultView = VE_INVALID_TEXTURE_VIEW;
    texture->firstView = VE_INVALID_TEXTURE_VIEW;
@@ -2215,19 +2271,38 @@ VEResult veReleaseExternalTexture(VEDevice *device, VETexture index)
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   while (texture->firstView != VE_INVALID_TEXTURE_VIEW && texture->firstView != 0)
-      veDestroyTextureViewImmediate(deviceInternal, texture->firstView);
+   if (!texture->isExternal || texture->isSwapchainImage || texture->pendingDestroy)
+   {
+      veSetError("Texture is not a releasable external texture or is already pending release");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+   texture->pendingDestroy = true;
 
-   // Do NOT destroy VkImage - it's externally owned
-   // Do NOT free VMA allocation - there isn't one for external textures
+   uint64_t retireValue = 0;
+   if (deviceInternal->queueLocks)
+   {
+      std::lock_guard<std::mutex> lock(deviceInternal->queueLocks->graphicsMutex());
+      retireValue = deviceInternal->lastSubmittedSerial.load(std::memory_order_acquire);
+   }
 
-   // Clear the texture slot
-   texture->image = VK_NULL_HANDLE;
-   texture->isValid = false;
-   texture->isExternal = false;
-   texture->debugName[0] = '\0';
+   if (retireValue != 0)
+   {
+      VkSemaphoreWaitInfo waitInfo{};
+      waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+      waitInfo.semaphoreCount = 1;
+      waitInfo.pSemaphores = &deviceInternal->retirementTimeline;
+      waitInfo.pValues = &retireValue;
+      VkResult waitResult = vkWaitSemaphores(deviceInternal->device, &waitInfo, UINT64_MAX);
+      if (waitResult != VK_SUCCESS)
+      {
+         texture->pendingDestroy = false;
+         veSetError("veReleaseExternalTexture: failed to wait for prior GPU use (VkResult: %d)", waitResult);
+         return VE_ERROR_UNKNOWN;
+      }
+   }
 
-   deviceInternal->freeTextureIndex(index);
+   veDestroyTextureImmediate(deviceInternal, index);
+   veAdvanceDeferredDeletions(deviceInternal);
 
    return VE_SUCCESS;
 }

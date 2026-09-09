@@ -491,6 +491,15 @@ VEResult veSubmitCommandBuffer(VECommandBuffer *cmd, const VESubmitInfo *submitI
       }
    }
 
+   if (internal->device->retirementTimeline != VK_NULL_HANDLE)
+   {
+      VkSemaphoreSubmitInfo retirementSignal{};
+      retirementSignal.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+      retirementSignal.semaphore = internal->device->retirementTimeline;
+      retirementSignal.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+      signalInfos.push_back(retirementSignal);
+   }
+
    VkCommandBufferSubmitInfo commandBufferInfo{};
    commandBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
    commandBufferInfo.commandBuffer = internal->commandBuffer;
@@ -513,6 +522,7 @@ VEResult veSubmitCommandBuffer(VECommandBuffer *cmd, const VESubmitInfo *submitI
    }
 
    VkResult submitResult = VK_SUCCESS;
+   uint64_t submissionSerial = 0;
    {
       std::lock_guard<std::mutex> lock(locks->graphicsMutex());
       if (fence != VK_NULL_HANDLE)
@@ -524,7 +534,14 @@ VEResult veSubmitCommandBuffer(VECommandBuffer *cmd, const VESubmitInfo *submitI
             return VE_ERROR_UNKNOWN;
          }
       }
+      if (internal->device->retirementTimeline != VK_NULL_HANDLE)
+      {
+         submissionSerial = ++internal->device->nextSubmissionSerial;
+         signalInfos.back().value = submissionSerial;
+      }
       submitResult = vkQueueSubmit2(internal->device->graphicsQueue, 1, &submitInfo2, fence);
+      if (submitResult == VK_SUCCESS && submissionSerial != 0)
+         internal->device->lastSubmittedSerial.store(submissionSerial, std::memory_order_release);
    }
 
    if (submitResult != VK_SUCCESS)
@@ -576,6 +593,7 @@ VEResult veSubmitCommandBuffer(VECommandBuffer *cmd, const VESubmitInfo *submitI
    }
 
    internal->device->threadCommandPools.reclaimInFlight(internal->device);
+   veAdvanceDeferredDeletions(internal->device);
    internal->executedSecondaries.clear();
 
    return VE_SUCCESS;
@@ -1499,6 +1517,11 @@ VEResult veBindShader(VECommandBuffer *cmd, VEShader *shader)
 
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
    VEShaderInternal *shaderInternal = (VEShaderInternal *)shader;
+   if (!shaderInternal->isValid || shaderInternal->pendingDestroy || shaderInternal->device != internal->device)
+   {
+      veSetError("Shader is invalid, pending destruction, or belongs to another device");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    internal->boundShaders = internal->boundShaders | shaderInternal->stage;
 
@@ -1529,6 +1552,12 @@ VEResult veBindShaders(VECommandBuffer *cmd, uint32_t shaderCount, VEShader *con
       if (shaders[i])
       {
          VEShaderInternal *shaderInternal = (VEShaderInternal *)shaders[i];
+         VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
+         if (!shaderInternal->isValid || shaderInternal->pendingDestroy || shaderInternal->device != internal->device)
+         {
+            veSetError("Shader %u is invalid, pending destruction, or belongs to another device", i);
+            return VE_ERROR_INVALID_PARAMETER;
+         }
          stageBits[validCount] = static_cast<VkShaderStageFlagBits>(shaderInternal->stage);
          shaderObjects[validCount] = shaderInternal->shaderObject;
          validCount++;

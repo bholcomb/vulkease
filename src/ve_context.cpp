@@ -363,6 +363,7 @@ static void queryDevice14Features(VkPhysicalDevice physicalDevice, VEDeviceFeatu
    // Core Vulkan 1.2+ features (mandatory)
    features->bufferDeviceAddress = vulkan12Features.bufferDeviceAddress;
    features->descriptorIndexing = vulkan12Features.descriptorIndexing;
+   features->timelineSemaphore = vulkan12Features.timelineSemaphore;
    features->scalarBlockLayout = vulkan12Features.scalarBlockLayout; // Mandatory in 1.4
    features->updateAfterBind = vulkan12Features.descriptorBindingSampledImageUpdateAfterBind &&
                                vulkan12Features.descriptorBindingPartiallyBound;
@@ -409,10 +410,10 @@ static void queryDevice14Features(VkPhysicalDevice physicalDevice, VEDeviceFeatu
 
 static bool validateRequiredDeviceFeatures(const VEDeviceFeatures &features)
 {
-   return features.bufferDeviceAddress && features.descriptorIndexing && features.scalarBlockLayout &&
-          features.updateAfterBind && features.updateUnusedWhilePending && features.runtimeDescriptorArray &&
-          features.sampledImageNonUniformIndexing && features.dynamicRendering && features.synchronization2 &&
-          features.shaderInt64 && features.pushDescriptor && features.shaderObject;
+   return features.bufferDeviceAddress && features.descriptorIndexing && features.timelineSemaphore &&
+          features.scalarBlockLayout && features.updateAfterBind && features.updateUnusedWhilePending &&
+          features.runtimeDescriptorArray && features.sampledImageNonUniformIndexing && features.dynamicRendering &&
+          features.synchronization2 && features.shaderInt64 && features.pushDescriptor && features.shaderObject;
 }
 
 // =============================================================================
@@ -916,6 +917,7 @@ VEResult veCreateDevice(VEContext *context, VkPhysicalDevice preferredDevice,
    vulkan12Features.pNext = &vulkan13Features;
    vulkan12Features.bufferDeviceAddress = device->features.bufferDeviceAddress;
    vulkan12Features.descriptorIndexing = device->features.descriptorIndexing;
+   vulkan12Features.timelineSemaphore = device->features.timelineSemaphore;
    vulkan12Features.descriptorBindingSampledImageUpdateAfterBind = device->features.updateAfterBind;
    vulkan12Features.descriptorBindingPartiallyBound = device->features.updateAfterBind;
    vulkan12Features.descriptorBindingUpdateUnusedWhilePending = device->features.updateUnusedWhilePending;
@@ -1045,6 +1047,22 @@ VEResult veCreateDevice(VEContext *context, VkPhysicalDevice preferredDevice,
       veSetError("Failed to initialize device queue locks");
       veDestroyDevice((VEDevice *)device);
       return VE_ERROR_UNKNOWN;
+   }
+
+   VkSemaphoreTypeCreateInfo timelineType{};
+   timelineType.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+   timelineType.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+   timelineType.initialValue = 0;
+
+   VkSemaphoreCreateInfo timelineInfo{};
+   timelineInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+   timelineInfo.pNext = &timelineType;
+   result = vkCreateSemaphore(device->device, &timelineInfo, nullptr, &device->retirementTimeline);
+   if (result != VK_SUCCESS)
+   {
+      veSetError("Failed to create resource retirement timeline (VkResult: %d)", result);
+      veDestroyDevice((VEDevice *)device);
+      return VE_ERROR_OUT_OF_MEMORY;
    }
 
    // Initialize bindless descriptors
@@ -1178,6 +1196,30 @@ VEResult veDestroyDevice(VEDevice *device)
       internal->deferredDeletionQueue.reset();
    }
 
+   std::vector<VEShaderInternal *> remainingShaders;
+   {
+      std::lock_guard<std::mutex> lock(internal->shaderMutex);
+      remainingShaders = internal->liveShaders;
+      internal->liveShaders.clear();
+   }
+   for (VEShaderInternal *shader : remainingShaders)
+      veDestroyShaderImmediate(reinterpret_cast<VEShader *>(shader));
+
+   std::vector<VEQueryPoolInternal *> remainingQueryPools;
+   {
+      std::lock_guard<std::mutex> lock(internal->queryPoolMutex);
+      remainingQueryPools = internal->liveQueryPools;
+      internal->liveQueryPools.clear();
+   }
+   for (VEQueryPoolInternal *pool : remainingQueryPools)
+      veDestroyQueryPoolImmediate(reinterpret_cast<VEQueryPool *>(pool));
+
+   if (internal->retirementTimeline != VK_NULL_HANDLE)
+   {
+      vkDestroySemaphore(internal->device, internal->retirementTimeline, nullptr);
+      internal->retirementTimeline = VK_NULL_HANDLE;
+   }
+
    // free internal pipeline/state buffers
    free(internal->graphicsPipelines);
    free(internal->drawStates);
@@ -1219,6 +1261,9 @@ VEResult veDeviceWaitIdle(VEDevice *device)
       veSetError("Failed to wait for device idle (VkResult: %d)", result);
       return VE_ERROR_UNKNOWN;
    }
+
+   if (internal->deferredDeletionQueue)
+      internal->deferredDeletionQueue->flush(internal);
 
    return VE_SUCCESS;
 }

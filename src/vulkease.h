@@ -100,6 +100,26 @@ typedef uint32_t VESamplerIndex;
 // Use the texture's native view type in VETextureViewDesc.
 #define VE_TEXTURE_VIEW_TYPE_DEFAULT VK_IMAGE_VIEW_TYPE_MAX_ENUM
 
+/**
+ * @section resource_ownership Resource ownership and lifetime
+ *
+ * Objects returned by create functions are owned by the caller unless stated
+ * otherwise. A successful destroy call invalidates the public handle
+ * immediately; VulkEase retires the underlying Vulkan object after previously
+ * submitted VulkEase work completes.
+ *
+ * A VETexture owns its default view and every additional VETextureView created
+ * from it. Additional views may be destroyed early, while the default view is
+ * destroyed only with its texture. VERenderTarget is a non-owning, trivially
+ * copyable description: destroying or replacing it never destroys attachments.
+ * Default samplers and swapchain texture handles are borrowed and device- or
+ * swapchain-owned respectively.
+ *
+ * Native Vulkan work submitted through vulkease_vk.h escape hatches is outside
+ * VulkEase lifetime tracking. The caller must synchronize that work before
+ * destroying resources referenced by it.
+ */
+
 // =============================================================================
 // RESULT CODES & ERROR HANDLING
 // =============================================================================
@@ -558,11 +578,11 @@ typedef struct VEDrawStateDesc
 // Render target attachment (for dynamic rendering)
 typedef struct VERenderTargetAttachment
 {
-   VETextureView view;
+   VETextureView view; // Borrowed; the render target does not own this view
    VkAttachmentLoadOp loadOp;
    VkAttachmentStoreOp storeOp;
    VEColor clearValue;
-   VETextureView resolveView;
+   VETextureView resolveView; // Borrowed; the render target does not own this view
 } VERenderTargetAttachment;
 
 // Render target configuration (replaces render passes)
@@ -1106,7 +1126,8 @@ VULKEASE_API VEResult veSetMessageCallback(const VEMessageCallbackDesc *desc);
  *
  * @param[in] minSeverity Minimum severity level to emit.
  *
- * @return VE_SUCCESS on success.
+ * @return VE_SUCCESS on success, or:
+ *         - VE_ERROR_INVALID_PARAMETER if minSeverity is invalid
  *
  * @see VEMessageSeverity, veSetMessageCallback
  */
@@ -1230,6 +1251,10 @@ VULKEASE_API VEResult veCreateBuffer(VEDevice *device, const VEBufferDesc *desc,
  *
  * @return VE_SUCCESS on success, or:
  *         - VE_ERROR_INVALID_PARAMETER if device is NULL or address is invalid
+ *           or already pending destruction
+ *
+ * @note On success the address must not be used again. Underlying storage is
+ *       retired after previously submitted VulkEase work completes.
  *
  * @see veCreateBuffer
  */
@@ -1401,6 +1426,11 @@ VULKEASE_API VEResult veCreateTexture(VEDevice *device, const VETextureDesc *des
  *
  * @return VE_SUCCESS on success, or:
  *         - VE_ERROR_INVALID_PARAMETER if device is NULL or index is invalid
+ *           or does not name a caller-owned texture
+ *
+ * @note Imported textures use veReleaseExternalTexture(). Swapchain textures
+ *       are borrowed and are released by the swapchain.
+ * @note On success the texture and all of its views must not be used again.
  *
  * @see veCreateTexture
  */
@@ -1426,17 +1456,53 @@ VULKEASE_API VkExtent3D veGetTextureSize(VEDevice *device, VETexture index);
  */
 VULKEASE_API VkFormat veGetTextureFormat(VEDevice *device, VETexture index);
 
-/** Return the automatically-created full-resource view for a texture. */
+/**
+ * @brief Return the automatically-created full-resource view for a texture.
+ *
+ * The returned view is borrowed and owned by the texture. It cannot be
+ * destroyed independently.
+ *
+ * @param[in] device Valid VulkEase device.
+ * @param[in] texture Texture whose default view is requested.
+ * @return The default view, or VE_INVALID_TEXTURE_VIEW on failure.
+ */
 VULKEASE_API VETextureView veGetDefaultTextureView(VEDevice *device, VETexture texture);
 
-/** Return the texture resource that owns a view. */
+/**
+ * @brief Return the texture resource that owns a view.
+ *
+ * @param[in] device Valid VulkEase device.
+ * @param[in] view Texture view to query.
+ * @return The owning texture, or VE_INVALID_TEXTURE on failure.
+ */
 VULKEASE_API VETexture veGetTextureFromView(VEDevice *device, VETextureView view);
 
-/** Create an additional shader-visible/renderable view of a texture. */
+/**
+ * @brief Create an additional shader-visible and renderable texture view.
+ *
+ * The texture owns the new view. The caller may destroy it early with
+ * veDestroyTextureView(); otherwise veDestroyTexture() destroys it.
+ *
+ * @param[in] device Valid VulkEase device.
+ * @param[in] texture Texture to view.
+ * @param[in] desc View format, type, components, and subresource range.
+ * @param[out] outView Receives the new view handle.
+ * @return VE_SUCCESS on success, or an error code on failure.
+ */
 VULKEASE_API VEResult veCreateTextureView(VEDevice *device, VETexture texture, const VETextureViewDesc *desc,
                                           VETextureView *outView);
 
-/** Destroy an additional texture view. A texture's default view is owned by the texture. */
+/**
+ * @brief Destroy an additional texture view.
+ *
+ * @param[in] device Valid VulkEase device.
+ * @param[in] view Additional view to destroy.
+ * @return VE_SUCCESS on success, or VE_ERROR_INVALID_PARAMETER for an invalid,
+ *         default, or already-destroyed view.
+ *
+ * @note On success the handle must not be used again. The native image view is
+ *       retired after previously submitted VulkEase work completes.
+ */
 VULKEASE_API VEResult veDestroyTextureView(VEDevice *device, VETextureView view);
 
 /**
@@ -1703,6 +1769,10 @@ VULKEASE_API VEResult veCreateSampler(VEDevice *device, const VESamplerDesc *des
  *
  * @return VE_SUCCESS on success, or:
  *         - VE_ERROR_INVALID_PARAMETER if device is NULL or index is invalid
+ *           or names a device-owned default sampler
+ *
+ * @note On success the index must not be used again. Default samplers returned
+ *       by veGetDefaultSampler() are borrowed and cannot be destroyed.
  *
  * @see veCreateSampler
  */
@@ -1741,7 +1811,6 @@ VULKEASE_API VEResult veLoadShaderFromBuffer(VEDevice *device, VkShaderStageFlag
                                              size_t codeSize, const char *entryPoint, const char *debugName,
                                              VEShader **outShader);
 
-
 /**
  * @brief Destroy a shader object.
  *
@@ -1749,6 +1818,12 @@ VULKEASE_API VEResult veLoadShaderFromBuffer(VEDevice *device, VkShaderStageFlag
  *
  * @return VE_SUCCESS on success, or:
  *         - VE_ERROR_INVALID_PARAMETER if shader is invalid
+ *           or is still referenced by a graphics pipeline
+ *
+ * @note Graphics pipelines borrow their shaders. Destroy every pipeline that
+ *       references this shader before destroying the shader.
+ * @note On success the shader handle must not be used again. The native shader
+ *       object is retired after previously submitted VulkEase work completes.
  *
  * @see veLoadShaderFromBuffer, veLoadShaderFromFile
  */
@@ -1776,6 +1851,9 @@ VULKEASE_API VEResult veDestroyShader(VEShader *shader);
  *         - VE_ERROR_INVALID_PARAMETER if device, desc, or outPipeline is NULL
  *         - VE_ERROR_OUT_OF_MEMORY if allocation failed
  *
+ * @note The pipeline borrows every shader in @p desc. Those shaders must remain
+ *       alive until veDestroyGraphicsPipeline() is called.
+ *
  * @see VEGraphicsPipelineDesc, veDestroyGraphicsPipeline, veBindGraphicsPipeline
  */
 VULKEASE_API VEResult veCreateGraphicsPipeline(VEDevice *device, const VEGraphicsPipelineDesc *desc,
@@ -1793,130 +1871,10 @@ VULKEASE_API VEResult veCreateGraphicsPipeline(VEDevice *device, const VEGraphic
  */
 VULKEASE_API VEResult veDestroyGraphicsPipeline(VEGraphicsPipeline *pipeline);
 
-/**
- * @brief Create an opaque rendering pipeline.
- *
- * Convenience function that creates a pipeline configured for standard opaque
- * geometry: depth test enabled, depth write enabled, no blending.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] vertexShader Vertex shader object.
- * @param[in] fragmentShader Fragment shader object.
- * @param[in] bindings Vertex buffer bindings array. Can be NULL if bindingCount is 0.
- * @param[in] bindingCount Number of vertex bindings.
- * @param[in] attrs Vertex attribute array. Can be NULL if attrCount is 0.
- * @param[in] attrCount Number of vertex attributes.
- * @param[in] debugName Optional debug name. Can be NULL.
- * @param[out] outPipeline Receives the pipeline handle.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateGraphicsPipeline, veDestroyGraphicsPipeline
- */
-VULKEASE_API VEResult veCreateOpaquePipeline(VEDevice *device, VEShader *vertexShader, VEShader *fragmentShader,
-                                             const VEVertexBinding *bindings, uint32_t bindingCount,
-                                             const VEVertexAttribute *attrs, uint32_t attrCount, const char *debugName,
-                                             VEGraphicsPipeline **outPipeline);
 
-/**
- * @brief Create a transparent rendering pipeline.
- *
- * Convenience function that creates a pipeline configured for alpha-blended
- * transparent geometry: depth test enabled, depth write disabled, alpha blending.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] vertexShader Vertex shader object.
- * @param[in] fragmentShader Fragment shader object.
- * @param[in] bindings Vertex buffer bindings array. Can be NULL if bindingCount is 0.
- * @param[in] bindingCount Number of vertex bindings.
- * @param[in] attrs Vertex attribute array. Can be NULL if attrCount is 0.
- * @param[in] attrCount Number of vertex attributes.
- * @param[in] debugName Optional debug name. Can be NULL.
- * @param[out] outPipeline Receives the pipeline handle.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateGraphicsPipeline, veDestroyGraphicsPipeline
- */
-VULKEASE_API VEResult veCreateTransparentPipeline(VEDevice *device, VEShader *vertexShader, VEShader *fragmentShader,
-                                                  const VEVertexBinding *bindings, uint32_t bindingCount,
-                                                  const VEVertexAttribute *attrs, uint32_t attrCount,
-                                                  const char *debugName, VEGraphicsPipeline **outPipeline);
 
-/**
- * @brief Create an additive blending pipeline.
- *
- * Convenience function that creates a pipeline configured for additive blending,
- * commonly used for particles, glows, and light effects.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] vertexShader Vertex shader object.
- * @param[in] fragmentShader Fragment shader object.
- * @param[in] bindings Vertex buffer bindings array. Can be NULL if bindingCount is 0.
- * @param[in] bindingCount Number of vertex bindings.
- * @param[in] attrs Vertex attribute array. Can be NULL if attrCount is 0.
- * @param[in] attrCount Number of vertex attributes.
- * @param[in] debugName Optional debug name. Can be NULL.
- * @param[out] outPipeline Receives the pipeline handle.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateGraphicsPipeline, veDestroyGraphicsPipeline
- */
-VULKEASE_API VEResult veCreateAdditivePipeline(VEDevice *device, VEShader *vertexShader, VEShader *fragmentShader,
-                                               const VEVertexBinding *bindings, uint32_t bindingCount,
-                                               const VEVertexAttribute *attrs, uint32_t attrCount,
-                                               const char *debugName, VEGraphicsPipeline **outPipeline);
 
-/**
- * @brief Create a shadow map rendering pipeline.
- *
- * Convenience function that creates a pipeline optimized for shadow map generation:
- * depth-only rendering with optional depth bias.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] vertexShader Vertex shader object.
- * @param[in] fragmentShader Fragment shader object. Can be NULL for depth-only.
- * @param[in] bindings Vertex buffer bindings array. Can be NULL if bindingCount is 0.
- * @param[in] bindingCount Number of vertex bindings.
- * @param[in] attrs Vertex attribute array. Can be NULL if attrCount is 0.
- * @param[in] attrCount Number of vertex attributes.
- * @param[in] debugName Optional debug name. Can be NULL.
- * @param[out] outPipeline Receives the pipeline handle.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateGraphicsPipeline, veDestroyGraphicsPipeline
- */
-VULKEASE_API VEResult veCreateShadowPipeline(VEDevice *device, VEShader *vertexShader, VEShader *fragmentShader,
-                                             const VEVertexBinding *bindings, uint32_t bindingCount,
-                                             const VEVertexAttribute *attrs, uint32_t attrCount, const char *debugName,
-                                             VEGraphicsPipeline **outPipeline);
 
-/**
- * @brief Create a UI overlay rendering pipeline.
- *
- * Convenience function that creates a pipeline optimized for UI rendering:
- * no depth testing, alpha blending enabled.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] vertexShader Vertex shader object.
- * @param[in] fragmentShader Fragment shader object.
- * @param[in] bindings Vertex buffer bindings array. Can be NULL if bindingCount is 0.
- * @param[in] bindingCount Number of vertex bindings.
- * @param[in] attrs Vertex attribute array. Can be NULL if attrCount is 0.
- * @param[in] attrCount Number of vertex attributes.
- * @param[in] debugName Optional debug name. Can be NULL.
- * @param[out] outPipeline Receives the pipeline handle.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateGraphicsPipeline, veDestroyGraphicsPipeline
- */
-VULKEASE_API VEResult veCreateUIOverlayPipeline(VEDevice *device, VEShader *vertexShader, VEShader *fragmentShader,
-                                                const VEVertexBinding *bindings, uint32_t bindingCount,
-                                                const VEVertexAttribute *attrs, uint32_t attrCount,
-                                                const char *debugName, VEGraphicsPipeline **outPipeline);
 
 
 // =============================================================================
@@ -2194,21 +2152,6 @@ VULKEASE_API VEResult veRenderTargetSetDepthAttachment(VERenderTarget *target, V
 VULKEASE_API VEResult veRenderTargetSetStencilAttachment(VERenderTarget *target, VETextureView view,
                                                          VkAttachmentLoadOp loadOp, uint32_t clearStencil);
 
-/**
- * @brief Blit a texture to a swapchain for presentation.
- *
- * Copies/scales a texture to the current swapchain image. Acquires the next
- * swapchain image and transitions it for presentation.
- *
- * @param[in] cmd Command buffer in recording state.
- * @param[in] texture Source texture to blit.
- * @param[in] swapchain Destination swapchain.
- * @param[in] filter Filtering mode (VK_FILTER_NEAREST or VK_FILTER_LINEAR).
- *
- * @return VE_SUCCESS on success, or VE_ERROR_SWAPCHAIN_OUT_OF_DATE if resize needed.
- */
-VULKEASE_API VEResult veBlitTextureToSwapchain(VECommandBuffer *cmd, VETexture texture, VESwapchain *swapchain,
-                                               VkFilter filter);
 
 /**
  * @brief Begin dynamic rendering.
@@ -2483,19 +2426,7 @@ VULKEASE_API VEResult veSetStencilOp(VECommandBuffer *cmd, VkStencilFaceFlags fa
  */
 VULKEASE_API VEResult veSetStencilReference(VECommandBuffer *cmd, VkStencilFaceFlags faceMask, uint32_t reference);
 
-// --- Convenience toggles ---
 
-/** @brief Convenience function to enable or disable wireframe rendering. */
-VULKEASE_API VEResult veSetWireframe(VECommandBuffer *cmd, bool enabled);
-
-/**
- * @brief Convenience function to configure depth testing.
- *
- * @param[in] cmd Command buffer in recording state.
- * @param[in] testEnabled Whether depth testing is enabled.
- * @param[in] writeEnabled Whether depth writing is enabled.
- */
-VULKEASE_API VEResult veSetDepthTesting(VECommandBuffer *cmd, bool testEnabled, bool writeEnabled);
 
 // =============================================================================
 // PUSH CONSTANTS & BUFFER BINDING
@@ -2776,7 +2707,11 @@ VULKEASE_API VEResult veCreateQueryPool(VEDevice *device, const VEQueryPoolDesc 
  *
  * @param[in] pool Query pool to destroy. Can be NULL (no-op).
  *
- * @return VE_SUCCESS on success.
+ * @return VE_SUCCESS on success, or VE_ERROR_INVALID_PARAMETER if the pool is
+ *         invalid or already pending destruction.
+ *
+ * @note On success the handle must not be used again. The native query pool is
+ *       retired after previously submitted VulkEase work completes.
  *
  * @see veCreateQueryPool
  */
@@ -3135,18 +3070,6 @@ VULKEASE_API VEResult veGetMemoryStats(VEDevice *device, VEMemoryStats *stats);
  * @see VEPipelineStats
  */
 VULKEASE_API VEResult veGetPipelineStats(VEDevice *device, VEPipelineStats *stats);
-
-/** @brief Print debug information about the device to the message callback. */
-VULKEASE_API VEResult vePrintDebugInfo(VEDevice *device);
-
-/** @brief Print profiling information to the message callback. */
-VULKEASE_API VEResult vePrintProfileInfo(VEDevice *device);
-
-/** @brief Print graphics pipeline configuration to the message callback. */
-VULKEASE_API VEResult vePrintGraphicsPipeline(VEGraphicsPipeline *pipeline);
-
-/** @brief Validate a graphics pipeline configuration for common errors. */
-VULKEASE_API VEResult veValidateGraphicsPipeline(VEGraphicsPipeline *pipeline);
 
 // =============================================================================
 // FRAME TIMING FUNCTIONS

@@ -114,13 +114,35 @@ VEDrawStateDesc veDefaultDrawStateDesc(void)
 VEResult veCreateGraphicsPipeline(VEDevice *device, const VEGraphicsPipelineDesc *desc,
                                   VEGraphicsPipeline **outPipeline)
 {
-   if (!device || !desc || !outPipeline)
+   if (!outPipeline)
+   {
+      veSetError("veCreateGraphicsPipeline: NULL parameter");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+   *outPipeline = nullptr;
+
+   if (!device || !desc)
    {
       veSetError("veCreateGraphicsPipeline: NULL parameter");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
    VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
+
+   VEShader *shaderReferences[] = {desc->vertexShader,      desc->fragmentShader, desc->geometryShader,
+                                   desc->tessControlShader, desc->tessEvalShader, desc->taskShader,
+                                   desc->meshShader};
+   for (VEShader *shader : shaderReferences)
+   {
+      if (!shader)
+         continue;
+      VEShaderInternal *shaderInternal = reinterpret_cast<VEShaderInternal *>(shader);
+      if (!shaderInternal->isValid || shaderInternal->pendingDestroy || shaderInternal->device != deviceInternal)
+      {
+         veSetError("veCreateGraphicsPipeline: shader is invalid, pending destruction, or belongs to another device");
+         return VE_ERROR_INVALID_PARAMETER;
+      }
+   }
 
    // Find free slot
    if (deviceInternal->graphicsPipelineCount >= deviceInternal->maxGraphicsPipelines)
@@ -221,6 +243,11 @@ VEResult veCreateGraphicsPipeline(VEDevice *device, const VEGraphicsPipelineDesc
    pipeline->isValid = true;
    pipeline->device = deviceInternal;
    deviceInternal->graphicsPipelineCount++;
+   for (VEShader *shader : shaderReferences)
+   {
+      if (shader)
+         reinterpret_cast<VEShaderInternal *>(shader)->pipelineReferences.fetch_add(1, std::memory_order_release);
+   }
 
    *outPipeline = reinterpret_cast<VEGraphicsPipeline *>(pipeline);
    return VE_SUCCESS;
@@ -243,6 +270,16 @@ VEResult veDestroyGraphicsPipeline(VEGraphicsPipeline *pipeline)
 
    pipelineInternal->isValid = false;
    pipelineInternal->device->graphicsPipelineCount--;
+
+   VEShader *shaderReferences[] = {pipelineInternal->vertexShader,   pipelineInternal->fragmentShader,
+                                   pipelineInternal->geometryShader, pipelineInternal->tessControlShader,
+                                   pipelineInternal->tessEvalShader, pipelineInternal->taskShader,
+                                   pipelineInternal->meshShader};
+   for (VEShader *shader : shaderReferences)
+   {
+      if (shader)
+         reinterpret_cast<VEShaderInternal *>(shader)->pipelineReferences.fetch_sub(1, std::memory_order_release);
+   }
 
    return VE_SUCCESS;
 }
