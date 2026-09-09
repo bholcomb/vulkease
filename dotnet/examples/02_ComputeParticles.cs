@@ -77,7 +77,7 @@ namespace VulkEaseExamples
         private VEBufferAddress _particleBuffer;
         private VEBufferAddress _vertexBuffer;
         private VERenderTarget _renderTarget;
-        private VETextureIndex _colorTexture;
+        private VETexture _colorTexture;
 
         // Animation state
         private Stopwatch _stopwatch = Stopwatch.StartNew();
@@ -152,7 +152,7 @@ namespace VulkEaseExamples
             {
                 VulkEase.VulkEase.ResizeSwapchain(_swapchain, (uint)e.Width, (uint)e.Height);
                 VulkEase.VulkEase.ResizeRenderTarget(_device, ref _renderTarget, (uint)e.Width, (uint)e.Height);
-                _colorTexture = _renderTarget.ColorAttachments[0].texture;
+                _colorTexture = VulkEase.VulkEase.GetTextureFromView(_device, _renderTarget.ColorAttachments[0].view);
             }
         }
 
@@ -214,7 +214,7 @@ namespace VulkEaseExamples
                 _swapchain = VulkEase.VulkEase.CreateSwapchain(_device, swapchainDesc);
 
                 // Create simple render target
-                VETextureIndex depthTex;
+                VETexture depthTex;
                 _renderTarget = VulkEase.VulkEase.CreateSimpleRenderTarget(_device,
                     (uint)WindowWidth, (uint)WindowHeight,
                     VkFormat.VK_FORMAT_B8G8R8A8_SRGB,
@@ -514,7 +514,7 @@ namespace VulkEaseExamples
                     uint swHeight = extent.height;
                     VulkEase.VulkEase.ResizeSwapchain(_swapchain, swWidth, swHeight);
                     VulkEase.VulkEase.ResizeRenderTarget(_device, ref _renderTarget, swWidth, swHeight);
-                    _colorTexture = _renderTarget.ColorAttachments[0].texture;
+                    _colorTexture = VulkEase.VulkEase.GetTextureFromView(_device, _renderTarget.ColorAttachments[0].view);
                     return;
                 }
 
@@ -528,7 +528,7 @@ namespace VulkEaseExamples
                     uint swHeight = extent.height;
                     VulkEase.VulkEase.ResizeSwapchain(_swapchain, swWidth, swHeight);
                     VulkEase.VulkEase.ResizeRenderTarget(_device, ref _renderTarget, swWidth, swHeight);
-                    _colorTexture = _renderTarget.ColorAttachments[0].texture;
+                    _colorTexture = VulkEase.VulkEase.GetTextureFromView(_device, _renderTarget.ColorAttachments[0].view);
                 }
             }
             catch (Exception ex)
@@ -584,7 +584,7 @@ namespace VulkEaseExamples
                 VulkEase.VulkEase.DestroyShader(_fragmentShader);
             }
 
-            if (_colorTexture.native != VEConstants.VE_INVALID_TEXTURE_INDEX.native)
+            if (_colorTexture.native != VEConstants.VE_INVALID_TEXTURE.native)
             {
                 VulkEase.VulkEase.DestroyTexture(_device, _colorTexture);
             }

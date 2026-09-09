@@ -194,6 +194,19 @@ namespace VulkEase
         internal static extern VEResult veDestroyTexture(IntPtr device, UInt32 index);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern UInt32 veGetDefaultTextureView(IntPtr device, UInt32 texture);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern UInt32 veGetTextureFromView(IntPtr device, UInt32 view);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veCreateTextureView(IntPtr device, UInt32 texture, ref VETextureViewDesc desc,
+            out UInt32 outView);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern VEResult veDestroyTextureView(IntPtr device, UInt32 view);
+
+        [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veImportExternalTexture(IntPtr device, ref VEExternalTextureDesc desc, out UInt32 outIndex);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
@@ -562,8 +575,8 @@ namespace VulkEase
             VkAttachmentLoadOp loadOp, VEColor clearValue);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern VEResult veRenderTargetAddColorAttachmentResolve(ref VERenderTargetInternal target, UInt32 texture,
-            UInt32 resolveTexture, VkAttachmentLoadOp loadOp, VEColor clearValue);
+        internal static extern VEResult veRenderTargetAddColorAttachmentResolve(ref VERenderTargetInternal target, UInt32 view,
+            UInt32 resolveView, VkAttachmentLoadOp loadOp, VEColor clearValue);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern VEResult veRenderTargetSetDepthAttachment(ref VERenderTargetInternal target, UInt32 texture,
@@ -635,7 +648,7 @@ namespace VulkEase
         internal static extern IntPtr veGetVkImageFromTexture(IntPtr device, UInt32 textureIndex);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr veGetVkImageViewFromTexture(IntPtr device, UInt32 textureIndex);
+        internal static extern IntPtr veGetVkImageView(IntPtr device, UInt32 view);
 
         [DllImport(Constants.LibraryName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern IntPtr veGetVkSamplerFromIndex(IntPtr device, UInt32 samplerIndex);

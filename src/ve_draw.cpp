@@ -1171,7 +1171,7 @@ VEResult veBarrier(VECommandBuffer *cmd, const VEBarrierDesc *desc)
    for (uint32_t i = 0; i < desc->imageBarrierCount; ++i)
    {
       const VEImageBarrier &src = desc->imageBarriers[i];
-      if (src.image == VE_INVALID_TEXTURE_INDEX)
+      if (src.image == VE_INVALID_TEXTURE)
       {
          veSetError("Image barrier %u has invalid texture index", i);
          return VE_ERROR_INVALID_PARAMETER;
@@ -1306,10 +1306,9 @@ VEResult veBarrierGraphicsToPresent(VECommandBuffer *cmd)
    return veBarrier(cmd, &desc);
 }
 
-VEResult veTransitionTexture(VECommandBuffer *cmd, VETextureIndex texture, VkImageLayout oldLayout,
-                             VkImageLayout newLayout)
+VEResult veTransitionTexture(VECommandBuffer *cmd, VETexture texture, VkImageLayout oldLayout, VkImageLayout newLayout)
 {
-   if (!cmd || texture == VE_INVALID_TEXTURE_INDEX)
+   if (!cmd || texture == VE_INVALID_TEXTURE)
    {
       veSetError("Invalid parameters for veTransitionTexture");
       return VE_ERROR_INVALID_PARAMETER;
@@ -1468,40 +1467,40 @@ VEResult veTransitionTexture(VECommandBuffer *cmd, VETextureIndex texture, VkIma
 // Common Texture Layout Transition Helpers
 // =============================================================================
 
-VEResult veTransitionTextureForShaderRead(VECommandBuffer *cmd, VETextureIndex texture)
+VEResult veTransitionTextureForShaderRead(VECommandBuffer *cmd, VETexture texture)
 {
    return veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 }
 
-VEResult veTransitionTextureForColorAttachment(VECommandBuffer *cmd, VETextureIndex texture)
+VEResult veTransitionTextureForColorAttachment(VECommandBuffer *cmd, VETexture texture)
 {
    return veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 }
 
-VEResult veTransitionTextureForDepthAttachment(VECommandBuffer *cmd, VETextureIndex texture)
+VEResult veTransitionTextureForDepthAttachment(VECommandBuffer *cmd, VETexture texture)
 {
    return veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_UNDEFINED,
                               VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 }
 
-VEResult veTransitionTextureForTransferSrc(VECommandBuffer *cmd, VETextureIndex texture)
+VEResult veTransitionTextureForTransferSrc(VECommandBuffer *cmd, VETexture texture)
 {
    return veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 }
 
-VEResult veTransitionTextureForTransferDst(VECommandBuffer *cmd, VETextureIndex texture)
+VEResult veTransitionTextureForTransferDst(VECommandBuffer *cmd, VETexture texture)
 {
    return veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 }
 
-VEResult veTransitionTextureForPresent(VECommandBuffer *cmd, VETextureIndex texture)
+VEResult veTransitionTextureForPresent(VECommandBuffer *cmd, VETexture texture)
 {
    return veTransitionTexture(cmd, texture, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 }
 
-VEResult veTransitionTextureToLayout(VECommandBuffer *cmd, VETextureIndex texture, VkImageLayout newLayout)
+VEResult veTransitionTextureToLayout(VECommandBuffer *cmd, VETexture texture, VkImageLayout newLayout)
 {
-   if (!cmd || texture == VE_INVALID_TEXTURE_INDEX)
+   if (!cmd || texture == VE_INVALID_TEXTURE)
    {
       veSetError("Invalid parameters for veTransitionTextureToLayout");
       return VE_ERROR_INVALID_PARAMETER;

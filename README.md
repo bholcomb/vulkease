@@ -12,4 +12,12 @@ A few of the design choices:
 
 This is a work in progress.  The examples should build and run without validation errors, but don't exercise every feature yet.  It still has a bit of AI slop that needs to be cleaned up.
 
+## Public headers
+
+- `vulkease.h` is the core API: device and resource ownership, commands, synchronization, rendering, and explicit barriers.
+- `vulkease_util.h` contains optional convenience constructors, synchronous helpers, file I/O, presets, and render-target helpers.
+- `vulkease_vk.h` contains native Vulkan handle access and external-image interop escape hatches.
+
+Textures and texture views are distinct. `VETexture` owns the image and memory. `VETextureView` selects the format and subresource range used by shaders and render targets. Every texture has a default full-resource view available through `veGetDefaultTextureView`; create additional views only when needed.
+
  

@@ -25,9 +25,9 @@ void VEDeferredDeletionQueue::enqueueBuffer(VEBufferAddress address)
    pending.push_back(deletion);
 }
 
-void VEDeferredDeletionQueue::enqueueTexture(VETextureIndex index)
+void VEDeferredDeletionQueue::enqueueTexture(VETexture index)
 {
-   if (index == VE_INVALID_TEXTURE_INDEX)
+   if (index == VE_INVALID_TEXTURE)
       return;
 
    std::lock_guard<std::mutex> lock(mutex);

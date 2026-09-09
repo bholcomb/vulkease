@@ -86,14 +86,19 @@ typedef struct VEQueryPool VEQueryPool;
 // GPU addresses for buffer device address (64-bit pointers)
 typedef uint64_t VEBufferAddress;
 
-// Bindless indices for textures and samplers (32-bit indices)
-typedef uint32_t VETextureIndex;
+// Texture resources and shader-visible texture views use independent handles.
+typedef uint32_t VETexture;
+typedef uint32_t VETextureView;
 typedef uint32_t VESamplerIndex;
 
 // Invalid constants
 #define VE_INVALID_ADDRESS 0ULL
-#define VE_INVALID_TEXTURE_INDEX 0xFFFFFFFF
+#define VE_INVALID_TEXTURE 0xFFFFFFFF
+#define VE_INVALID_TEXTURE_VIEW 0xFFFFFFFF
 #define VE_INVALID_SAMPLER_INDEX 0xFFFFFFFF
+
+// Use the texture's native view type in VETextureViewDesc.
+#define VE_TEXTURE_VIEW_TYPE_DEFAULT VK_IMAGE_VIEW_TYPE_MAX_ENUM
 
 // =============================================================================
 // RESULT CODES & ERROR HANDLING
@@ -204,21 +209,21 @@ typedef struct VETextureDesc
    bool sparse;           // If true, create as sparse texture (no memory initially bound)
 } VETextureDesc;
 
-// External texture import descriptor
-// Used to import VkImage handles from external sources (e.g., OpenXR, OpenVR)
-typedef struct VEExternalTextureDesc
+// A view selects how a texture is interpreted by rendering and shaders.
+// VE_TEXTURE_VIEW_TYPE_DEFAULT and VK_FORMAT_UNDEFINED inherit from the texture.
+// Zero counts select the remaining mip levels or array layers.
+typedef struct VETextureViewDesc
 {
-   VkImage image;                  // External VkImage handle (required, NOT owned by VulkEase)
-   VkFormat format;                // Image format (required)
-   uint32_t width;                 // Image width
-   uint32_t height;                // Image height
-   uint32_t depth;                 // Image depth (1 for 2D textures)
-   uint32_t mipLevels;             // Number of mip levels
-   uint32_t arrayLayers;           // Number of array layers
-   VkImageViewType viewType;       // VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_VIEW_TYPE_CUBE, etc.
-   VkImageAspectFlags aspectMask;  // VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, etc.
-   const char *debugName;          // Debug name (optional)
-} VEExternalTextureDesc;
+   VkImageViewType viewType;
+   VkFormat format;
+   VkComponentMapping components;
+   VkImageAspectFlags aspectMask;
+   uint32_t baseMipLevel;
+   uint32_t mipLevelCount;
+   uint32_t baseArrayLayer;
+   uint32_t arrayLayerCount;
+   const char *debugName;
+} VETextureViewDesc;
 
 // Sampler creation descriptor
 typedef struct VESamplerDesc
@@ -397,17 +402,6 @@ typedef struct VESwapchainDesc
    const char *debugName; // Debug name (optional)
 } VESwapchainDesc;
 
-// Default sampler types
-typedef enum VEDefaultSampler
-{
-   VE_DEFAULT_SAMPLER_NEAREST,
-   VE_DEFAULT_SAMPLER_LINEAR,
-   VE_DEFAULT_SAMPLER_ANISOTROPIC_4X,
-   VE_DEFAULT_SAMPLER_ANISOTROPIC_16X,
-   VE_DEFAULT_SAMPLER_SHADOW,
-   VE_DEFAULT_SAMPLER_COUNT
-} VEDefaultSampler;
-
 // =============================================================================
 // GRAPHICS PIPELINE TYPES
 // =============================================================================
@@ -564,11 +558,11 @@ typedef struct VEDrawStateDesc
 // Render target attachment (for dynamic rendering)
 typedef struct VERenderTargetAttachment
 {
-   VETextureIndex texture; // Texture to render to
+   VETextureView view;
    VkAttachmentLoadOp loadOp;
    VkAttachmentStoreOp storeOp;
-   VEColor clearValue;            // Used if loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR
-   VETextureIndex resolveTexture; // For MSAA resolve (optional)
+   VEColor clearValue;
+   VETextureView resolveView;
 } VERenderTargetAttachment;
 
 // Render target configuration (replaces render passes)
@@ -585,6 +579,7 @@ typedef struct VERenderTarget
    uint32_t colorAttachmentCount;
    bool hasDepthAttachment;
    bool hasStencilAttachment;
+   VkRenderingFlags flags; // 0 for inline draws; use CONTENTS_SECONDARY for secondary command buffers
 
    // All attachments stored inline - trivially copyable
    VERenderTargetAttachment attachments[VE_TOTAL_ATTACHMENT_SLOTS];
@@ -625,7 +620,7 @@ typedef struct VEImageBarrier
    uint32_t dstQueueFamilyIndex;
    VkImageLayout oldLayout;
    VkImageLayout newLayout;
-   VETextureIndex image;
+   VETexture image;
    VkImageSubresourceRange subresourceRange;
 } VEImageBarrier;
 
@@ -663,6 +658,7 @@ typedef struct VESubmitInfo
 typedef struct VESecondaryCommandBufferDesc
 {
    VkCommandBufferUsageFlags usageFlags;    // VK_COMMAND_BUFFER_USAGE_*
+   VkRenderingFlags renderingFlags;         // Must match the dynamic rendering scope
    uint32_t colorAttachmentCount;           // Up to 8 color attachments
    VkFormat colorAttachmentFormats[8];      // Color formats for inheritance
    VkFormat depthAttachmentFormat;          // Depth format (VK_FORMAT_UNDEFINED if none)
@@ -741,7 +737,7 @@ typedef struct VEGraphicsPushConstants
    VEBufferAddress vertexBuffer;      // 8 bytes - vertex data address
    VEBufferAddress indexBuffer;       // 8 bytes - index data address (optional)
    VEBufferAddress uniformBuffers[8]; // 64 bytes - up to 8 uniform buffer addresses
-   VETextureIndex textures[16];       // 64 bytes - up to 16 bindless texture indices
+   VETextureView textures[16];        // Shader-visible bindless texture views
    VESamplerIndex samplers[16];       // 64 bytes - up to 16 bindless sampler indices
    float objectScale;                 // 4 bytes - per-object scale
    uint32_t activeTextureCount;       // 4 bytes - number of active textures (0-16)
@@ -759,7 +755,7 @@ typedef struct VEGraphicsPushConstants
 typedef struct VEComputePushConstants
 {
    VEBufferAddress buffers[16]; // 128 bytes - up to 16 buffer addresses
-   VETextureIndex textures[16]; // 64 bytes - up to 16 texture indices
+   VETextureView textures[16];  // Shader-visible bindless texture views
    VESamplerIndex samplers[8];  // 32 bytes - up to 8 sampler indices
    uint32_t elementCount;       // 4 bytes - number of elements to process
    uint32_t activeBufferCount;  // 4 bytes - number of active buffers (0-16)
@@ -777,21 +773,20 @@ typedef struct VEComputePushConstants
 #define VE_INIT_GRAPHICS_PUSH_CONSTANTS()                                                                              \
    {                                                                                                                   \
       VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,                                                                          \
-      {VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,                                 \
-       VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS},                                \
-      {VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                                   \
-       VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                                   \
-       VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                                   \
-       VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                                   \
-       VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                                   \
-       VE_INVALID_TEXTURE_INDEX},                                                                                      \
-      {VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                                   \
-       VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                                   \
-       VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                                   \
-       VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                                   \
-       VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                                   \
-       VE_INVALID_SAMPLER_INDEX},                                                                                      \
-      1.0f, 0, 0, 0, {0, 0, 0, 0, 0, 0, 0}                                                                              \
+          {VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,                             \
+           VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS},                            \
+          {VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW,         \
+           VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW,         \
+           VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW,         \
+           VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW},        \
+          {VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,     \
+           VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,     \
+           VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,     \
+           VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX},    \
+          1.0f, 0, 0, 0,                                                                                               \
+      {                                                                                                                \
+         0, 0, 0, 0, 0, 0, 0                                                                                           \
+      }                                                                                                                \
    }
 
 /**
@@ -806,16 +801,16 @@ typedef struct VEComputePushConstants
        VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,                                 \
        VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS,                                 \
        VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS, VE_INVALID_ADDRESS},                                \
-      {VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                                   \
-       VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                                   \
-       VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                                   \
-       VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                                   \
-       VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX, VE_INVALID_TEXTURE_INDEX,                                   \
-       VE_INVALID_TEXTURE_INDEX},                                                                                      \
-      {VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                                   \
-       VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,                                   \
-       VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX},                                                            \
-      0, 0, 0, 0, {0, 0, 0, 0}                                                                                          \
+          {VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW,         \
+           VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW,         \
+           VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW,         \
+           VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW, VE_INVALID_TEXTURE_VIEW},        \
+          {VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX,     \
+           VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX, VE_INVALID_SAMPLER_INDEX},    \
+          0, 0, 0, 0,                                                                                                  \
+      {                                                                                                                \
+         0, 0, 0, 0                                                                                                    \
+      }                                                                                                                \
    }
 
 // =============================================================================
@@ -1082,177 +1077,6 @@ VULKEASE_API uint32_t veGetVulkanVersion(VEDevice *device);
 VULKEASE_API bool veIsMeshShaderSupported(VEDevice *device);
 
 // =============================================================================
-// VULKAN HANDLE ACCESS (Escape Hatches)
-// =============================================================================
-
-/**
- * @brief Get the underlying VkInstance handle.
- *
- * Provides access to the raw Vulkan instance for custom extension use or
- * interop with other Vulkan libraries.
- *
- * @param[in] context Valid VulkEase context.
- *
- * @return VkInstance handle, or VK_NULL_HANDLE if context is NULL.
- *
- * @warning The returned handle is owned by VulkEase. Do not destroy it directly.
- *          Lifetime matches the owning VEContext.
- */
-VULKEASE_API VkInstance veGetVkInstance(VEContext *context);
-
-/**
- * @brief Get the underlying VkPhysicalDevice handle.
- *
- * @param[in] device Valid VulkEase device.
- *
- * @return VkPhysicalDevice handle, or VK_NULL_HANDLE if device is NULL.
- *
- * @warning The returned handle is owned by VulkEase. Lifetime matches the owning VEDevice.
- */
-VULKEASE_API VkPhysicalDevice veGetVkPhysicalDevice(VEDevice *device);
-
-/**
- * @brief Get the underlying VkDevice handle.
- *
- * @param[in] device Valid VulkEase device.
- *
- * @return VkDevice handle, or VK_NULL_HANDLE if device is NULL.
- *
- * @warning The returned handle is owned by VulkEase. Do not destroy it directly.
- *          Lifetime matches the owning VEDevice.
- */
-VULKEASE_API VkDevice veGetVkDevice(VEDevice *device);
-
-/**
- * @brief Get the graphics queue handle.
- *
- * @param[in] device Valid VulkEase device.
- *
- * @return VkQueue handle for graphics operations, or VK_NULL_HANDLE if device is NULL.
- *
- * @warning The returned handle is owned by VulkEase. Lifetime matches the owning VEDevice.
- */
-VULKEASE_API VkQueue veGetVkGraphicsQueue(VEDevice *device);
-
-/**
- * @brief Get the compute queue handle.
- *
- * @param[in] device Valid VulkEase device.
- *
- * @return VkQueue handle for compute operations, or VK_NULL_HANDLE if device is NULL.
- *
- * @warning The returned handle is owned by VulkEase. Lifetime matches the owning VEDevice.
- */
-VULKEASE_API VkQueue veGetVkComputeQueue(VEDevice *device);
-
-/**
- * @brief Get the transfer queue handle.
- *
- * @param[in] device Valid VulkEase device.
- *
- * @return VkQueue handle for transfer operations, or VK_NULL_HANDLE if device is NULL.
- *
- * @warning The returned handle is owned by VulkEase. Lifetime matches the owning VEDevice.
- */
-VULKEASE_API VkQueue veGetVkTransferQueue(VEDevice *device);
-
-/**
- * @brief Get the fence associated with a command buffer.
- *
- * Each command buffer has an associated fence for synchronization purposes.
- *
- * @param[in] cmd Valid VulkEase command buffer.
- *
- * @return VkFence handle, or VK_NULL_HANDLE if cmd is NULL.
- *
- * @warning The returned handle is owned by VulkEase. Lifetime matches the owning VECommandBuffer.
- */
-VULKEASE_API VkFence veGetVkCommandBufferFence(VECommandBuffer *cmd);
-
-/**
- * @brief Get the VkBuffer handle from a buffer device address.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] address Buffer device address obtained from veCreateBuffer().
- *
- * @return VkBuffer handle, or VK_NULL_HANDLE if device is NULL or address is invalid.
- *
- * @warning The returned handle is owned by VulkEase. Lifetime matches the buffer.
- */
-VULKEASE_API VkBuffer veGetVkBufferFromAddress(VEDevice *device, VEBufferAddress address);
-
-/**
- * @brief Get the VkImage handle from a texture index.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] texture Texture index obtained from veCreateTexture().
- *
- * @return VkImage handle, or VK_NULL_HANDLE if device is NULL or index is invalid.
- *
- * @warning The returned handle is owned by VulkEase. Lifetime matches the texture.
- */
-VULKEASE_API VkImage veGetVkImageFromTexture(VEDevice *device, VETextureIndex texture);
-
-/**
- * @brief Get the VkImageView handle from a texture index.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] texture Texture index obtained from veCreateTexture().
- *
- * @return VkImageView handle, or VK_NULL_HANDLE if device is NULL or index is invalid.
- *
- * @warning The returned handle is owned by VulkEase. Lifetime matches the texture.
- */
-VULKEASE_API VkImageView veGetVkImageViewFromTexture(VEDevice *device, VETextureIndex texture);
-
-/**
- * @brief Get the VkSampler handle from a sampler index.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] sampler Sampler index obtained from veCreateSampler().
- *
- * @return VkSampler handle, or VK_NULL_HANDLE if device is NULL or index is invalid.
- *
- * @warning The returned handle is owned by VulkEase. Lifetime matches the sampler.
- */
-VULKEASE_API VkSampler veGetVkSamplerFromIndex(VEDevice *device, VESamplerIndex sampler);
-
-/**
- * @brief Get the VkSwapchainKHR handle from a swapchain.
- *
- * @param[in] swapchain Valid VulkEase swapchain.
- *
- * @return VkSwapchainKHR handle, or VK_NULL_HANDLE if swapchain is NULL.
- *
- * @warning The returned handle is owned by VulkEase. Lifetime matches the swapchain.
- */
-VULKEASE_API VkSwapchainKHR veGetVkSwapchain(VESwapchain *swapchain);
-
-/**
- * @brief Get a swapchain image by index.
- *
- * @param[in] swapchain Valid VulkEase swapchain.
- * @param[in] imageIndex Index of the swapchain image (0 to image count - 1).
- *
- * @return VkImage handle, or VK_NULL_HANDLE if swapchain is NULL or index is invalid.
- *
- * @warning The returned handle is owned by VulkEase. Lifetime matches the swapchain.
- */
-VULKEASE_API VkImage veGetVkSwapchainImage(VESwapchain *swapchain, uint32_t imageIndex);
-
-/**
- * @brief Get a swapchain image view by index.
- *
- * @param[in] swapchain Valid VulkEase swapchain.
- * @param[in] imageIndex Index of the swapchain image (0 to image count - 1).
- *
- * @return VkImageView handle, or VK_NULL_HANDLE if swapchain is NULL or index is invalid.
- *
- * @warning The returned handle is owned by VulkEase. Lifetime matches the swapchain.
- */
-VULKEASE_API VkImageView veGetVkSwapchainImageView(VESwapchain *swapchain, uint32_t imageIndex);
-
-// =============================================================================
 // MESSAGE CALLBACK FUNCTIONS
 // =============================================================================
 
@@ -1484,98 +1308,10 @@ VULKEASE_API uint64_t veGetBufferSize(VEDevice *device, VEBufferAddress address)
  */
 VULKEASE_API VkBufferUsageFlags veGetBufferUsage(VEDevice *device, VEBufferAddress address);
 
-/**
- * @brief Create a vertex buffer with initial data.
- *
- * Convenience function that creates a buffer optimized for vertex data with
- * appropriate usage flags and uploads the initial data.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] vertices Pointer to vertex data to upload.
- * @param[in] size Size of vertex data in bytes.
- * @param[in] debugName Optional debug name for the buffer. Can be NULL.
- * @param[out] outAddress Receives the buffer device address.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateBuffer, veDestroyBuffer
- */
-VULKEASE_API VEResult veCreateVertexBuffer(VEDevice *device, const void *vertices, uint64_t size, const char *debugName,
-                                           VEBufferAddress *outAddress);
 
-/**
- * @brief Create an index buffer with initial data.
- *
- * Convenience function that creates a buffer optimized for index data with
- * appropriate usage flags and uploads the initial data.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] indices Pointer to index data to upload.
- * @param[in] size Size of index data in bytes.
- * @param[in] debugName Optional debug name for the buffer. Can be NULL.
- * @param[out] outAddress Receives the buffer device address.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateBuffer, veDestroyBuffer
- */
-VULKEASE_API VEResult veCreateIndexBuffer(VEDevice *device, const void *indices, uint64_t size, const char *debugName,
-                                          VEBufferAddress *outAddress);
 
-/**
- * @brief Create a uniform buffer.
- *
- * Convenience function that creates a buffer optimized for uniform data
- * (shader constants) with appropriate usage flags.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] size Size of buffer in bytes.
- * @param[in] persistentlyMapped If true, the buffer remains mapped for efficient updates.
- * @param[in] debugName Optional debug name for the buffer. Can be NULL.
- * @param[out] outAddress Receives the buffer device address.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateBuffer, veDestroyBuffer
- */
-VULKEASE_API VEResult veCreateUniformBuffer(VEDevice *device, uint64_t size, bool persistentlyMapped,
-                                            const char *debugName, VEBufferAddress *outAddress);
 
-/**
- * @brief Create a storage buffer.
- *
- * Convenience function that creates a buffer for shader storage with
- * read/write access from shaders.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] size Size of buffer in bytes.
- * @param[in] debugName Optional debug name for the buffer. Can be NULL.
- * @param[out] outAddress Receives the buffer device address.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateBuffer, veDestroyBuffer
- */
-VULKEASE_API VEResult veCreateStorageBuffer(VEDevice *device, uint64_t size, const char *debugName,
-                                            VEBufferAddress *outAddress);
 
-/**
- * @brief Create an indirect draw/dispatch buffer.
- *
- * Convenience function that creates a buffer for indirect drawing or
- * compute dispatch commands populated by the GPU.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] size Size of buffer in bytes.
- * @param[in] debugName Optional debug name for the buffer. Can be NULL.
- * @param[out] outAddress Receives the buffer device address.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateBuffer, veDestroyBuffer, veDrawIndirect, veDispatchIndirect
- */
-VULKEASE_API VEResult veCreateIndirectBuffer(VEDevice *device, uint64_t size, const char *debugName,
-                                             VEBufferAddress *outAddress);
 
 /**
  * @brief Copy buffer data on the GPU (deferred/command buffer version).
@@ -1597,25 +1333,6 @@ VULKEASE_API VEResult veCreateIndirectBuffer(VEDevice *device, uint64_t size, co
 VULKEASE_API VEResult veCmdCopyBuffer(VECommandBuffer *cmd, VEBufferAddress src, VEBufferAddress dst,
                                       uint64_t srcOffset, uint64_t dstOffset, uint64_t size);
 
-/**
- * @brief Copy buffer data on the GPU (immediate version).
- *
- * Executes a buffer copy operation immediately or asynchronously.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] src Source buffer address.
- * @param[in] dst Destination buffer address.
- * @param[in] srcOffset Byte offset into source buffer.
- * @param[in] dstOffset Byte offset into destination buffer.
- * @param[in] size Number of bytes to copy.
- * @param[in] fence Optional fence for async operation. NULL = blocking wait.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCmdCopyBuffer
- */
-VULKEASE_API VEResult veCopyBuffer(VEDevice *device, VEBufferAddress src, VEBufferAddress dst, uint64_t srcOffset,
-                                   uint64_t dstOffset, uint64_t size, VkFence fence);
 
 /**
  * @brief Fill a buffer with a 32-bit value.
@@ -1658,36 +1375,36 @@ VULKEASE_API VEResult veCmdUpdateBuffer(VECommandBuffer *cmd, VEBufferAddress ds
 // =============================================================================
 
 /**
- * @brief Create a texture and return its bindless index.
+ * @brief Create a texture resource.
  *
- * Creates a new texture with the specified properties. The texture is accessible
- * via its bindless index in shaders.
+ * Creates an image and its default full-resource texture view. Pass the result of
+ * veGetDefaultTextureView() to shaders and render targets.
  *
  * @param[in] device Valid VulkEase device.
  * @param[in] desc Texture descriptor specifying dimensions, format, and usage.
- * @param[out] outIndex Receives the bindless texture index.
+ * @param[out] outIndex Receives the texture resource handle.
  *
  * @return VE_SUCCESS on success, or:
  *         - VE_ERROR_INVALID_PARAMETER if device, desc, or outIndex is NULL
  *         - VE_ERROR_OUT_OF_MEMORY if allocation failed
  *
- * @note The returned index is valid until veDestroyTexture() is called.
+ * @note The returned texture and all of its views are valid until veDestroyTexture() is called.
  * @see VETextureDesc, veDestroyTexture
  */
-VULKEASE_API VEResult veCreateTexture(VEDevice *device, const VETextureDesc *desc, VETextureIndex *outIndex);
+VULKEASE_API VEResult veCreateTexture(VEDevice *device, const VETextureDesc *desc, VETexture *outIndex);
 
 /**
- * @brief Destroy a texture by its bindless index.
+ * @brief Destroy a texture resource and all views created from it.
  *
  * @param[in] device Valid VulkEase device.
- * @param[in] index Texture index to destroy. VE_INVALID_TEXTURE_INDEX is a no-op.
+ * @param[in] index Texture index to destroy. VE_INVALID_TEXTURE is a no-op.
  *
  * @return VE_SUCCESS on success, or:
  *         - VE_ERROR_INVALID_PARAMETER if device is NULL or index is invalid
  *
  * @see veCreateTexture
  */
-VULKEASE_API VEResult veDestroyTexture(VEDevice *device, VETextureIndex index);
+VULKEASE_API VEResult veDestroyTexture(VEDevice *device, VETexture index);
 
 /**
  * @brief Get the dimensions of a texture.
@@ -1697,7 +1414,7 @@ VULKEASE_API VEResult veDestroyTexture(VEDevice *device, VETextureIndex index);
  *
  * @return VkExtent3D with width, height, and depth, or {0,0,0} if invalid.
  */
-VULKEASE_API VkExtent3D veGetTextureSize(VEDevice *device, VETextureIndex index);
+VULKEASE_API VkExtent3D veGetTextureSize(VEDevice *device, VETexture index);
 
 /**
  * @brief Get the format of a texture.
@@ -1707,232 +1424,20 @@ VULKEASE_API VkExtent3D veGetTextureSize(VEDevice *device, VETextureIndex index)
  *
  * @return VkFormat of the texture, or VK_FORMAT_UNDEFINED if invalid.
  */
-VULKEASE_API VkFormat veGetTextureFormat(VEDevice *device, VETextureIndex index);
+VULKEASE_API VkFormat veGetTextureFormat(VEDevice *device, VETexture index);
 
-/**
- * @brief Create a 1D texture.
- *
- * Convenience function for creating a simple 1D texture.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] width Texture width in pixels.
- * @param[in] format Pixel format (e.g., VK_FORMAT_R8G8B8A8_UNORM).
- * @param[in] usage Usage flags (e.g., VK_IMAGE_USAGE_SAMPLED_BIT).
- * @param[in] debugName Optional debug name. Can be NULL.
- * @param[out] outIndex Receives the texture index.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateTexture, veDestroyTexture
- */
-VULKEASE_API VEResult veCreateTexture1D(VEDevice *device, uint32_t width, VkFormat format, VkImageUsageFlags usage,
-                                        const char *debugName, VETextureIndex *outIndex);
+/** Return the automatically-created full-resource view for a texture. */
+VULKEASE_API VETextureView veGetDefaultTextureView(VEDevice *device, VETexture texture);
 
-/**
- * @brief Create a 2D texture.
- *
- * Convenience function for creating a simple 2D texture.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] width Texture width in pixels.
- * @param[in] height Texture height in pixels.
- * @param[in] format Pixel format.
- * @param[in] usage Usage flags.
- * @param[in] debugName Optional debug name. Can be NULL.
- * @param[out] outIndex Receives the texture index.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateTexture, veDestroyTexture
- */
-VULKEASE_API VEResult veCreateTexture2D(VEDevice *device, uint32_t width, uint32_t height, VkFormat format,
-                                        VkImageUsageFlags usage, const char *debugName, VETextureIndex *outIndex);
+/** Return the texture resource that owns a view. */
+VULKEASE_API VETexture veGetTextureFromView(VEDevice *device, VETextureView view);
 
-/**
- * @brief Create a 3D texture.
- *
- * Convenience function for creating a 3D volume texture.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] width Texture width in pixels.
- * @param[in] height Texture height in pixels.
- * @param[in] depth Texture depth in pixels.
- * @param[in] format Pixel format.
- * @param[in] usage Usage flags.
- * @param[in] debugName Optional debug name. Can be NULL.
- * @param[out] outIndex Receives the texture index.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateTexture, veDestroyTexture
- */
-VULKEASE_API VEResult veCreateTexture3D(VEDevice *device, uint32_t width, uint32_t height, uint32_t depth,
-                                        VkFormat format, VkImageUsageFlags usage, const char *debugName,
-                                        VETextureIndex *outIndex);
+/** Create an additional shader-visible/renderable view of a texture. */
+VULKEASE_API VEResult veCreateTextureView(VEDevice *device, VETexture texture, const VETextureViewDesc *desc,
+                                          VETextureView *outView);
 
-/**
- * @brief Create a 2D texture array.
- *
- * Convenience function for creating an array of 2D textures.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] width Texture width in pixels.
- * @param[in] height Texture height in pixels.
- * @param[in] layers Number of array layers.
- * @param[in] format Pixel format.
- * @param[in] usage Usage flags.
- * @param[in] debugName Optional debug name. Can be NULL.
- * @param[out] outIndex Receives the texture index.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateTexture, veDestroyTexture
- */
-VULKEASE_API VEResult veCreateTexture2DArray(VEDevice *device, uint32_t width, uint32_t height, uint32_t layers,
-                                             VkFormat format, VkImageUsageFlags usage, const char *debugName,
-                                             VETextureIndex *outIndex);
-
-/**
- * @brief Create a cube map texture.
- *
- * Convenience function for creating a cube map with 6 faces.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] size Width and height of each cube face (must be square).
- * @param[in] format Pixel format.
- * @param[in] usage Usage flags.
- * @param[in] debugName Optional debug name. Can be NULL.
- * @param[out] outIndex Receives the texture index.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateTexture, veDestroyTexture
- */
-VULKEASE_API VEResult veCreateTextureCube(VEDevice *device, uint32_t size, VkFormat format, VkImageUsageFlags usage,
-                                          const char *debugName, VETextureIndex *outIndex);
-
-/**
- * @brief Create a multisampled 2D texture.
- *
- * Creates a 2D texture with multisampling for MSAA rendering.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] width Texture width in pixels.
- * @param[in] height Texture height in pixels.
- * @param[in] format Pixel format.
- * @param[in] sampleCount Number of samples (e.g., VK_SAMPLE_COUNT_4_BIT).
- * @param[in] usage Usage flags.
- * @param[in] debugName Optional debug name. Can be NULL.
- * @param[out] outIndex Receives the texture index.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateTexture, veDestroyTexture
- */
-VULKEASE_API VEResult veCreateTexture2DMultisample(VEDevice *device, uint32_t width, uint32_t height, VkFormat format,
-                                                   VkSampleCountFlags sampleCount, VkImageUsageFlags usage,
-                                                   const char *debugName, VETextureIndex *outIndex);
-
-/**
- * @brief Load a texture from an image file.
- *
- * Loads common image formats (PNG, JPG, BMP, TGA, etc.) using STB Image.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] filename Path to the image file.
- * @param[in] usage Usage flags to apply to the texture.
- * @param[in] generateMips If true, automatically generate mipmaps.
- * @param[out] outIndex Receives the texture index.
- *
- * @return VE_SUCCESS on success, or:
- *         - VE_ERROR_NOT_FOUND if the file doesn't exist
- *         - VE_ERROR_UNSUPPORTED if the format is not supported
- *
- * @see veDestroyTexture
- */
-VULKEASE_API VEResult veLoadTexture(VEDevice *device, const char *filename, VkImageUsageFlags usage, bool generateMips,
-                                    VETextureIndex *outIndex);
-
-/**
- * @brief Load an HDR texture from a file.
- *
- * Loads HDR image files (.hdr format) using STB Image.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] filename Path to the HDR image file.
- * @param[in] usage Usage flags to apply to the texture.
- * @param[in] generateMips If true, automatically generate mipmaps.
- * @param[out] outIndex Receives the texture index.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veLoadTexture, veDestroyTexture
- */
-VULKEASE_API VEResult veLoadHDRTexture(VEDevice *device, const char *filename, VkImageUsageFlags usage,
-                                       bool generateMips, VETextureIndex *outIndex);
-
-/**
- * @brief Load a cube map texture from 6 image files.
- *
- * Loads 6 images for the cube map faces: +X, -X, +Y, -Y, +Z, -Z.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] filenames Array of 6 file paths for each cube face.
- * @param[in] usage Usage flags to apply to the texture.
- * @param[in] generateMips If true, automatically generate mipmaps.
- * @param[out] outIndex Receives the texture index.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veDestroyTexture
- */
-VULKEASE_API VEResult veLoadCubeTexture(VEDevice *device, const char *filenames[6], VkImageUsageFlags usage,
-                                        bool generateMips, VETextureIndex *outIndex);
-
-/**
- * @brief Import an external VkImage as a VulkEase texture.
- *
- * Creates a VulkEase texture wrapper around an externally-owned VkImage.
- * This is useful for integrating with VR runtimes (OpenXR, OpenVR) or other
- * Vulkan libraries that provide their own images.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] desc External texture descriptor with image handle and metadata.
- * @param[out] outIndex Receives the texture index.
- *
- * @return VE_SUCCESS on success, or:
- *         - VE_ERROR_INVALID_PARAMETER if device, desc, or outIndex is NULL
- *         - VE_ERROR_INVALID_PARAMETER if desc->image is VK_NULL_HANDLE
- *         - VE_ERROR_OUT_OF_MEMORY if no free texture slots available
- *
- * @note The VkImage is NOT owned by VulkEase. The caller must ensure the image
- *       remains valid for the lifetime of the imported texture and must destroy
- *       the VkImage after calling veReleaseExternalTexture().
- * @note VulkEase creates and owns the VkImageView for the imported image.
- *
- * @see VEExternalTextureDesc, veReleaseExternalTexture
- */
-VULKEASE_API VEResult veImportExternalTexture(VEDevice *device, const VEExternalTextureDesc *desc,
-                                              VETextureIndex *outIndex);
-
-/**
- * @brief Release an imported external texture.
- *
- * Releases the VulkEase resources associated with an imported texture (VkImageView,
- * descriptor slot) but does NOT destroy the underlying VkImage since it is externally owned.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] index Texture index of the imported texture. VE_INVALID_TEXTURE_INDEX is a no-op.
- *
- * @return VE_SUCCESS on success, or:
- *         - VE_ERROR_INVALID_PARAMETER if device is NULL or index is invalid
- *
- * @note This function is safe to call on non-external textures (will behave like veDestroyTexture).
- * @note After calling this, the caller is responsible for destroying the external VkImage.
- *
- * @see veImportExternalTexture
- */
-VULKEASE_API VEResult veReleaseExternalTexture(VEDevice *device, VETextureIndex index);
+/** Destroy an additional texture view. A texture's default view is owned by the texture. */
+VULKEASE_API VEResult veDestroyTextureView(VEDevice *device, VETextureView view);
 
 /**
  * @brief Write data to a region of a texture from the CPU.
@@ -1953,7 +1458,7 @@ VULKEASE_API VEResult veReleaseExternalTexture(VEDevice *device, VETextureIndex 
  *
  * @see veHostReadTextureRegion
  */
-VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETextureIndex textureIndex, const void *srcData,
+VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETexture textureIndex, const void *srcData,
                                                size_t dataSize, const VEBufferTextureCopyRegion *region);
 
 /**
@@ -1975,8 +1480,8 @@ VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETextureIndex 
  *
  * @see veHostWriteTextureRegion
  */
-VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETextureIndex textureIndex, void *dstData,
-                                              size_t dataSize, const VEBufferTextureCopyRegion *region);
+VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETexture textureIndex, void *dstData, size_t dataSize,
+                                              const VEBufferTextureCopyRegion *region);
 
 // =============================================================================
 // SPARSE TEXTURE FUNCTIONS
@@ -1992,7 +1497,7 @@ VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETextureIndex t
  * @return VE_SUCCESS on success, or:
  *         - VE_ERROR_INVALID_PARAMETER if device, outInfo is NULL, or texture is not sparse
  */
-VULKEASE_API VEResult veGetSparseTextureInfo(VEDevice *device, VETextureIndex texture, VESparseTextureInfo *outInfo);
+VULKEASE_API VEResult veGetSparseTextureInfo(VEDevice *device, VETexture texture, VESparseTextureInfo *outInfo);
 
 /**
  * @brief Commit pages for a sparse texture.
@@ -2010,8 +1515,8 @@ VULKEASE_API VEResult veGetSparseTextureInfo(VEDevice *device, VETextureIndex te
  *         - VE_ERROR_INVALID_PARAMETER if device is NULL, texture is not sparse, or regions is NULL
  *         - VE_ERROR_OUT_OF_MEMORY if memory allocation failed
  */
-VULKEASE_API VEResult veCommitSparsePages(VEDevice *device, VETextureIndex texture,
-                                          const VESparsePageRegion *regions, uint32_t regionCount);
+VULKEASE_API VEResult veCommitSparsePages(VEDevice *device, VETexture texture, const VESparsePageRegion *regions,
+                                          uint32_t regionCount);
 
 /**
  * @brief Uncommit pages for a sparse texture.
@@ -2027,8 +1532,8 @@ VULKEASE_API VEResult veCommitSparsePages(VEDevice *device, VETextureIndex textu
  * @return VE_SUCCESS on success, or:
  *         - VE_ERROR_INVALID_PARAMETER if device is NULL, texture is not sparse, or regions is NULL
  */
-VULKEASE_API VEResult veUncommitSparsePages(VEDevice *device, VETextureIndex texture,
-                                            const VESparsePageRegion *regions, uint32_t regionCount);
+VULKEASE_API VEResult veUncommitSparsePages(VEDevice *device, VETexture texture, const VESparsePageRegion *regions,
+                                            uint32_t regionCount);
 
 /**
  * @brief Flush all pending sparse bindings and wait for completion.
@@ -2057,8 +1562,7 @@ VULKEASE_API VEResult veFlushSparseBindings(VEDevice *device);
  *
  * @return true if committed, false if not committed or if texture is invalid/not sparse.
  */
-VULKEASE_API bool veIsSparsePagesCommitted(VEDevice *device, VETextureIndex texture,
-                                           uint32_t mipLevel, uint32_t arrayLayer,
+VULKEASE_API bool veIsSparsePagesCommitted(VEDevice *device, VETexture texture, uint32_t mipLevel, uint32_t arrayLayer,
                                            uint32_t pageX, uint32_t pageY, uint32_t pageZ);
 
 /**
@@ -2069,7 +1573,7 @@ VULKEASE_API bool veIsSparsePagesCommitted(VEDevice *device, VETextureIndex text
  *
  * @return Number of committed pages, or 0 if texture is invalid/not sparse.
  */
-VULKEASE_API uint32_t veGetSparseCommittedPageCount(VEDevice *device, VETextureIndex texture);
+VULKEASE_API uint32_t veGetSparseCommittedPageCount(VEDevice *device, VETexture texture);
 
 /**
  * @brief Get total number of addressable pages for a sparse texture.
@@ -2082,7 +1586,7 @@ VULKEASE_API uint32_t veGetSparseCommittedPageCount(VEDevice *device, VETextureI
  *
  * @return Total page count, or 0 if texture is invalid/not sparse.
  */
-VULKEASE_API uint32_t veGetSparseTotalPageCount(VEDevice *device, VETextureIndex texture);
+VULKEASE_API uint32_t veGetSparseTotalPageCount(VEDevice *device, VETexture texture);
 
 /**
  * @brief Generate mipmaps for a texture (deferred/command buffer version).
@@ -2097,35 +1601,7 @@ VULKEASE_API uint32_t veGetSparseTotalPageCount(VEDevice *device, VETextureIndex
  *
  * @see veGenerateMipmaps
  */
-VULKEASE_API VEResult veCmdGenerateMipmaps(VECommandBuffer *cmd, VETextureIndex texture);
-
-/**
- * @brief Generate mipmaps for a texture (immediate/blocking version).
- *
- * Generates mipmaps immediately, blocking until complete.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] texture Texture to generate mipmaps for.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCmdGenerateMipmaps
- */
-VULKEASE_API VEResult veGenerateMipmaps(VEDevice *device, VETextureIndex texture);
-
-/**
- * @brief Save a texture to an image file.
- *
- * Saves the texture to disk. Format is determined by file extension
- * (supports .png, .bmp, .tga, .jpg).
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] texture Texture to save.
- * @param[in] filename Output file path with extension.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- */
-VULKEASE_API VEResult veSaveTexture(VEDevice *device, VETextureIndex texture, const char *filename);
+VULKEASE_API VEResult veCmdGenerateMipmaps(VECommandBuffer *cmd, VETexture texture);
 
 /**
  * @brief Copy texture to texture (deferred/command buffer version).
@@ -2141,26 +1617,8 @@ VULKEASE_API VEResult veSaveTexture(VEDevice *device, VETextureIndex texture, co
  *
  * @see VETextureCopyRegion, veCopyTexture
  */
-VULKEASE_API VEResult veCmdCopyTexture(VECommandBuffer *cmd, VETextureIndex src, VETextureIndex dst,
+VULKEASE_API VEResult veCmdCopyTexture(VECommandBuffer *cmd, VETexture src, VETexture dst,
                                        const VETextureCopyRegion *region);
-
-/**
- * @brief Copy texture to texture (immediate version).
- *
- * Executes a texture copy immediately or asynchronously.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] src Source texture index.
- * @param[in] dst Destination texture index.
- * @param[in] region Copy region specification. Can be NULL for full texture copy.
- * @param[in] fence Optional fence for async operation. NULL = blocking wait.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCmdCopyTexture
- */
-VULKEASE_API VEResult veCopyTexture(VEDevice *device, VETextureIndex src, VETextureIndex dst,
-                                    const VETextureCopyRegion *region, VkFence fence);
 
 /**
  * @brief Blit (scaled copy) texture to texture (deferred/command buffer version).
@@ -2177,27 +1635,8 @@ VULKEASE_API VEResult veCopyTexture(VEDevice *device, VETextureIndex src, VEText
  *
  * @see VETextureBlitRegion, veBlitTexture
  */
-VULKEASE_API VEResult veCmdBlitTexture(VECommandBuffer *cmd, VETextureIndex src, VETextureIndex dst,
+VULKEASE_API VEResult veCmdBlitTexture(VECommandBuffer *cmd, VETexture src, VETexture dst,
                                        const VETextureBlitRegion *region, VkFilter filter);
-
-/**
- * @brief Blit (scaled copy) texture to texture (immediate version).
- *
- * Executes a texture blit immediately or asynchronously.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] src Source texture index.
- * @param[in] dst Destination texture index.
- * @param[in] region Blit region with source and destination bounds.
- * @param[in] filter Filtering mode.
- * @param[in] fence Optional fence for async operation. NULL = blocking wait.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCmdBlitTexture
- */
-VULKEASE_API VEResult veBlitTexture(VEDevice *device, VETextureIndex src, VETextureIndex dst,
-                                    const VETextureBlitRegion *region, VkFilter filter, VkFence fence);
 
 /**
  * @brief Copy buffer to texture (deferred/command buffer version).
@@ -2213,26 +1652,8 @@ VULKEASE_API VEResult veBlitTexture(VEDevice *device, VETextureIndex src, VEText
  *
  * @see VEBufferTextureCopyRegion, veCopyBufferToTexture
  */
-VULKEASE_API VEResult veCmdCopyBufferToTexture(VECommandBuffer *cmd, VEBufferAddress src, VETextureIndex dst,
+VULKEASE_API VEResult veCmdCopyBufferToTexture(VECommandBuffer *cmd, VEBufferAddress src, VETexture dst,
                                                const VEBufferTextureCopyRegion *region);
-
-/**
- * @brief Copy buffer to texture (immediate version).
- *
- * Executes a buffer-to-texture copy immediately or asynchronously.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] src Source buffer address.
- * @param[in] dst Destination texture index.
- * @param[in] region Copy region specification.
- * @param[in] fence Optional fence for async operation. NULL = blocking wait.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCmdCopyBufferToTexture
- */
-VULKEASE_API VEResult veCopyBufferToTexture(VEDevice *device, VEBufferAddress src, VETextureIndex dst,
-                                            const VEBufferTextureCopyRegion *region, VkFence fence);
 
 /**
  * @brief Copy texture to buffer (deferred/command buffer version).
@@ -2248,26 +1669,8 @@ VULKEASE_API VEResult veCopyBufferToTexture(VEDevice *device, VEBufferAddress sr
  *
  * @see VEBufferTextureCopyRegion, veCopyTextureToBuffer
  */
-VULKEASE_API VEResult veCmdCopyTextureToBuffer(VECommandBuffer *cmd, VETextureIndex src, VEBufferAddress dst,
+VULKEASE_API VEResult veCmdCopyTextureToBuffer(VECommandBuffer *cmd, VETexture src, VEBufferAddress dst,
                                                const VEBufferTextureCopyRegion *region);
-
-/**
- * @brief Copy texture to buffer (immediate version).
- *
- * Executes a texture-to-buffer copy immediately or asynchronously.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] src Source texture index.
- * @param[in] dst Destination buffer address.
- * @param[in] region Copy region specification.
- * @param[in] fence Optional fence for async operation. NULL = blocking wait.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCmdCopyTextureToBuffer
- */
-VULKEASE_API VEResult veCopyTextureToBuffer(VEDevice *device, VETextureIndex src, VEBufferAddress dst,
-                                            const VEBufferTextureCopyRegion *region, VkFence fence);
 
 // =============================================================================
 // SAMPLER FUNCTIONS
@@ -2305,81 +1708,10 @@ VULKEASE_API VEResult veCreateSampler(VEDevice *device, const VESamplerDesc *des
  */
 VULKEASE_API VEResult veDestroySampler(VEDevice *device, VESamplerIndex index);
 
-/**
- * @brief Create a sampler with linear (bilinear) filtering.
- *
- * Convenience function that creates a sampler using linear min/mag filtering
- * with repeat addressing and mipmap support.
- *
- * @param[in] device Valid VulkEase device.
- * @param[out] outIndex Receives the sampler index.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateSampler, veDestroySampler
- */
-VULKEASE_API VEResult veCreateLinearSampler(VEDevice *device, VESamplerIndex *outIndex);
 
-/**
- * @brief Create a sampler with nearest (point) filtering.
- *
- * Convenience function that creates a sampler using nearest-neighbor filtering
- * with repeat addressing. Ideal for pixel art or when exact texel values are needed.
- *
- * @param[in] device Valid VulkEase device.
- * @param[out] outIndex Receives the sampler index.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateSampler, veDestroySampler
- */
-VULKEASE_API VEResult veCreateNearestSampler(VEDevice *device, VESamplerIndex *outIndex);
 
-/**
- * @brief Create a sampler with anisotropic filtering.
- *
- * Convenience function that creates a sampler with anisotropic filtering for
- * high-quality texture sampling at oblique angles.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] maxAnisotropy Maximum anisotropy level (typically 2, 4, 8, or 16).
- * @param[out] outIndex Receives the sampler index.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateSampler, veDestroySampler
- */
-VULKEASE_API VEResult veCreateAnisotropicSampler(VEDevice *device, float maxAnisotropy, VESamplerIndex *outIndex);
 
-/**
- * @brief Create a sampler optimized for shadow mapping.
- *
- * Convenience function that creates a sampler with comparison enabled for
- * hardware PCF shadow sampling.
- *
- * @param[in] device Valid VulkEase device.
- * @param[out] outIndex Receives the sampler index.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateSampler, veDestroySampler
- */
-VULKEASE_API VEResult veCreateShadowSampler(VEDevice *device, VESamplerIndex *outIndex);
 
-/**
- * @brief Get a pre-created default sampler.
- *
- * Returns one of the built-in samplers created at device initialization.
- * These samplers are managed by VulkEase and should not be destroyed.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] sampler Type of default sampler to retrieve.
- *
- * @return Sampler index, or VE_INVALID_SAMPLER_INDEX if device is NULL.
- *
- * @see VEDefaultSampler
- */
-VULKEASE_API VESamplerIndex veGetDefaultSampler(VEDevice *device, VEDefaultSampler sampler);
 
 // =============================================================================
 // SHADER FUNCTIONS
@@ -2409,26 +1741,6 @@ VULKEASE_API VEResult veLoadShaderFromBuffer(VEDevice *device, VkShaderStageFlag
                                              size_t codeSize, const char *entryPoint, const char *debugName,
                                              VEShader **outShader);
 
-/**
- * @brief Load a shader from a SPIR-V file.
- *
- * Loads and creates a shader object from a .spv file.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] filename Path to the .spv file.
- * @param[in] stage Shader stage.
- * @param[in] entryPoint Entry point function name. Can be NULL for "main".
- * @param[in] debugName Optional debug name. Can be NULL.
- * @param[out] outShader Receives the shader object handle.
- *
- * @return VE_SUCCESS on success, or:
- *         - VE_ERROR_NOT_FOUND if the file doesn't exist
- *         - VE_ERROR_SHADER_COMPILATION_FAILED if shader creation failed
- *
- * @see veLoadShaderFromBuffer, veDestroyShader
- */
-VULKEASE_API VEResult veLoadShaderFromFile(VEDevice *device, const char *filename, VkShaderStageFlags stage,
-                                           const char *entryPoint, const char *debugName, VEShader **outShader);
 
 /**
  * @brief Destroy a shader object.
@@ -2442,50 +1754,8 @@ VULKEASE_API VEResult veLoadShaderFromFile(VEDevice *device, const char *filenam
  */
 VULKEASE_API VEResult veDestroyShader(VEShader *shader);
 
-/**
- * @brief Enable or disable shader hot-reload for development.
- *
- * When enabled, shaders loaded from files will track their source files
- * for changes. Use veShaderNeedsReload() and veReloadShader() to update.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] enable True to enable hot-reload, false to disable.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @note Hot-reload is intended for development only. Disable in release builds.
- * @see veShaderNeedsReload, veReloadShader
- */
-VULKEASE_API VEResult veSetShaderHotReloadEnabled(VEDevice *device, bool enable);
 
-/**
- * @brief Check if a shader's source file has been modified.
- *
- * Only applicable to shaders loaded from files with hot-reload enabled.
- *
- * @param[in] shader Shader object to check.
- *
- * @return true if the shader needs to be reloaded, false otherwise.
- *
- * @see veSetShaderHotReloadEnabled, veReloadShader
- */
-VULKEASE_API bool veShaderNeedsReload(VEShader *shader);
 
-/**
- * @brief Reload a shader from its source file.
- *
- * Recompiles and updates the shader from its original file. Only works
- * for shaders loaded from files.
- *
- * @param[in] shader Shader object to reload.
- *
- * @return VE_SUCCESS on success, or:
- *         - VE_ERROR_INVALID_PARAMETER if shader is NULL or not file-based
- *         - VE_ERROR_SHADER_COMPILATION_FAILED if reload failed
- *
- * @see veSetShaderHotReloadEnabled, veShaderNeedsReload
- */
-VULKEASE_API VEResult veReloadShader(VEShader *shader);
 
 // =============================================================================
 // GRAPHICS PIPELINE FUNCTIONS
@@ -2648,17 +1918,6 @@ VULKEASE_API VEResult veCreateUIOverlayPipeline(VEDevice *device, VEShader *vert
                                                 const VEVertexAttribute *attrs, uint32_t attrCount,
                                                 const char *debugName, VEGraphicsPipeline **outPipeline);
 
-/**
- * @brief Get a default-initialized graphics pipeline descriptor.
- *
- * Returns a VEGraphicsPipelineDesc with sensible defaults. Modify the returned
- * descriptor and pass to veCreateGraphicsPipeline().
- *
- * @return Default-initialized VEGraphicsPipelineDesc.
- *
- * @see VEGraphicsPipelineDesc, veCreateGraphicsPipeline
- */
-VULKEASE_API VEGraphicsPipelineDesc veDefaultGraphicsPipelineDesc(void);
 
 // =============================================================================
 // DRAW STATE FUNCTIONS
@@ -2694,62 +1953,9 @@ VULKEASE_API VEResult veCreateDrawState(VEDevice *device, const VEDrawStateDesc 
  */
 VULKEASE_API VEResult veDestroyDrawState(VEDrawState *drawState);
 
-/**
- * @brief Create a default draw state.
- *
- * Convenience function that creates a draw state with standard defaults:
- * triangle list topology, filled polygons, back-face culling, CCW front face.
- *
- * @param[in] device Valid VulkEase device.
- * @param[out] outDrawState Receives the draw state handle.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateDrawState, veDestroyDrawState
- */
-VULKEASE_API VEResult veCreateDefaultDrawState(VEDevice *device, VEDrawState **outDrawState);
 
-/**
- * @brief Create a wireframe draw state.
- *
- * Convenience function that creates a draw state for wireframe rendering:
- * line polygon mode, no culling.
- *
- * @param[in] device Valid VulkEase device.
- * @param[out] outDrawState Receives the draw state handle.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateDrawState, veDestroyDrawState
- */
-VULKEASE_API VEResult veCreateWireframeDrawState(VEDevice *device, VEDrawState **outDrawState);
 
-/**
- * @brief Create a draw state for shadow map rendering.
- *
- * Convenience function that creates a draw state optimized for shadow maps:
- * front-face culling and depth bias enabled to reduce shadow acne.
- *
- * @param[in] device Valid VulkEase device.
- * @param[out] outDrawState Receives the draw state handle.
- *
- * @return VE_SUCCESS on success, or an error code on failure.
- *
- * @see veCreateDrawState, veDestroyDrawState
- */
-VULKEASE_API VEResult veCreateShadowDrawState(VEDevice *device, VEDrawState **outDrawState);
 
-/**
- * @brief Get a default-initialized draw state descriptor.
- *
- * Returns a VEDrawStateDesc with sensible defaults. Modify the returned
- * descriptor and pass to veCreateDrawState().
- *
- * @return Default-initialized VEDrawStateDesc.
- *
- * @see VEDrawStateDesc, veCreateDrawState
- */
-VULKEASE_API VEDrawStateDesc veDefaultDrawStateDesc(void);
 
 // =============================================================================
 // COMMAND BUFFER FUNCTIONS
@@ -2912,45 +2118,13 @@ VULKEASE_API VEResult veExecuteSecondaryCommandBuffers(VECommandBuffer *primaryC
 // =============================================================================
 
 /**
- * @brief Create a VERenderTarget with the specified render area.
- *
- * Initializes a render target structure for use with veBeginRendering().
- * The render area starts at (0, 0) with the specified dimensions.
- *
- * @param[in] width Width of the render area in pixels.
- * @param[in] height Height of the render area in pixels.
- *
- * @return Initialized VERenderTarget structure.
- *
- * @see veCreateRenderTargetWithOffset, veBeginRendering
- */
-VULKEASE_API VERenderTarget veCreateRenderTarget(uint32_t width, uint32_t height);
-
-/**
- * @brief Create a VERenderTarget with offset and dimensions.
- *
- * Initializes a render target structure with a specific render area offset.
- * Useful for rendering to a sub-region of an attachment.
- *
- * @param[in] x X offset of the render area.
- * @param[in] y Y offset of the render area.
- * @param[in] width Width of the render area in pixels.
- * @param[in] height Height of the render area in pixels.
- *
- * @return Initialized VERenderTarget structure.
- *
- * @see veCreateRenderTarget, veBeginRendering
- */
-VULKEASE_API VERenderTarget veCreateRenderTargetWithOffset(int32_t x, int32_t y, uint32_t width, uint32_t height);
-
-/**
  * @brief Add a color attachment to the render target.
  *
  * Configures a color attachment for rendering. Up to 8 color attachments
  * are supported.
  *
  * @param[in,out] target Render target to modify.
- * @param[in] texture Texture index for the color attachment.
+ * @param[in] view Texture view for the color attachment.
  * @param[in] loadOp Load operation (VK_ATTACHMENT_LOAD_OP_CLEAR, _LOAD, or _DONT_CARE).
  * @param[in] clearValue Clear color (used when loadOp is VK_ATTACHMENT_LOAD_OP_CLEAR).
  *
@@ -2959,7 +2133,7 @@ VULKEASE_API VERenderTarget veCreateRenderTargetWithOffset(int32_t x, int32_t y,
  *
  * @see veRenderTargetAddColorAttachmentResolve, veBeginRendering
  */
-VULKEASE_API VEResult veRenderTargetAddColorAttachment(VERenderTarget *target, VETextureIndex texture,
+VULKEASE_API VEResult veRenderTargetAddColorAttachment(VERenderTarget *target, VETextureView view,
                                                        VkAttachmentLoadOp loadOp, VEColor clearValue);
 
 /**
@@ -2969,8 +2143,8 @@ VULKEASE_API VEResult veRenderTargetAddColorAttachment(VERenderTarget *target, V
  * texture at the end of the render pass.
  *
  * @param[in,out] target Render target to modify.
- * @param[in] texture Multisampled texture for rendering.
- * @param[in] resolveTexture Single-sampled texture to resolve into.
+ * @param[in] view Multisampled texture view for rendering.
+ * @param[in] resolveView Single-sampled texture view to resolve into.
  * @param[in] loadOp Load operation.
  * @param[in] clearValue Clear color.
  *
@@ -2979,8 +2153,8 @@ VULKEASE_API VEResult veRenderTargetAddColorAttachment(VERenderTarget *target, V
  *
  * @see veRenderTargetAddColorAttachment, veBeginRendering
  */
-VULKEASE_API VEResult veRenderTargetAddColorAttachmentResolve(VERenderTarget *target, VETextureIndex texture,
-                                                              VETextureIndex resolveTexture, VkAttachmentLoadOp loadOp,
+VULKEASE_API VEResult veRenderTargetAddColorAttachmentResolve(VERenderTarget *target, VETextureView view,
+                                                              VETextureView resolveView, VkAttachmentLoadOp loadOp,
                                                               VEColor clearValue);
 
 /**
@@ -2989,7 +2163,7 @@ VULKEASE_API VEResult veRenderTargetAddColorAttachmentResolve(VERenderTarget *ta
  * Configures the depth attachment for depth testing and writing.
  *
  * @param[in,out] target Render target to modify.
- * @param[in] texture Texture index for the depth attachment (must have depth format).
+ * @param[in] view Texture view for the depth attachment (must have depth format).
  * @param[in] loadOp Load operation.
  * @param[in] clearDepth Clear depth value (typically 1.0 for reverse-Z, 0.0 otherwise).
  *
@@ -2998,7 +2172,7 @@ VULKEASE_API VEResult veRenderTargetAddColorAttachmentResolve(VERenderTarget *ta
  *
  * @see veRenderTargetSetStencilAttachment, veBeginRendering
  */
-VULKEASE_API VEResult veRenderTargetSetDepthAttachment(VERenderTarget *target, VETextureIndex texture,
+VULKEASE_API VEResult veRenderTargetSetDepthAttachment(VERenderTarget *target, VETextureView view,
                                                        VkAttachmentLoadOp loadOp, float clearDepth);
 
 /**
@@ -3008,7 +2182,7 @@ VULKEASE_API VEResult veRenderTargetSetDepthAttachment(VERenderTarget *target, V
  * Can use the same texture as depth if it has a depth-stencil format.
  *
  * @param[in,out] target Render target to modify.
- * @param[in] texture Texture index for the stencil attachment.
+ * @param[in] view Texture view for the stencil attachment.
  * @param[in] loadOp Load operation.
  * @param[in] clearStencil Clear stencil value.
  *
@@ -3017,46 +2191,8 @@ VULKEASE_API VEResult veRenderTargetSetDepthAttachment(VERenderTarget *target, V
  *
  * @see veRenderTargetSetDepthAttachment, veBeginRendering
  */
-VULKEASE_API VEResult veRenderTargetSetStencilAttachment(VERenderTarget *target, VETextureIndex texture,
+VULKEASE_API VEResult veRenderTargetSetStencilAttachment(VERenderTarget *target, VETextureView view,
                                                          VkAttachmentLoadOp loadOp, uint32_t clearStencil);
-
-/**
- * @brief Resize all textures attached to a render target.
- *
- * Destroys the existing textures and creates new ones with the specified dimensions.
- * The render target configuration (attachments, load ops, clear values) is preserved.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in,out] target Render target to resize.
- * @param[in] width New width in pixels.
- * @param[in] height New height in pixels.
- *
- * @return VE_SUCCESS on success.
- */
-VULKEASE_API VEResult veResizeRenderTarget(VEDevice *device, VERenderTarget *target, uint32_t width, uint32_t height);
-
-/**
- * @brief Create a simple render target with color and optional depth.
- *
- * Convenience function that creates textures and configures a render target
- * with a single color attachment and optional depth attachment.
- *
- * @param[in] device Valid VulkEase device.
- * @param[in] width Width in pixels.
- * @param[in] height Height in pixels.
- * @param[in] colorFormat Color texture format.
- * @param[in] depthFormat Depth texture format (VK_FORMAT_UNDEFINED for no depth).
- * @param[in] clearColor Clear color value.
- * @param[in] clearDepth Clear depth value.
- * @param[out] outColorTexture Receives the color texture index (optional, can be NULL).
- * @param[out] outDepthTexture Receives the depth texture index (optional, can be NULL).
- *
- * @return Configured VERenderTarget structure.
- */
-VULKEASE_API VERenderTarget veCreateSimpleRenderTarget(VEDevice *device, uint32_t width, uint32_t height,
-                                                       VkFormat colorFormat, VkFormat depthFormat, VEColor clearColor,
-                                                       float clearDepth, VETextureIndex *outColorTexture,
-                                                       VETextureIndex *outDepthTexture);
 
 /**
  * @brief Blit a texture to a swapchain for presentation.
@@ -3071,7 +2207,7 @@ VULKEASE_API VERenderTarget veCreateSimpleRenderTarget(VEDevice *device, uint32_
  *
  * @return VE_SUCCESS on success, or VE_ERROR_SWAPCHAIN_OUT_OF_DATE if resize needed.
  */
-VULKEASE_API VEResult veBlitTextureToSwapchain(VECommandBuffer *cmd, VETextureIndex texture, VESwapchain *swapchain,
+VULKEASE_API VEResult veBlitTextureToSwapchain(VECommandBuffer *cmd, VETexture texture, VESwapchain *swapchain,
                                                VkFilter filter);
 
 /**
@@ -3759,17 +2895,9 @@ VULKEASE_API VEResult veDispatchIndirect(VECommandBuffer *cmd, VEBufferAddress i
 // SYNCHRONIZATION FUNCTIONS
 // =============================================================================
 
-/** @brief Insert a barrier for vertex shader output to fragment shader read. */
-VULKEASE_API VEResult veBarrierVertexToFragment(VECommandBuffer *cmd);
 
-/** @brief Insert a barrier for compute shader output to vertex shader read. */
-VULKEASE_API VEResult veBarrierComputeToVertex(VECommandBuffer *cmd);
 
-/** @brief Insert a barrier between compute shader dispatches. */
-VULKEASE_API VEResult veBarrierComputeToCompute(VECommandBuffer *cmd);
 
-/** @brief Insert a barrier for graphics output to presentation. */
-VULKEASE_API VEResult veBarrierGraphicsToPresent(VECommandBuffer *cmd);
 
 /**
  * @brief Insert a custom pipeline barrier.
@@ -3797,26 +2925,8 @@ VULKEASE_API VEResult veBarrier(VECommandBuffer *cmd, const VEBarrierDesc *desc)
  *
  * @return VE_SUCCESS on success.
  */
-VULKEASE_API VEResult veTransitionTexture(VECommandBuffer *cmd, VETextureIndex texture, VkImageLayout oldLayout,
+VULKEASE_API VEResult veTransitionTexture(VECommandBuffer *cmd, VETexture texture, VkImageLayout oldLayout,
                                           VkImageLayout newLayout);
-
-/** @brief Transition texture for shader read access. */
-VULKEASE_API VEResult veTransitionTextureForShaderRead(VECommandBuffer *cmd, VETextureIndex texture);
-
-/** @brief Transition texture for use as a color attachment. */
-VULKEASE_API VEResult veTransitionTextureForColorAttachment(VECommandBuffer *cmd, VETextureIndex texture);
-
-/** @brief Transition texture for use as a depth attachment. */
-VULKEASE_API VEResult veTransitionTextureForDepthAttachment(VECommandBuffer *cmd, VETextureIndex texture);
-
-/** @brief Transition texture for use as a transfer source. */
-VULKEASE_API VEResult veTransitionTextureForTransferSrc(VECommandBuffer *cmd, VETextureIndex texture);
-
-/** @brief Transition texture for use as a transfer destination. */
-VULKEASE_API VEResult veTransitionTextureForTransferDst(VECommandBuffer *cmd, VETextureIndex texture);
-
-/** @brief Transition texture for presentation to swapchain. */
-VULKEASE_API VEResult veTransitionTextureForPresent(VECommandBuffer *cmd, VETextureIndex texture);
 
 /**
  * @brief Transition texture to a specific layout (auto-detects current layout).
@@ -3830,8 +2940,7 @@ VULKEASE_API VEResult veTransitionTextureForPresent(VECommandBuffer *cmd, VEText
  *
  * @return VE_SUCCESS on success.
  */
-VULKEASE_API VEResult veTransitionTextureToLayout(VECommandBuffer *cmd, VETextureIndex texture,
-                                                  VkImageLayout newLayout);
+VULKEASE_API VEResult veTransitionTextureToLayout(VECommandBuffer *cmd, VETexture texture, VkImageLayout newLayout);
 
 // =============================================================================
 // SWAPCHAIN FUNCTIONS
@@ -3978,7 +3087,7 @@ VULKEASE_API VEResult veSetBufferDebugName(VEDevice *device, VEBufferAddress add
  *
  * @return VE_SUCCESS on success.
  */
-VULKEASE_API VEResult veSetTextureDebugName(VEDevice *device, VETextureIndex texture, const char *name);
+VULKEASE_API VEResult veSetTextureDebugName(VEDevice *device, VETexture texture, const char *name);
 
 /**
  * @brief Set a debug name for a sampler.

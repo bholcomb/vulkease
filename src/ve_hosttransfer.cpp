@@ -157,7 +157,7 @@ static VEResult validateHostImageCopySupport(VEDeviceInternal *device, VETexture
 
 // Host image copy requires VK_IMAGE_LAYOUT_GENERAL as the current layout.
 // We ensure this via a short GPU-side layout transition (vkCmdPipelineBarrier2) and update the tracked layout.
-static VEResult ensureTextureInGeneralLayout(VEDevice *device, VETextureIndex textureIndex, VETextureInternal *texture)
+static VEResult ensureTextureInGeneralLayout(VEDevice *device, VETexture textureIndex, VETextureInternal *texture)
 {
    if (!device || !texture || !texture->isValid)
       return VE_ERROR_INVALID_PARAMETER;
@@ -216,7 +216,7 @@ static bool calculateCopySize(uint32_t width, uint32_t height, uint32_t depth, u
 /**
  * Copy data from host memory to texture using VK_EXT_host_image_copy
  */
-VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETextureIndex textureIndex, const void *srcData,
+VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETexture textureIndex, const void *srcData,
                                                size_t dataSize, const VEBufferTextureCopyRegion *region)
 {
    if (!device)
@@ -346,8 +346,8 @@ VULKEASE_API VEResult veHostWriteTextureRegion(VEDevice *device, VETextureIndex 
 /**
  * Copy data from texture to host memory using VK_EXT_host_image_copy
  */
-VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETextureIndex textureIndex, void *dstData,
-                                              size_t dataSize, const VEBufferTextureCopyRegion *region)
+VULKEASE_API VEResult veHostReadTextureRegion(VEDevice *device, VETexture textureIndex, void *dstData, size_t dataSize,
+                                              const VEBufferTextureCopyRegion *region)
 {
    if (!device)
    {

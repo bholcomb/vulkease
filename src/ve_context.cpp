@@ -1534,9 +1534,9 @@ VkBuffer veGetVkBufferFromAddress(VEDevice *device, VEBufferAddress address)
    return buffer;
 }
 
-VkImage veGetVkImageFromTexture(VEDevice *device, VETextureIndex texture)
+VkImage veGetVkImageFromTexture(VEDevice *device, VETexture texture)
 {
-   if (texture == VE_INVALID_TEXTURE_INDEX)
+   if (texture == VE_INVALID_TEXTURE)
    {
       veSetError("veGetVkImageFromTexture: texture index is invalid");
       return VK_NULL_HANDLE;
@@ -1559,29 +1559,29 @@ VkImage veGetVkImageFromTexture(VEDevice *device, VETextureIndex texture)
    return tex->image;
 }
 
-VkImageView veGetVkImageViewFromTexture(VEDevice *device, VETextureIndex texture)
+VkImageView veGetVkImageView(VEDevice *device, VETextureView view)
 {
-   if (texture == VE_INVALID_TEXTURE_INDEX)
+   if (view == VE_INVALID_TEXTURE_VIEW)
    {
-      veSetError("veGetVkImageViewFromTexture: texture index is invalid");
+      veSetError("veGetVkImageView: texture view is invalid");
       return VK_NULL_HANDLE;
    }
 
    if (!device)
    {
-      veSetError("veGetVkImageViewFromTexture: device cannot be NULL");
+      veSetError("veGetVkImageView: device cannot be NULL");
       return VK_NULL_HANDLE;
    }
 
    VEDeviceInternal *internal = (VEDeviceInternal *)device;
-   VETextureInternal *tex = internal->getTexture(texture);
-   if (!tex || !tex->isValid || tex->imageView == VK_NULL_HANDLE)
+   VETextureViewInternal *textureView = internal->getTextureView(view);
+   if (!textureView || textureView->imageView == VK_NULL_HANDLE)
    {
-      veSetError("veGetVkImageViewFromTexture: no VkImageView found for texture index=%u", texture);
+      veSetError("veGetVkImageView: no VkImageView found for view=%u", view);
       return VK_NULL_HANDLE;
    }
 
-   return tex->imageView;
+   return textureView->imageView;
 }
 
 VkSampler veGetVkSamplerFromIndex(VEDevice *device, VESamplerIndex sampler)

@@ -154,10 +154,9 @@ VEResult veCmdUpdateBuffer(VECommandBuffer *cmd, VEBufferAddress dst, uint64_t o
 // Texture Copy Operations
 // =============================================================================
 
-VEResult veCmdCopyTexture(VECommandBuffer *cmd, VETextureIndex src, VETextureIndex dst,
-                          const VETextureCopyRegion *region)
+VEResult veCmdCopyTexture(VECommandBuffer *cmd, VETexture src, VETexture dst, const VETextureCopyRegion *region)
 {
-   if (!cmd || src == VE_INVALID_TEXTURE_INDEX || dst == VE_INVALID_TEXTURE_INDEX)
+   if (!cmd || src == VE_INVALID_TEXTURE || dst == VE_INVALID_TEXTURE)
    {
       veSetError("veCmdCopyTexture: Invalid parameters");
       return VE_ERROR_INVALID_PARAMETER;
@@ -267,10 +266,9 @@ VEResult veCmdCopyTexture(VECommandBuffer *cmd, VETextureIndex src, VETextureInd
    return VE_SUCCESS;
 }
 
-VEResult veCopyTexture(VEDevice *device, VETextureIndex src, VETextureIndex dst, const VETextureCopyRegion *region,
-                       VkFence fence)
+VEResult veCopyTexture(VEDevice *device, VETexture src, VETexture dst, const VETextureCopyRegion *region, VkFence fence)
 {
-   if (!device || src == VE_INVALID_TEXTURE_INDEX || dst == VE_INVALID_TEXTURE_INDEX)
+   if (!device || src == VE_INVALID_TEXTURE || dst == VE_INVALID_TEXTURE)
    {
       veSetError("veCopyTexture: Invalid parameters");
       return VE_ERROR_INVALID_PARAMETER;
@@ -315,10 +313,10 @@ VEResult veCopyTexture(VEDevice *device, VETextureIndex src, VETextureIndex dst,
 // Texture Blit Operations
 // =============================================================================
 
-VEResult veCmdBlitTexture(VECommandBuffer *cmd, VETextureIndex src, VETextureIndex dst,
-                          const VETextureBlitRegion *region, VkFilter filter)
+VEResult veCmdBlitTexture(VECommandBuffer *cmd, VETexture src, VETexture dst, const VETextureBlitRegion *region,
+                          VkFilter filter)
 {
-   if (!cmd || src == VE_INVALID_TEXTURE_INDEX || dst == VE_INVALID_TEXTURE_INDEX)
+   if (!cmd || src == VE_INVALID_TEXTURE || dst == VE_INVALID_TEXTURE)
    {
       veSetError("veCmdBlitTexture: Invalid parameters");
       return VE_ERROR_INVALID_PARAMETER;
@@ -428,10 +426,10 @@ VEResult veCmdBlitTexture(VECommandBuffer *cmd, VETextureIndex src, VETextureInd
    return VE_SUCCESS;
 }
 
-VEResult veBlitTexture(VEDevice *device, VETextureIndex src, VETextureIndex dst, const VETextureBlitRegion *region,
+VEResult veBlitTexture(VEDevice *device, VETexture src, VETexture dst, const VETextureBlitRegion *region,
                        VkFilter filter, VkFence fence)
 {
-   if (!device || src == VE_INVALID_TEXTURE_INDEX || dst == VE_INVALID_TEXTURE_INDEX)
+   if (!device || src == VE_INVALID_TEXTURE || dst == VE_INVALID_TEXTURE)
    {
       veSetError("veBlitTexture: Invalid parameters");
       return VE_ERROR_INVALID_PARAMETER;
@@ -476,10 +474,10 @@ VEResult veBlitTexture(VEDevice *device, VETextureIndex src, VETextureIndex dst,
 // Buffer to Texture Copy Operations
 // =============================================================================
 
-VEResult veCmdCopyBufferToTexture(VECommandBuffer *cmd, VEBufferAddress src, VETextureIndex dst,
+VEResult veCmdCopyBufferToTexture(VECommandBuffer *cmd, VEBufferAddress src, VETexture dst,
                                   const VEBufferTextureCopyRegion *region)
 {
-   if (!cmd || src == VE_INVALID_ADDRESS || dst == VE_INVALID_TEXTURE_INDEX)
+   if (!cmd || src == VE_INVALID_ADDRESS || dst == VE_INVALID_TEXTURE)
    {
       veSetError("veCmdCopyBufferToTexture: Invalid parameters");
       return VE_ERROR_INVALID_PARAMETER;
@@ -567,10 +565,10 @@ VEResult veCmdCopyBufferToTexture(VECommandBuffer *cmd, VEBufferAddress src, VET
    return VE_SUCCESS;
 }
 
-VEResult veCmdCopyTextureToBuffer(VECommandBuffer *cmd, VETextureIndex src, VEBufferAddress dst,
+VEResult veCmdCopyTextureToBuffer(VECommandBuffer *cmd, VETexture src, VEBufferAddress dst,
                                   const VEBufferTextureCopyRegion *region)
 {
-   if (!cmd || src == VE_INVALID_TEXTURE_INDEX || dst == VE_INVALID_ADDRESS)
+   if (!cmd || src == VE_INVALID_TEXTURE || dst == VE_INVALID_ADDRESS)
    {
       veSetError("veCmdCopyTextureToBuffer: Invalid parameters");
       return VE_ERROR_INVALID_PARAMETER;
@@ -658,10 +656,10 @@ VEResult veCmdCopyTextureToBuffer(VECommandBuffer *cmd, VETextureIndex src, VEBu
    return VE_SUCCESS;
 }
 
-VEResult veCopyBufferToTexture(VEDevice *device, VEBufferAddress src, VETextureIndex dst,
+VEResult veCopyBufferToTexture(VEDevice *device, VEBufferAddress src, VETexture dst,
                                const VEBufferTextureCopyRegion *region, VkFence fence)
 {
-   if (!device || src == VE_INVALID_ADDRESS || dst == VE_INVALID_TEXTURE_INDEX)
+   if (!device || src == VE_INVALID_ADDRESS || dst == VE_INVALID_TEXTURE)
    {
       veSetError("veCopyBufferToTexture: Invalid parameters");
       return VE_ERROR_INVALID_PARAMETER;
@@ -702,10 +700,10 @@ VEResult veCopyBufferToTexture(VEDevice *device, VEBufferAddress src, VETextureI
    return result;
 }
 
-VEResult veCopyTextureToBuffer(VEDevice *device, VETextureIndex src, VEBufferAddress dst,
+VEResult veCopyTextureToBuffer(VEDevice *device, VETexture src, VEBufferAddress dst,
                                const VEBufferTextureCopyRegion *region, VkFence fence)
 {
-   if (!device || src == VE_INVALID_TEXTURE_INDEX || dst == VE_INVALID_ADDRESS)
+   if (!device || src == VE_INVALID_TEXTURE || dst == VE_INVALID_ADDRESS)
    {
       veSetError("veCopyTextureToBuffer: Invalid parameters");
       return VE_ERROR_INVALID_PARAMETER;

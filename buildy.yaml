@@ -79,6 +79,8 @@ staging:
     - folder: "include"
       files:
         - "src/vulkease.h"
+        - "src/vulkease_util.h"
+        - "src/vulkease_vk.h"
 
     # docs
     - folder: "docs"

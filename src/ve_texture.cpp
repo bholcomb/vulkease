@@ -609,12 +609,16 @@ VEResult VEDeviceInternal::initializeBindlessDescriptors()
       return VE_ERROR_UNKNOWN;
    }
 
-   // Initialize texture management
+   // Texture resources and descriptor-backed views have independent pools.
    maxTextures = textureCapacity;
    textures = static_cast<VETextureInternal *>(calloc(maxTextures, sizeof(VETextureInternal)));
    freeTextureIndices = static_cast<uint32_t *>(calloc(maxTextures, sizeof(uint32_t)));
 
-   if (!textures || !freeTextureIndices)
+   maxTextureViews = textureCapacity;
+   textureViews = static_cast<VETextureViewInternal *>(calloc(maxTextureViews, sizeof(VETextureViewInternal)));
+   freeTextureViewIndices = static_cast<uint32_t *>(calloc(maxTextureViews, sizeof(uint32_t)));
+
+   if (!textures || !freeTextureIndices || !textureViews || !freeTextureViewIndices)
    {
       veSetError("Failed to allocate texture management memory");
       cleanupBindlessDescriptors();
@@ -629,9 +633,17 @@ VEResult VEDeviceInternal::initializeBindlessDescriptors()
    freeTextureCount.store(maxTextures - 1, std::memory_order_relaxed);
    textureCount.store(0, std::memory_order_relaxed);
 
+   for (uint32_t i = 0; i < maxTextureViews - 1; i++)
+   {
+      freeTextureViewIndices[i] = i + 1;
+   }
+   freeTextureViewCount.store(maxTextureViews - 1, std::memory_order_relaxed);
+   textureViewCount.store(0, std::memory_order_relaxed);
+
    // Initialize texture index mutex
    textureIndexMutex = std::make_unique<std::mutex>();
-   if (!textureIndexMutex)
+   textureViewIndexMutex = std::make_unique<std::mutex>();
+   if (!textureIndexMutex || !textureViewIndexMutex)
    {
       veSetError("Failed to allocate texture index mutex");
       cleanupBindlessDescriptors();
@@ -696,6 +708,18 @@ void VEDeviceInternal::cleanupBindlessDescriptors()
       freeTextureIndices = NULL;
    }
 
+   if (textureViews)
+   {
+      free(textureViews);
+      textureViews = NULL;
+   }
+
+   if (freeTextureViewIndices)
+   {
+      free(freeTextureViewIndices);
+      freeTextureViewIndices = NULL;
+   }
+
    if (samplers)
    {
       for (uint32_t i = 1; i < maxSamplers; i++)
@@ -743,7 +767,7 @@ uint32_t VEDeviceInternal::allocateTextureIndex()
    if (!textureIndexMutex)
    {
       veSetError("Texture index mutex not initialized");
-      return VE_INVALID_TEXTURE_INDEX;
+      return VE_INVALID_TEXTURE;
    }
 
    std::lock_guard<std::mutex> lock(*textureIndexMutex);
@@ -752,7 +776,7 @@ uint32_t VEDeviceInternal::allocateTextureIndex()
    if (currentFreeCount == 0)
    {
       veSetError("No free texture indices available (max: %u)", maxTextures);
-      return VE_INVALID_TEXTURE_INDEX;
+      return VE_INVALID_TEXTURE;
    }
 
    uint32_t newFreeCount = currentFreeCount - 1;
@@ -778,9 +802,9 @@ void VEDeviceInternal::freeTextureIndex(uint32_t index)
    textureCount.fetch_sub(1, std::memory_order_relaxed);
 }
 
-VETextureInternal *VEDeviceInternal::getTexture(VETextureIndex index)
+VETextureInternal *VEDeviceInternal::getTexture(VETexture index)
 {
-   if (index == VE_INVALID_TEXTURE_INDEX || index >= maxTextures)
+   if (index == VE_INVALID_TEXTURE || index >= maxTextures)
    {
       return NULL;
    }
@@ -789,15 +813,207 @@ VETextureInternal *VEDeviceInternal::getTexture(VETextureIndex index)
    return texture->isValid ? texture : NULL;
 }
 
-const VETextureInternal *VEDeviceInternal::getTexture(VETextureIndex index) const
+const VETextureInternal *VEDeviceInternal::getTexture(VETexture index) const
 {
    return const_cast<VEDeviceInternal *>(this)->getTexture(index);
 }
 
-VkImageView VEDeviceInternal::getImageViewFromTexture(VETextureIndex index) const
+uint32_t VEDeviceInternal::allocateTextureViewIndex()
 {
-   const VETextureInternal *texture = getTexture(index);
-   return (texture && texture->isValid) ? texture->imageView : VK_NULL_HANDLE;
+   if (!textureViewIndexMutex)
+   {
+      veSetError("Texture view index mutex not initialized");
+      return VE_INVALID_TEXTURE_VIEW;
+   }
+
+   std::lock_guard<std::mutex> lock(*textureViewIndexMutex);
+   uint32_t freeCount = freeTextureViewCount.load(std::memory_order_relaxed);
+   if (freeCount == 0)
+   {
+      veSetError("No free texture view indices available (max: %u)", maxTextureViews);
+      return VE_INVALID_TEXTURE_VIEW;
+   }
+
+   uint32_t index = freeTextureViewIndices[freeCount - 1];
+   freeTextureViewCount.store(freeCount - 1, std::memory_order_relaxed);
+   textureViewCount.fetch_add(1, std::memory_order_relaxed);
+   return index;
+}
+
+void VEDeviceInternal::freeTextureViewIndex(uint32_t index)
+{
+   if (index == 0 || index >= maxTextureViews || !textureViewIndexMutex)
+      return;
+
+   std::lock_guard<std::mutex> lock(*textureViewIndexMutex);
+   uint32_t freeCount = freeTextureViewCount.load(std::memory_order_relaxed);
+   freeTextureViewIndices[freeCount] = index;
+   freeTextureViewCount.store(freeCount + 1, std::memory_order_relaxed);
+   textureViewCount.fetch_sub(1, std::memory_order_relaxed);
+}
+
+VETextureViewInternal *VEDeviceInternal::getTextureView(VETextureView view)
+{
+   if (view == VE_INVALID_TEXTURE_VIEW || view >= maxTextureViews)
+      return nullptr;
+   return textureViews[view].isValid ? &textureViews[view] : nullptr;
+}
+
+const VETextureViewInternal *VEDeviceInternal::getTextureView(VETextureView view) const
+{
+   return const_cast<VEDeviceInternal *>(this)->getTextureView(view);
+}
+
+VkImageView VEDeviceInternal::getVkImageView(VETextureView view) const
+{
+   const VETextureViewInternal *textureView = getTextureView(view);
+   return textureView ? textureView->imageView : VK_NULL_HANDLE;
+}
+
+static VkImageAspectFlags veDefaultAspectMask(VkFormat format)
+{
+   switch (format)
+   {
+   case VK_FORMAT_D16_UNORM:
+   case VK_FORMAT_X8_D24_UNORM_PACK32:
+   case VK_FORMAT_D32_SFLOAT:
+      return VK_IMAGE_ASPECT_DEPTH_BIT;
+   case VK_FORMAT_S8_UINT:
+      return VK_IMAGE_ASPECT_STENCIL_BIT;
+   case VK_FORMAT_D16_UNORM_S8_UINT:
+   case VK_FORMAT_D24_UNORM_S8_UINT:
+   case VK_FORMAT_D32_SFLOAT_S8_UINT:
+      return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+   default:
+      return VK_IMAGE_ASPECT_COLOR_BIT;
+   }
+}
+
+VEResult veCreateTextureViewInternal(VEDeviceInternal *device, VETexture textureHandle,
+                                     const VETextureViewDesc &requested, VkImageView existingView, bool ownsImageView,
+                                     VETextureView *outView)
+{
+   VETextureInternal *texture = device ? device->getTexture(textureHandle) : nullptr;
+   if (!texture || !outView)
+      return VE_ERROR_INVALID_PARAMETER;
+
+   auto destroyExistingView = [&]()
+   {
+      if (ownsImageView && existingView != VK_NULL_HANDLE)
+         vkDestroyImageView(device->device, existingView, nullptr);
+   };
+
+   VETextureViewDesc desc = requested;
+   if (desc.format == VK_FORMAT_UNDEFINED)
+      desc.format = texture->format;
+   if (desc.viewType == VK_IMAGE_VIEW_TYPE_MAX_ENUM)
+      desc.viewType = texture->defaultViewType;
+   if (desc.aspectMask == 0)
+      desc.aspectMask = veDefaultAspectMask(desc.format);
+   if (desc.mipLevelCount == 0)
+      desc.mipLevelCount = texture->mipLevels - desc.baseMipLevel;
+   if (desc.arrayLayerCount == 0)
+      desc.arrayLayerCount = texture->arrayLayers - desc.baseArrayLayer;
+
+   if (desc.baseMipLevel >= texture->mipLevels || desc.mipLevelCount > texture->mipLevels - desc.baseMipLevel ||
+       desc.baseArrayLayer >= texture->arrayLayers ||
+       desc.arrayLayerCount > texture->arrayLayers - desc.baseArrayLayer || desc.mipLevelCount == 0 ||
+       desc.arrayLayerCount == 0)
+   {
+      veSetError("Texture view range exceeds its texture");
+      destroyExistingView();
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VETextureView view = device->allocateTextureViewIndex();
+   if (view == VE_INVALID_TEXTURE_VIEW)
+   {
+      destroyExistingView();
+      return VE_ERROR_OUT_OF_MEMORY;
+   }
+
+   VkImageView imageView = existingView;
+   if (imageView == VK_NULL_HANDLE)
+   {
+      VkImageViewCreateInfo info{};
+      info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+      info.image = texture->image;
+      info.viewType = desc.viewType;
+      info.format = desc.format;
+      info.components = desc.components;
+      info.subresourceRange.aspectMask = desc.aspectMask;
+      info.subresourceRange.baseMipLevel = desc.baseMipLevel;
+      info.subresourceRange.levelCount = desc.mipLevelCount;
+      info.subresourceRange.baseArrayLayer = desc.baseArrayLayer;
+      info.subresourceRange.layerCount = desc.arrayLayerCount;
+      VkResult result = vkCreateImageView(device->device, &info, nullptr, &imageView);
+      if (result != VK_SUCCESS)
+      {
+         device->freeTextureViewIndex(view);
+         veSetError("Failed to create texture view (VkResult: %d)", result);
+         return VE_ERROR_UNKNOWN;
+      }
+   }
+
+   VETextureViewInternal &internal = device->textureViews[view];
+   internal.imageView = imageView;
+   internal.texture = textureHandle;
+   internal.format = desc.format;
+   internal.components = desc.components;
+   internal.viewType = desc.viewType;
+   internal.subresourceRange = {desc.aspectMask, desc.baseMipLevel, desc.mipLevelCount, desc.baseArrayLayer,
+                                desc.arrayLayerCount};
+   internal.nextView = texture->firstView;
+   internal.ownsImageView = ownsImageView;
+   internal.isValid = true;
+   texture->firstView = view;
+
+   if (desc.debugName && device->context->validationEnabled)
+      veSetObjectDebugName(device, (uint64_t)imageView, VK_OBJECT_TYPE_IMAGE_VIEW, desc.debugName);
+
+   VEResult descriptorResult = device->updateTextureDescriptor(view);
+   if (descriptorResult != VE_SUCCESS)
+   {
+      if (ownsImageView)
+         vkDestroyImageView(device->device, imageView, nullptr);
+      texture->firstView = internal.nextView;
+      memset(&internal, 0, sizeof(internal));
+      device->freeTextureViewIndex(view);
+      return descriptorResult;
+   }
+
+   *outView = view;
+   return VE_SUCCESS;
+}
+
+void veDestroyTextureViewImmediate(VEDeviceInternal *device, VETextureView view)
+{
+   VETextureViewInternal *textureView = device ? device->getTextureView(view) : nullptr;
+   if (!textureView)
+      return;
+
+   VETextureInternal *texture = device->getTexture(textureView->texture);
+   if (texture)
+   {
+      VETextureView *link = &texture->firstView;
+      while (*link != VE_INVALID_TEXTURE_VIEW && *link != 0)
+      {
+         VETextureViewInternal *candidate = device->getTextureView(*link);
+         if (!candidate)
+            break;
+         if (*link == view)
+         {
+            *link = candidate->nextView;
+            break;
+         }
+         link = &candidate->nextView;
+      }
+   }
+
+   if (textureView->ownsImageView && textureView->imageView)
+      vkDestroyImageView(device->device, textureView->imageView, nullptr);
+   memset(textureView, 0, sizeof(*textureView));
+   device->freeTextureViewIndex(view);
 }
 
 // =============================================================================
@@ -922,7 +1138,7 @@ static VEResult veUploadTextureData(VEDeviceInternal *device, VETextureInternal 
 // =============================================================================
 
 static VEResult veCreateTextureInternal(VEDevice *device, const VETextureDesc *desc, VkImageType imageType,
-                                        bool cubeCompatible, VETextureIndex *outIndex)
+                                        bool cubeCompatible, VETexture *outIndex)
 {
    if (!outIndex)
    {
@@ -970,7 +1186,7 @@ static VEResult veCreateTextureInternal(VEDevice *device, const VETextureDesc *d
    }
 
    uint32_t index = deviceInternal->allocateTextureIndex();
-   if (index == VE_INVALID_TEXTURE_INDEX)
+   if (index == VE_INVALID_TEXTURE)
    {
       return VE_ERROR_OUT_OF_MEMORY;
    }
@@ -984,10 +1200,19 @@ static VEResult veCreateTextureInternal(VEDevice *device, const VETextureDesc *d
    texture->mipLevels = mipLevels;
    texture->arrayLayers = desc->arrayLayers;
    texture->format = desc->format;
-   texture->usage = desc->usage;
+   texture->defaultViewType =
+       imageType == VK_IMAGE_TYPE_3D
+           ? VK_IMAGE_VIEW_TYPE_3D
+           : (imageType == VK_IMAGE_TYPE_2D
+                  ? (cubeCompatible ? VK_IMAGE_VIEW_TYPE_CUBE
+                                    : (desc->arrayLayers > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D))
+                  : VK_IMAGE_VIEW_TYPE_1D);
+   texture->usage = desc->usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
    texture->sampleCount = desc->sampleCount;
    texture->currentLayout = VK_IMAGE_LAYOUT_UNDEFINED; // All textures start undefined
    texture->index = index;
+   texture->defaultView = VE_INVALID_TEXTURE_VIEW;
+   texture->firstView = VE_INVALID_TEXTURE_VIEW;
 
    if (desc->debugName)
    {
@@ -1009,12 +1234,10 @@ static VEResult veCreateTextureInternal(VEDevice *device, const VETextureDesc *d
    imageInfo.format = desc->format;
    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-   imageInfo.usage = desc->usage;
+   imageInfo.usage = texture->usage;
    imageInfo.samples = static_cast<VkSampleCountFlagBits>(desc->sampleCount);
    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-   imageInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT; // Always add transfer dst for potential
-                                                       // data uploads
+   imageInfo.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
 
    if (cubeCompatible)
    {
@@ -1246,39 +1469,19 @@ static VEResult veCreateTextureInternal(VEDevice *device, const VETextureDesc *d
       }
    }
 
-   // Create image view
-   VkImageViewCreateInfo viewInfo{};
-   viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-   viewInfo.image = texture->image;
-   viewInfo.viewType = imageInfo.imageType == VK_IMAGE_TYPE_3D
-                           ? VK_IMAGE_VIEW_TYPE_3D
-                           : (imageInfo.imageType == VK_IMAGE_TYPE_2D
-                                  ? (cubeCompatible ? VK_IMAGE_VIEW_TYPE_CUBE
-                                                    : (desc->arrayLayers > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY
-                                                                             : VK_IMAGE_VIEW_TYPE_2D))
-                                  : VK_IMAGE_VIEW_TYPE_1D);
-   viewInfo.format = imageInfo.format;
-   viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-   viewInfo.subresourceRange.baseMipLevel = 0;
-   viewInfo.subresourceRange.levelCount = texture->mipLevels;
-   viewInfo.subresourceRange.baseArrayLayer = 0;
-   viewInfo.subresourceRange.layerCount = desc->arrayLayers;
+   texture->isValid = true;
 
-   // Handle depth/stencil formats
-   if (desc->format >= VK_FORMAT_D16_UNORM && desc->format <= VK_FORMAT_D32_SFLOAT_S8_UINT)
+   VETextureViewDesc defaultViewDesc{};
+   defaultViewDesc.viewType = texture->defaultViewType;
+   defaultViewDesc.format = texture->format;
+   defaultViewDesc.aspectMask = veDefaultAspectMask(texture->format);
+   defaultViewDesc.mipLevelCount = texture->mipLevels;
+   defaultViewDesc.arrayLayerCount = texture->arrayLayers;
+   VEResult viewResult =
+       veCreateTextureViewInternal(deviceInternal, index, defaultViewDesc, VK_NULL_HANDLE, true, &texture->defaultView);
+   if (viewResult != VE_SUCCESS)
    {
-      viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-      if (desc->format == VK_FORMAT_D16_UNORM_S8_UINT || desc->format == VK_FORMAT_D24_UNORM_S8_UINT ||
-          desc->format == VK_FORMAT_D32_SFLOAT_S8_UINT)
-      {
-         viewInfo.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-      }
-   }
-
-   VkResult viewResult = vkCreateImageView(deviceInternal->device, &viewInfo, NULL, &texture->imageView);
-   if (viewResult != VK_SUCCESS)
-   {
-      veSetError("Failed to create image view (VkResult: %d)", viewResult);
+      texture->isValid = false;
       if (texture->isSparse)
       {
          if (texture->sparseData)
@@ -1293,8 +1496,9 @@ static VEResult veCreateTextureInternal(VEDevice *device, const VETextureDesc *d
       {
          vmaDestroyImage(deviceInternal->allocator, texture->image, texture->allocation);
       }
+      memset(texture, 0, sizeof(*texture));
       deviceInternal->freeTextureIndex(index);
-      return VE_ERROR_UNKNOWN;
+      return viewResult;
    }
 
    // Upload initial data if provided (ignored for sparse textures)
@@ -1303,8 +1507,9 @@ static VEResult veCreateTextureInternal(VEDevice *device, const VETextureDesc *d
       VEResult uploadResult = veUploadTextureData(deviceInternal, texture, desc->initialData, desc->initialDataSize);
       if (uploadResult != VE_SUCCESS)
       {
-         vkDestroyImageView(deviceInternal->device, texture->imageView, NULL);
+         veDestroyTextureViewImmediate(deviceInternal, texture->defaultView);
          vmaDestroyImage(deviceInternal->allocator, texture->image, texture->allocation);
+         memset(texture, 0, sizeof(*texture));
          deviceInternal->freeTextureIndex(index);
          return uploadResult;
       }
@@ -1313,29 +1518,28 @@ static VEResult veCreateTextureInternal(VEDevice *device, const VETextureDesc *d
    if (deviceInternal->context->validationEnabled)
    {
       veSetObjectDebugName(deviceInternal, (uint64_t)texture->image, VK_OBJECT_TYPE_IMAGE, texture->debugName);
-      char viewName[VE_MAX_DEBUG_NAME_LENGTH + 16];
-      snprintf(viewName, sizeof(viewName), "%s_View", texture->debugName);
-      veSetObjectDebugName(deviceInternal, (uint64_t)texture->imageView, VK_OBJECT_TYPE_IMAGE_VIEW, viewName);
+      VETextureViewInternal *defaultView = deviceInternal->getTextureView(texture->defaultView);
+      if (defaultView)
+      {
+         char viewName[VE_MAX_DEBUG_NAME_LENGTH + 16];
+         snprintf(viewName, sizeof(viewName), "%s_View", texture->debugName);
+         veSetObjectDebugName(deviceInternal, (uint64_t)defaultView->imageView, VK_OBJECT_TYPE_IMAGE_VIEW, viewName);
+      }
    }
-
-   texture->isValid = true;
-
-   // Update bindless descriptor
-   deviceInternal->updateTextureDescriptor(index);
 
    *outIndex = index;
    return VE_SUCCESS;
 }
 
-VEResult veCreateTexture(VEDevice *device, const VETextureDesc *desc, VETextureIndex *outIndex)
+VEResult veCreateTexture(VEDevice *device, const VETextureDesc *desc, VETexture *outIndex)
 {
    VkImageType imageType = desc && desc->depth > 1 ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
    return veCreateTextureInternal(device, desc, imageType, false, outIndex);
 }
 
-void veDestroyTextureImmediate(VEDeviceInternal *deviceInternal, VETextureIndex index)
+void veDestroyTextureImmediate(VEDeviceInternal *deviceInternal, VETexture index)
 {
-   if (!deviceInternal || index == VE_INVALID_TEXTURE_INDEX)
+   if (!deviceInternal || index == VE_INVALID_TEXTURE)
    {
       return;
    }
@@ -1347,9 +1551,9 @@ void veDestroyTextureImmediate(VEDeviceInternal *deviceInternal, VETextureIndex 
       return;
    }
 
-   if (texture->imageView)
+   while (texture->firstView != VE_INVALID_TEXTURE_VIEW && texture->firstView != 0)
    {
-      vkDestroyImageView(deviceInternal->device, texture->imageView, NULL);
+      veDestroyTextureViewImmediate(deviceInternal, texture->firstView);
    }
 
    // Handle sparse texture cleanup
@@ -1391,9 +1595,9 @@ void veDestroyTextureImmediate(VEDeviceInternal *deviceInternal, VETextureIndex 
    memset(texture, 0, sizeof(VETextureInternal));
 }
 
-VEResult veDestroyTexture(VEDevice *device, VETextureIndex index)
+VEResult veDestroyTexture(VEDevice *device, VETexture index)
 {
-   if (!device || index == VE_INVALID_TEXTURE_INDEX)
+   if (!device || index == VE_INVALID_TEXTURE)
    {
       veSetError("Invalid parameters for texture destruction");
       return VE_ERROR_INVALID_PARAMETER;
@@ -1413,9 +1617,9 @@ VEResult veDestroyTexture(VEDevice *device, VETextureIndex index)
 // Texture Property Queries
 // =============================================================================
 
-VkExtent3D veGetTextureSize(VEDevice *device, VETextureIndex index)
+VkExtent3D veGetTextureSize(VEDevice *device, VETexture index)
 {
-   if (!device || index == VE_INVALID_TEXTURE_INDEX)
+   if (!device || index == VE_INVALID_TEXTURE)
    {
       veSetError("veGetTextureSize: invalid device or texture index");
       return VkExtent3D{0, 0, 0};
@@ -1432,9 +1636,9 @@ VkExtent3D veGetTextureSize(VEDevice *device, VETextureIndex index)
    return VkExtent3D{texture->width, texture->height, texture->depth};
 }
 
-VkFormat veGetTextureFormat(VEDevice *device, VETextureIndex index)
+VkFormat veGetTextureFormat(VEDevice *device, VETexture index)
 {
-   if (!device || index == VE_INVALID_TEXTURE_INDEX)
+   if (!device || index == VE_INVALID_TEXTURE)
    {
       veSetError("veGetTextureFormat: invalid device or texture index");
       return VK_FORMAT_UNDEFINED;
@@ -1451,12 +1655,59 @@ VkFormat veGetTextureFormat(VEDevice *device, VETextureIndex index)
    return texture->format;
 }
 
+VETextureView veGetDefaultTextureView(VEDevice *device, VETexture texture)
+{
+   if (!device)
+      return VE_INVALID_TEXTURE_VIEW;
+   VETextureInternal *internal = reinterpret_cast<VEDeviceInternal *>(device)->getTexture(texture);
+   return internal ? internal->defaultView : VE_INVALID_TEXTURE_VIEW;
+}
+
+VETexture veGetTextureFromView(VEDevice *device, VETextureView view)
+{
+   if (!device)
+      return VE_INVALID_TEXTURE;
+   VETextureViewInternal *internal = reinterpret_cast<VEDeviceInternal *>(device)->getTextureView(view);
+   return internal ? internal->texture : VE_INVALID_TEXTURE;
+}
+
+VEResult veCreateTextureView(VEDevice *device, VETexture texture, const VETextureViewDesc *desc, VETextureView *outView)
+{
+   if (!device || !desc || !outView)
+   {
+      veSetError("veCreateTextureView: invalid parameter");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+   *outView = VE_INVALID_TEXTURE_VIEW;
+   return veCreateTextureViewInternal(reinterpret_cast<VEDeviceInternal *>(device), texture, *desc, VK_NULL_HANDLE,
+                                      true, outView);
+}
+
+VEResult veDestroyTextureView(VEDevice *device, VETextureView view)
+{
+   if (!device || view == VE_INVALID_TEXTURE_VIEW)
+      return VE_ERROR_INVALID_PARAMETER;
+   VEDeviceInternal *internal = reinterpret_cast<VEDeviceInternal *>(device);
+   VETextureViewInternal *textureView = internal->getTextureView(view);
+   if (!textureView)
+      return VE_ERROR_INVALID_PARAMETER;
+   VETextureInternal *texture = internal->getTexture(textureView->texture);
+   if (texture && texture->defaultView == view)
+   {
+      veSetError("A texture's default view is destroyed with the texture");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+   vkDeviceWaitIdle(internal->device);
+   veDestroyTextureViewImmediate(internal, view);
+   return VE_SUCCESS;
+}
+
 // =============================================================================
 // Convenience Texture Creation Functions
 // =============================================================================
 
 VEResult veCreateTexture1D(VEDevice *device, uint32_t width, VkFormat format, VkImageUsageFlags usage,
-                           const char *debugName, VETextureIndex *outIndex)
+                           const char *debugName, VETexture *outIndex)
 {
    VETextureDesc desc{};
    desc.width = width;
@@ -1475,7 +1726,7 @@ VEResult veCreateTexture1D(VEDevice *device, uint32_t width, VkFormat format, Vk
 }
 
 VEResult veCreateTexture2D(VEDevice *device, uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage,
-                           const char *debugName, VETextureIndex *outIndex)
+                           const char *debugName, VETexture *outIndex)
 {
    VETextureDesc desc{};
    desc.width = width;
@@ -1494,7 +1745,7 @@ VEResult veCreateTexture2D(VEDevice *device, uint32_t width, uint32_t height, Vk
 }
 
 VEResult veCreateTexture3D(VEDevice *device, uint32_t width, uint32_t height, uint32_t depth, VkFormat format,
-                           VkImageUsageFlags usage, const char *debugName, VETextureIndex *outIndex)
+                           VkImageUsageFlags usage, const char *debugName, VETexture *outIndex)
 {
    VETextureDesc desc{};
    desc.width = width;
@@ -1513,7 +1764,7 @@ VEResult veCreateTexture3D(VEDevice *device, uint32_t width, uint32_t height, ui
 }
 
 VEResult veCreateTexture2DArray(VEDevice *device, uint32_t width, uint32_t height, uint32_t layers, VkFormat format,
-                                VkImageUsageFlags usage, const char *debugName, VETextureIndex *outIndex)
+                                VkImageUsageFlags usage, const char *debugName, VETexture *outIndex)
 {
    VETextureDesc desc{};
    desc.width = width;
@@ -1532,7 +1783,7 @@ VEResult veCreateTexture2DArray(VEDevice *device, uint32_t width, uint32_t heigh
 }
 
 VEResult veCreateTextureCube(VEDevice *device, uint32_t size, VkFormat format, VkImageUsageFlags usage,
-                             const char *debugName, VETextureIndex *outIndex)
+                             const char *debugName, VETexture *outIndex)
 {
    VETextureDesc desc{};
    desc.width = size;
@@ -1552,7 +1803,7 @@ VEResult veCreateTextureCube(VEDevice *device, uint32_t size, VkFormat format, V
 
 VEResult veCreateTexture2DMultisample(VEDevice *device, uint32_t width, uint32_t height, VkFormat format,
                                       VkSampleCountFlags sampleCount, VkImageUsageFlags usage, const char *debugName,
-                                      VETextureIndex *outIndex)
+                                      VETexture *outIndex)
 {
    VETextureDesc desc{};
    desc.width = width;
@@ -1575,7 +1826,7 @@ VEResult veCreateTexture2DMultisample(VEDevice *device, uint32_t width, uint32_t
 // =============================================================================
 
 VEResult veLoadTexture(VEDevice *device, const char *filename, VkImageUsageFlags usage, bool generateMips,
-                       VETextureIndex *outIndex)
+                       VETexture *outIndex)
 {
    if (!outIndex)
    {
@@ -1623,11 +1874,11 @@ VEResult veLoadTexture(VEDevice *device, const char *filename, VkImageUsageFlags
    desc.initialDataSize = static_cast<uint64_t>(width * height * 4);
    desc.debugName = filename;
 
-   VETextureIndex created = VE_INVALID_TEXTURE_INDEX;
+   VETexture created = VE_INVALID_TEXTURE;
    VEResult createResult = veCreateTexture(device, &desc, &created);
 
    // Generate mipmaps if requested and texture creation succeeded
-   if (createResult == VE_SUCCESS && created != VE_INVALID_TEXTURE_INDEX && generateMips && desc.mipLevels > 1)
+   if (createResult == VE_SUCCESS && created != VE_INVALID_TEXTURE && generateMips && desc.mipLevels > 1)
    {
       VEResult mipmapResult = veGenerateMipmaps(device, created);
       if (mipmapResult != VE_SUCCESS)
@@ -1648,7 +1899,7 @@ VEResult veLoadTexture(VEDevice *device, const char *filename, VkImageUsageFlags
 }
 
 VEResult veLoadHDRTexture(VEDevice *device, const char *filename, VkImageUsageFlags usage, bool generateMips,
-                          VETextureIndex *outIndex)
+                          VETexture *outIndex)
 {
    if (!outIndex)
    {
@@ -1692,11 +1943,11 @@ VEResult veLoadHDRTexture(VEDevice *device, const char *filename, VkImageUsageFl
    desc.initialDataSize = static_cast<uint64_t>(width * height * 4 * sizeof(float));
    desc.debugName = filename;
 
-   VETextureIndex created = VE_INVALID_TEXTURE_INDEX;
+   VETexture created = VE_INVALID_TEXTURE;
    VEResult createResult = veCreateTexture(device, &desc, &created);
 
    // Generate mipmaps if requested and texture creation succeeded
-   if (createResult == VE_SUCCESS && created != VE_INVALID_TEXTURE_INDEX && generateMips && desc.mipLevels > 1)
+   if (createResult == VE_SUCCESS && created != VE_INVALID_TEXTURE && generateMips && desc.mipLevels > 1)
    {
       VEResult mipmapResult = veGenerateMipmaps(device, created);
       if (mipmapResult != VE_SUCCESS)
@@ -1717,7 +1968,7 @@ VEResult veLoadHDRTexture(VEDevice *device, const char *filename, VkImageUsageFl
 }
 
 VEResult veLoadCubeTexture(VEDevice *device, const char *filenames[6], VkImageUsageFlags usage, bool generateMips,
-                           VETextureIndex *outIndex)
+                           VETexture *outIndex)
 {
    if (!outIndex)
    {
@@ -1806,7 +2057,7 @@ VEResult veLoadCubeTexture(VEDevice *device, const char *filenames[6], VkImageUs
    desc.initialDataSize = combinedData.size();
    desc.debugName = filenames[0];
 
-   VETextureIndex created = VE_INVALID_TEXTURE_INDEX;
+   VETexture created = VE_INVALID_TEXTURE;
    VEResult createResult = veCreateTextureInternal(device, &desc, VK_IMAGE_TYPE_2D, true, &created);
    if (createResult != VE_SUCCESS)
    {
@@ -1831,7 +2082,7 @@ VEResult veLoadCubeTexture(VEDevice *device, const char *filenames[6], VkImageUs
 // External Texture Import
 // =============================================================================
 
-VEResult veImportExternalTexture(VEDevice *device, const VEExternalTextureDesc *desc, VETextureIndex *outIndex)
+VEResult veImportExternalTexture(VEDevice *device, const VEExternalTextureDesc *desc, VETexture *outIndex)
 {
    if (!device || !desc || !outIndex)
    {
@@ -1849,7 +2100,7 @@ VEResult veImportExternalTexture(VEDevice *device, const VEExternalTextureDesc *
 
    // Allocate a texture index
    uint32_t index = deviceInternal->allocateTextureIndex();
-   if (index == VE_INVALID_TEXTURE_INDEX)
+   if (index == VE_INVALID_TEXTURE)
    {
       veSetError("veImportExternalTexture: no free texture slots");
       return VE_ERROR_OUT_OF_MEMORY;
@@ -1873,7 +2124,8 @@ VEResult veImportExternalTexture(VEDevice *device, const VEExternalTextureDesc *
    viewInfo.subresourceRange.baseArrayLayer = 0;
    viewInfo.subresourceRange.layerCount = desc->arrayLayers > 0 ? desc->arrayLayers : 1;
 
-   VkResult result = vkCreateImageView(deviceInternal->device, &viewInfo, nullptr, &texture->imageView);
+   VkImageView externalView = VK_NULL_HANDLE;
+   VkResult result = vkCreateImageView(deviceInternal->device, &viewInfo, nullptr, &externalView);
    if (result != VK_SUCCESS)
    {
       deviceInternal->freeTextureIndex(index);
@@ -1891,12 +2143,30 @@ VEResult veImportExternalTexture(VEDevice *device, const VEExternalTextureDesc *
    texture->mipLevels = desc->mipLevels > 0 ? desc->mipLevels : 1;
    texture->arrayLayers = desc->arrayLayers > 0 ? desc->arrayLayers : 1;
    texture->format = desc->format;
+   texture->defaultViewType = desc->viewType;
    texture->usage = 0; // Unknown for external images
    texture->sampleCount = VK_SAMPLE_COUNT_1_BIT;
    texture->currentLayout = VK_IMAGE_LAYOUT_UNDEFINED; // Unknown initial layout
    texture->isValid = true;
    texture->isExternal = true; // Mark as external - do not destroy VkImage
    texture->index = index;
+   texture->defaultView = VE_INVALID_TEXTURE_VIEW;
+   texture->firstView = VE_INVALID_TEXTURE_VIEW;
+
+   VETextureViewDesc defaultViewDesc{};
+   defaultViewDesc.viewType = desc->viewType;
+   defaultViewDesc.format = desc->format;
+   defaultViewDesc.aspectMask = desc->aspectMask;
+   defaultViewDesc.mipLevelCount = texture->mipLevels;
+   defaultViewDesc.arrayLayerCount = texture->arrayLayers;
+   VEResult viewRegistration =
+       veCreateTextureViewInternal(deviceInternal, index, defaultViewDesc, externalView, true, &texture->defaultView);
+   if (viewRegistration != VE_SUCCESS)
+   {
+      memset(texture, 0, sizeof(*texture));
+      deviceInternal->freeTextureIndex(index);
+      return viewRegistration;
+   }
 
    if (desc->debugName)
    {
@@ -1907,7 +2177,7 @@ VEResult veImportExternalTexture(VEDevice *device, const VEExternalTextureDesc *
       VkDebugUtilsObjectNameInfoEXT nameInfo{};
       nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
       nameInfo.objectType = VK_OBJECT_TYPE_IMAGE_VIEW;
-      nameInfo.objectHandle = (uint64_t)(uintptr_t)texture->imageView;
+      nameInfo.objectHandle = (uint64_t)(uintptr_t)externalView;
       nameInfo.pObjectName = texture->debugName;
       if (veFuncs.vkSetDebugUtilsObjectNameEXT)
       {
@@ -1919,15 +2189,11 @@ VEResult veImportExternalTexture(VEDevice *device, const VEExternalTextureDesc *
       texture->debugName[0] = '\0';
    }
 
-   // Update bindless descriptor set
-   deviceInternal->updateTextureDescriptor(index);
-
-   deviceInternal->textureCount++;
    *outIndex = index;
    return VE_SUCCESS;
 }
 
-VEResult veReleaseExternalTexture(VEDevice *device, VETextureIndex index)
+VEResult veReleaseExternalTexture(VEDevice *device, VETexture index)
 {
    if (!device)
    {
@@ -1935,7 +2201,7 @@ VEResult veReleaseExternalTexture(VEDevice *device, VETextureIndex index)
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   if (index == VE_INVALID_TEXTURE_INDEX)
+   if (index == VE_INVALID_TEXTURE)
    {
       return VE_SUCCESS; // No-op for invalid index
    }
@@ -1949,12 +2215,8 @@ VEResult veReleaseExternalTexture(VEDevice *device, VETextureIndex index)
       return VE_ERROR_INVALID_PARAMETER;
    }
 
-   // Destroy the image view (we created this)
-   if (texture->imageView != VK_NULL_HANDLE)
-   {
-      vkDestroyImageView(deviceInternal->device, texture->imageView, nullptr);
-      texture->imageView = VK_NULL_HANDLE;
-   }
+   while (texture->firstView != VE_INVALID_TEXTURE_VIEW && texture->firstView != 0)
+      veDestroyTextureViewImmediate(deviceInternal, texture->firstView);
 
    // Do NOT destroy VkImage - it's externally owned
    // Do NOT free VMA allocation - there isn't one for external textures
@@ -1966,14 +2228,13 @@ VEResult veReleaseExternalTexture(VEDevice *device, VETextureIndex index)
    texture->debugName[0] = '\0';
 
    deviceInternal->freeTextureIndex(index);
-   deviceInternal->textureCount--;
 
    return VE_SUCCESS;
 }
 
-VEResult veCmdGenerateMipmaps(VECommandBuffer *cmd, VETextureIndex texture)
+VEResult veCmdGenerateMipmaps(VECommandBuffer *cmd, VETexture texture)
 {
-   if (!cmd || texture == VE_INVALID_TEXTURE_INDEX)
+   if (!cmd || texture == VE_INVALID_TEXTURE)
    {
       veSetError("Invalid parameters for mipmap generation");
       return VE_ERROR_INVALID_PARAMETER;
@@ -2188,9 +2449,9 @@ VEResult veCmdGenerateMipmaps(VECommandBuffer *cmd, VETextureIndex texture)
    return VE_SUCCESS;
 }
 
-VEResult veGenerateMipmaps(VEDevice *device, VETextureIndex texture)
+VEResult veGenerateMipmaps(VEDevice *device, VETexture texture)
 {
-   if (!device || texture == VE_INVALID_TEXTURE_INDEX)
+   if (!device || texture == VE_INVALID_TEXTURE)
    {
       veSetError("Invalid parameters for mipmap generation");
       return VE_ERROR_INVALID_PARAMETER;
@@ -2226,9 +2487,9 @@ VEResult veGenerateMipmaps(VEDevice *device, VETextureIndex texture)
    return VE_SUCCESS;
 }
 
-VEResult veSaveTexture(VEDevice *device, VETextureIndex texture, const char *filename)
+VEResult veSaveTexture(VEDevice *device, VETexture texture, const char *filename)
 {
-   if (!device || texture == VE_INVALID_TEXTURE_INDEX)
+   if (!device || texture == VE_INVALID_TEXTURE)
    {
       veSetError("Invalid parameters for texture saving");
       return VE_ERROR_INVALID_PARAMETER;
@@ -2288,23 +2549,23 @@ VEResult veSaveTexture(VEDevice *device, VETextureIndex texture, const char *fil
 // Descriptor Updates
 // =============================================================================
 
-VEResult VEDeviceInternal::updateTextureDescriptor(VETextureIndex index)
+VEResult VEDeviceInternal::updateTextureDescriptor(VETextureView view)
 {
-   VETextureInternal *texture = getTexture(index);
-   if (!texture)
+   VETextureViewInternal *textureView = getTextureView(view);
+   if (!textureView)
    {
       return VE_ERROR_INVALID_PARAMETER;
    }
 
    VkDescriptorImageInfo imageInfo{};
    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-   imageInfo.imageView = texture->imageView;
+   imageInfo.imageView = textureView->imageView;
 
    VkWriteDescriptorSet descriptorWrite{};
    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
    descriptorWrite.dstSet = textureDescriptorSet;
    descriptorWrite.dstBinding = 0;
-   descriptorWrite.dstArrayElement = index;
+   descriptorWrite.dstArrayElement = view;
    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
    descriptorWrite.descriptorCount = 1;
    descriptorWrite.pImageInfo = &imageInfo;

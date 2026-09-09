@@ -14,7 +14,8 @@ namespace VulkEase
     [StructLayout(LayoutKind.Sequential)] public struct VEDrawState { public IntPtr native; }
     [StructLayout(LayoutKind.Sequential)] public struct VEQueryPool { public IntPtr native; }
     [StructLayout(LayoutKind.Sequential)] public struct VEBufferAddress { public UInt64 native; }
-    [StructLayout(LayoutKind.Sequential)] public struct VETextureIndex { public UInt32 native; }
+    [StructLayout(LayoutKind.Sequential)] public struct VETexture { public UInt32 native; }
+    [StructLayout(LayoutKind.Sequential)] public struct VETextureView { public UInt32 native; }
     [StructLayout(LayoutKind.Sequential)] public struct VESamplerIndex { public UInt32 native; }
 
     // Query types
@@ -281,6 +282,30 @@ namespace VulkEase
         public string? debugName;
         [MarshalAs(UnmanagedType.I1)]
         public bool sparse;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct VkComponentMapping
+    {
+        public VkComponentSwizzle r;
+        public VkComponentSwizzle g;
+        public VkComponentSwizzle b;
+        public VkComponentSwizzle a;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct VETextureViewDesc
+    {
+        public VkImageViewType viewType;
+        public VkFormat format;
+        public VkComponentMapping components;
+        public VkImageAspectFlags aspectMask;
+        public UInt32 baseMipLevel;
+        public UInt32 mipLevelCount;
+        public UInt32 baseArrayLayer;
+        public UInt32 arrayLayerCount;
+        [MarshalAs(UnmanagedType.LPStr)]
+        public string? debugName;
     }
 
     // External texture import descriptor
@@ -577,11 +602,11 @@ namespace VulkEase
     [StructLayout(LayoutKind.Sequential)]
     public struct VERenderTargetAttachment
     {
-        public VETextureIndex texture;
+        public VETextureView view;
         public VkAttachmentLoadOp loadOp;
         public VkAttachmentStoreOp storeOp;
         public VEColor clearValue;
-        public VETextureIndex resolveTexture;
+        public VETextureView resolveView;
     }
 
     // Constants for attachment array layout
@@ -608,6 +633,7 @@ namespace VulkEase
         public bool hasDepthAttachment;
         [MarshalAs(UnmanagedType.I1)]
         public bool hasStencilAttachment;
+        public VkRenderingFlags flags;
         // Fixed-size array of attachments (VE_TOTAL_ATTACHMENT_SLOTS = 10)
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 10)]
         public VERenderTargetAttachment[] attachments;
@@ -623,6 +649,7 @@ namespace VulkEase
         public List<VERenderTargetAttachment> ColorAttachments { get; set; } = new List<VERenderTargetAttachment>();
         public VERenderTargetAttachment? DepthAttachment { get; set; }
         public VERenderTargetAttachment? StencilAttachment { get; set; }
+        public VkRenderingFlags RenderingFlags { get; set; }
 
         public VERenderTarget()
         {
@@ -656,6 +683,7 @@ namespace VulkEase
                 colorAttachmentCount = (uint)ColorAttachments.Count,
                 hasDepthAttachment = DepthAttachment.HasValue,
                 hasStencilAttachment = StencilAttachment.HasValue,
+                flags = RenderingFlags,
                 attachments = new VERenderTargetAttachment[VERenderTargetConstants.VE_TOTAL_ATTACHMENT_SLOTS]
             };
 
@@ -687,6 +715,7 @@ namespace VulkEase
             RenderAreaY = internalInfo.renderAreaY;
             RenderAreaWidth = internalInfo.renderAreaWidth;
             RenderAreaHeight = internalInfo.renderAreaHeight;
+            RenderingFlags = internalInfo.flags;
 
             ColorAttachments.Clear();
             for (int i = 0; i < internalInfo.colorAttachmentCount && i < VERenderTargetConstants.VE_MAX_COLOR_ATTACHMENTS; i++)
@@ -817,6 +846,7 @@ namespace VulkEase
     public struct VESecondaryCommandBufferDesc
     {
         public UInt32 usageFlags;                             // VkCommandBufferUsageFlags
+        public VkRenderingFlags renderingFlags;               // Must match the rendering scope
         public UInt32 colorAttachmentCount;                   // Up to 8
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
         public VkFormat[] colorAttachmentFormats;             // Fixed array of 8
@@ -829,6 +859,10 @@ namespace VulkEase
         public VkQueryControlFlags occlusionQueryFlags;
         [MarshalAs(UnmanagedType.U1)]
         public bool beginRecording;
+        public Int32 renderAreaX;
+        public Int32 renderAreaY;
+        public UInt32 renderAreaWidth;
+        public UInt32 renderAreaHeight;
     }
 
     /// <summary>

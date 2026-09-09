@@ -7,6 +7,8 @@
 // - Exercise VK_EXT_host_image_copy host write/read (if supported)
 
 #include "vulkease.h"
+#include "vulkease_util.h"
+#include "vulkease_vk.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -97,10 +99,9 @@ int main(void)
    }
    // Those errors were intentional; reset so we can detect unexpected errors later.
    ATOMIC_STORE(&g_errorMessages, 0);
-   
 
    // Texture create + escape hatches + host copy
-   VETextureIndex tex = VE_INVALID_TEXTURE_INDEX;
+   VETexture tex = VE_INVALID_TEXTURE;
 #define SMOKE_TEX_W 4
 #define SMOKE_TEX_H 4
    const uint32_t w = SMOKE_TEX_W, h = SMOKE_TEX_H;
@@ -128,16 +129,37 @@ int main(void)
    };
 
    result = veCreateTexture(device, &tdesc, &tex);
-   if (result != VE_SUCCESS || tex == VE_INVALID_TEXTURE_INDEX)
+   if (result != VE_SUCCESS || tex == VE_INVALID_TEXTURE)
       return fail("veCreateTexture", result);
 
    VkImage vkImage = veGetVkImageFromTexture(device, tex);
-   VkImageView vkView = veGetVkImageViewFromTexture(device, tex);
+   VkImageView vkView = veGetVkImageView(device, veGetDefaultTextureView(device, tex));
    if (vkImage == VK_NULL_HANDLE || vkView == VK_NULL_HANDLE)
    {
       fprintf(stderr, "[smoke] FAIL: texture escape hatches returned NULL handles\n");
       return 1;
    }
+
+   VETextureViewDesc viewDesc = {
+       .viewType = VK_IMAGE_VIEW_TYPE_2D,
+       .format = VK_FORMAT_UNDEFINED,
+       .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+       .mipLevelCount = 1,
+       .arrayLayerCount = 1,
+       .debugName = "smoke_texture_extra_view",
+   };
+   VETextureView extraView = VE_INVALID_TEXTURE_VIEW;
+   result = veCreateTextureView(device, tex, &viewDesc, &extraView);
+   if (result != VE_SUCCESS || extraView == VE_INVALID_TEXTURE_VIEW)
+      return fail("veCreateTextureView", result);
+   if (veGetTextureFromView(device, extraView) != tex || veGetVkImageView(device, extraView) == VK_NULL_HANDLE)
+   {
+      fprintf(stderr, "[smoke] FAIL: texture view queries returned invalid handles\n");
+      return 1;
+   }
+   result = veDestroyTextureView(device, extraView);
+   if (result != VE_SUCCESS)
+      return fail("veDestroyTextureView", result);
 
    // Host write/read (may be unsupported depending on device/driver).
    result = veHostWriteTextureRegion(device, tex, pixels, sizeof(pixels), NULL);
@@ -208,4 +230,3 @@ int main(void)
    fprintf(stderr, "[smoke] PASS\n");
    return 0;
 }
-
