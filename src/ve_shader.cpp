@@ -507,6 +507,7 @@ VEResult veLoadShaderFromBuffer(VEDevice *device, VkShaderStageFlags stage, cons
       veSetError("outShader cannot be NULL");
       return VE_ERROR_INVALID_PARAMETER;
    }
+   *outShader = nullptr;
 
    if (!device || !code || codeSize == 0 || !entryPoint)
    {
@@ -559,12 +560,17 @@ VEResult veLoadShaderFromBuffer(VEDevice *device, VkShaderStageFlags stage, cons
 
    shader->device = deviceInternal;
    shader->isValid = true;
+   shader->pendingDestroy = false;
    shader->fromFile = false;
    shader->pendingReload.store(false);
    shader->lastWriteTimestamp = 0;
    shader->sourceFile[0] = '\0';
 
    deviceInternal->shaderCount += 1;
+   {
+      std::lock_guard<std::mutex> lock(deviceInternal->shaderMutex);
+      deviceInternal->liveShaders.push_back(shader);
+   }
 
    *outShader = (VEShader *)shader;
    return VE_SUCCESS;
@@ -652,6 +658,9 @@ void veDestroyShaderImmediate(VEShader *shader)
    if (internal->device)
    {
       unregisterFileShader(internal->device, internal);
+      std::lock_guard<std::mutex> lock(internal->device->shaderMutex);
+      auto &liveShaders = internal->device->liveShaders;
+      liveShaders.erase(std::remove(liveShaders.begin(), liveShaders.end(), internal), liveShaders.end());
    }
 
    if (internal->device && internal->device->shaderCount > 0)
@@ -665,10 +674,7 @@ void veDestroyShaderImmediate(VEShader *shader)
 VEResult veDestroyShader(VEShader *shader)
 {
    if (!shader)
-   {
-      veSetError("Shader cannot be NULL");
-      return VE_ERROR_INVALID_PARAMETER;
-   }
+      return VE_SUCCESS;
 
    VEShaderInternal *internal = (VEShaderInternal *)shader;
    VEDeviceInternal *deviceInternal = internal->device;
@@ -684,7 +690,19 @@ VEResult veDestroyShader(VEShader *shader)
       return VE_ERROR_NOT_INITIALIZED;
    }
 
-   deviceInternal->deferredDeletionQueue->enqueueShader(shader);
+   if (!internal->isValid || internal->pendingDestroy)
+   {
+      veSetError("Shader is invalid or already pending destruction");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+   if (internal->pipelineReferences.load(std::memory_order_acquire) != 0)
+   {
+      veSetError("Shader is still referenced by a graphics pipeline");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   internal->pendingDestroy = true;
+   deviceInternal->deferredDeletionQueue->enqueueShader(deviceInternal, shader);
    return VE_SUCCESS;
 }
 
@@ -762,7 +780,7 @@ bool veShaderNeedsReload(VEShader *shader)
       return false;
 
    VEShaderInternal *internal = (VEShaderInternal *)shader;
-   return internal->pendingReload.load(std::memory_order_relaxed);
+   return internal->isValid && !internal->pendingDestroy && internal->pendingReload.load(std::memory_order_relaxed);
 }
 
 VEResult veReloadShader(VEShader *shader)
@@ -774,6 +792,12 @@ VEResult veReloadShader(VEShader *shader)
    }
 
    VEShaderInternal *internal = (VEShaderInternal *)shader;
+
+   if (!internal->isValid || internal->pendingDestroy)
+   {
+      veSetError("Shader is invalid or pending destruction");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
 
    internal->pendingReload.store(false);
 
@@ -835,7 +859,7 @@ VEResult veReloadShader(VEShader *shader)
 
    if (internal->shaderObject)
    {
-      veFuncs.vkDestroyShaderEXT(deviceInternal->device, internal->shaderObject, NULL);
+      deviceInternal->deferredDeletionQueue->enqueueShaderObject(deviceInternal, internal->shaderObject);
    }
 
    internal->shaderObject = newShaderObject;

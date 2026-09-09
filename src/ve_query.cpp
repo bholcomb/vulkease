@@ -6,20 +6,7 @@
  */
 
 #include "ve_internal.h"
-
-// =============================================================================
-// Query Pool Internal Structure
-// =============================================================================
-
-struct VEQueryPoolInternal
-{
-   VkQueryPool queryPool;
-   VEQueryType type;
-   uint32_t queryCount;
-   VEDeviceInternal *device;
-   char debugName[VE_MAX_DEBUG_NAME_LENGTH];
-   bool isValid;
-};
+#include <algorithm>
 
 // =============================================================================
 // Query Pool Management
@@ -27,7 +14,14 @@ struct VEQueryPoolInternal
 
 VEResult veCreateQueryPool(VEDevice *device, const VEQueryPoolDesc *desc, VEQueryPool **outPool)
 {
-   if (!device || !desc || !outPool || desc->queryCount == 0)
+   if (!outPool)
+   {
+      veSetError("veCreateQueryPool: Invalid parameters");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+   *outPool = nullptr;
+
+   if (!device || !desc || desc->queryCount == 0)
    {
       veSetError("veCreateQueryPool: Invalid parameters");
       return VE_ERROR_INVALID_PARAMETER;
@@ -88,18 +82,28 @@ VEResult veCreateQueryPool(VEDevice *device, const VEQueryPoolDesc *desc, VEQuer
       pool->debugName[0] = '\0';
    }
 
+   {
+      std::lock_guard<std::mutex> lock(deviceInternal->queryPoolMutex);
+      deviceInternal->liveQueryPools.push_back(pool);
+   }
+
    *outPool = (VEQueryPool *)pool;
    return VE_SUCCESS;
 }
 
-VEResult veDestroyQueryPool(VEQueryPool *pool)
+void veDestroyQueryPoolImmediate(VEQueryPool *pool)
 {
    if (!pool)
-   {
-      return VE_SUCCESS; // Nothing to destroy
-   }
+      return;
 
    VEQueryPoolInternal *poolInternal = (VEQueryPoolInternal *)pool;
+
+   if (poolInternal->device)
+   {
+      std::lock_guard<std::mutex> lock(poolInternal->device->queryPoolMutex);
+      auto &livePools = poolInternal->device->liveQueryPools;
+      livePools.erase(std::remove(livePools.begin(), livePools.end(), poolInternal), livePools.end());
+   }
 
    if (poolInternal->queryPool != VK_NULL_HANDLE && poolInternal->device)
    {
@@ -107,6 +111,26 @@ VEResult veDestroyQueryPool(VEQueryPool *pool)
    }
 
    delete poolInternal;
+}
+
+VEResult veDestroyQueryPool(VEQueryPool *pool)
+{
+   if (!pool)
+      return VE_SUCCESS;
+
+   VEQueryPoolInternal *poolInternal = (VEQueryPoolInternal *)pool;
+   if (!poolInternal->isValid || poolInternal->pendingDestroy || !poolInternal->device)
+   {
+      veSetError("veDestroyQueryPool: Query pool is invalid or already pending destruction");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+
+   VEDeviceInternal *device = poolInternal->device;
+   if (!device->deferredDeletionQueue)
+      return VE_ERROR_NOT_INITIALIZED;
+
+   poolInternal->pendingDestroy = true;
+   device->deferredDeletionQueue->enqueueQueryPool(device, pool);
    return VE_SUCCESS;
 }
 
@@ -121,9 +145,9 @@ VEResult veCmdResetQueryPool(VECommandBuffer *cmd, VEQueryPool *pool, uint32_t f
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
    VEQueryPoolInternal *poolInternal = (VEQueryPoolInternal *)pool;
 
-   if (!poolInternal->isValid)
+   if (!poolInternal->isValid || poolInternal->pendingDestroy || poolInternal->device != internal->device)
    {
-      veSetError("veCmdResetQueryPool: Query pool is not valid");
+      veSetError("veCmdResetQueryPool: Query pool is invalid, pending destruction, or belongs to another device");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
@@ -149,9 +173,9 @@ VEResult veCmdBeginQuery(VECommandBuffer *cmd, VEQueryPool *pool, uint32_t query
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
    VEQueryPoolInternal *poolInternal = (VEQueryPoolInternal *)pool;
 
-   if (!poolInternal->isValid)
+   if (!poolInternal->isValid || poolInternal->pendingDestroy || poolInternal->device != internal->device)
    {
-      veSetError("veCmdBeginQuery: Query pool is not valid");
+      veSetError("veCmdBeginQuery: Query pool is invalid, pending destruction, or belongs to another device");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
@@ -189,9 +213,9 @@ VEResult veCmdEndQuery(VECommandBuffer *cmd, VEQueryPool *pool, uint32_t queryIn
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
    VEQueryPoolInternal *poolInternal = (VEQueryPoolInternal *)pool;
 
-   if (!poolInternal->isValid)
+   if (!poolInternal->isValid || poolInternal->pendingDestroy || poolInternal->device != internal->device)
    {
-      veSetError("veCmdEndQuery: Query pool is not valid");
+      veSetError("veCmdEndQuery: Query pool is invalid, pending destruction, or belongs to another device");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
@@ -217,9 +241,9 @@ VEResult veCmdWriteTimestamp(VECommandBuffer *cmd, VEQueryPool *pool, uint32_t q
    VECommandBufferInternal *internal = (VECommandBufferInternal *)cmd;
    VEQueryPoolInternal *poolInternal = (VEQueryPoolInternal *)pool;
 
-   if (!poolInternal->isValid)
+   if (!poolInternal->isValid || poolInternal->pendingDestroy || poolInternal->device != internal->device)
    {
-      veSetError("veCmdWriteTimestamp: Query pool is not valid");
+      veSetError("veCmdWriteTimestamp: Query pool is invalid, pending destruction, or belongs to another device");
       return VE_ERROR_INVALID_PARAMETER;
    }
 
@@ -252,9 +276,9 @@ VEResult veGetQueryResults(VEDevice *device, VEQueryPool *pool, uint32_t firstQu
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
    VEQueryPoolInternal *poolInternal = (VEQueryPoolInternal *)pool;
 
-   if (!poolInternal->isValid)
+   if (!poolInternal->isValid || poolInternal->pendingDestroy || poolInternal->device != deviceInternal)
    {
-      veSetError("veGetQueryResults: Query pool is not valid");
+      veSetError("veGetQueryResults: Query pool is invalid, pending destruction, or belongs to another device");
       return VE_ERROR_INVALID_PARAMETER;
    }
 

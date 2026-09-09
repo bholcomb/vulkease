@@ -155,48 +155,74 @@ VERenderTarget veCreateSimpleRenderTarget(VEDevice *device, uint32_t width, uint
 {
    VERenderTarget target = veCreateRenderTarget(width, height);
 
-   if (!device || width == 0 || height == 0)
+   if (outColorTexture)
+      *outColorTexture = VE_INVALID_TEXTURE;
+   if (outDepthTexture)
+      *outDepthTexture = VE_INVALID_TEXTURE;
+
+   if (!device || width == 0 || height == 0 || (colorFormat != VK_FORMAT_UNDEFINED && !outColorTexture) ||
+       (depthFormat != VK_FORMAT_UNDEFINED && !outDepthTexture))
    {
-      veSetError("veCreateSimpleRenderTarget: invalid parameters");
+      veSetError("veCreateSimpleRenderTarget: requested attachments require owning texture outputs");
       return target;
    }
 
-   // Create and add color texture
+   VETexture colorTexture = VE_INVALID_TEXTURE;
+   VETexture depthTexture = VE_INVALID_TEXTURE;
+
    if (colorFormat != VK_FORMAT_UNDEFINED)
    {
-      VETexture colorTex = VE_INVALID_TEXTURE;
       VEResult result = veCreateTexture2D(device, width, height, colorFormat,
                                           VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                               VK_IMAGE_USAGE_SAMPLED_BIT,
-                                          "SimpleRT_Color", &colorTex);
-      if (result == VE_SUCCESS && colorTex != VE_INVALID_TEXTURE)
+                                          "SimpleRT_Color", &colorTexture);
+      if (result != VE_SUCCESS)
+         return target;
+   }
+
+   if (depthFormat != VK_FORMAT_UNDEFINED)
+   {
+      VEResult result = veCreateTexture2D(device, width, height, depthFormat,
+                                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                          "SimpleRT_Depth", &depthTexture);
+      if (result != VE_SUCCESS)
       {
-         veRenderTargetAddColorAttachment(&target, veGetDefaultTextureView(device, colorTex),
-                                          VK_ATTACHMENT_LOAD_OP_CLEAR, clearColor);
-         if (outColorTexture)
-         {
-            *outColorTexture = colorTex;
-         }
+         if (colorTexture != VE_INVALID_TEXTURE)
+            (void)veDestroyTexture(device, colorTexture);
+         return target;
       }
    }
 
-   // Create and add depth texture
-   if (depthFormat != VK_FORMAT_UNDEFINED)
+   if (colorTexture != VE_INVALID_TEXTURE)
    {
-      VETexture depthTex = VE_INVALID_TEXTURE;
-      VEResult result = veCreateTexture2D(device, width, height, depthFormat,
-                                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                                          "SimpleRT_Depth", &depthTex);
-      if (result == VE_SUCCESS && depthTex != VE_INVALID_TEXTURE)
+      VEResult result = veRenderTargetAddColorAttachment(&target, veGetDefaultTextureView(device, colorTexture),
+                                                         VK_ATTACHMENT_LOAD_OP_CLEAR, clearColor);
+      if (result != VE_SUCCESS)
       {
-         veRenderTargetSetDepthAttachment(&target, veGetDefaultTextureView(device, depthTex),
-                                          VK_ATTACHMENT_LOAD_OP_CLEAR, clearDepth);
-         if (outDepthTexture)
-         {
-            *outDepthTexture = depthTex;
-         }
+         (void)veDestroyTexture(device, colorTexture);
+         if (depthTexture != VE_INVALID_TEXTURE)
+            (void)veDestroyTexture(device, depthTexture);
+         return veCreateRenderTarget(width, height);
       }
    }
+
+   if (depthTexture != VE_INVALID_TEXTURE)
+   {
+      VEResult result = veRenderTargetSetDepthAttachment(&target, veGetDefaultTextureView(device, depthTexture),
+                                                         VK_ATTACHMENT_LOAD_OP_CLEAR, clearDepth);
+      if (result != VE_SUCCESS)
+      {
+         if (colorTexture != VE_INVALID_TEXTURE)
+            (void)veDestroyTexture(device, colorTexture);
+         (void)veDestroyTexture(device, depthTexture);
+         return veCreateRenderTarget(width, height);
+      }
+   }
+
+   if (outColorTexture)
+      *outColorTexture = colorTexture;
+   if (outDepthTexture)
+      *outDepthTexture = depthTexture;
 
    return target;
 }

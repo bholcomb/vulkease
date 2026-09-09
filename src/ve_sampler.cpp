@@ -60,7 +60,7 @@ VESamplerInternal *VEDeviceInternal::getSampler(VESamplerIndex index)
    }
 
    VESamplerInternal *sampler = &samplers[index];
-   return sampler->isValid ? sampler : NULL;
+   return sampler->isValid && !sampler->pendingDestroy ? sampler : NULL;
 }
 
 const VESamplerInternal *VEDeviceInternal::getSampler(VESamplerIndex index) const
@@ -79,6 +79,7 @@ VEResult veCreateSampler(VEDevice *device, const VESamplerDesc *desc, VESamplerI
       veSetError("outIndex cannot be NULL");
       return VE_ERROR_INVALID_PARAMETER;
    }
+   *outIndex = VE_INVALID_SAMPLER_INDEX;
 
    if (!device || !desc)
    {
@@ -172,7 +173,7 @@ void veDestroySamplerImmediate(VEDeviceInternal *deviceInternal, VESamplerIndex 
       return;
    }
 
-   VESamplerInternal *sampler = deviceInternal->getSampler(index);
+   VESamplerInternal *sampler = index < deviceInternal->maxSamplers ? &deviceInternal->samplers[index] : nullptr;
 
    if (!sampler || !sampler->isValid)
    {
@@ -190,11 +191,13 @@ void veDestroySamplerImmediate(VEDeviceInternal *deviceInternal, VESamplerIndex 
 
 VEResult veDestroySampler(VEDevice *device, VESamplerIndex index)
 {
-   if (!device || index == VE_INVALID_SAMPLER_INDEX)
+   if (!device)
    {
       veSetError("Invalid parameters for sampler destruction");
       return VE_ERROR_INVALID_PARAMETER;
    }
+   if (index == VE_INVALID_SAMPLER_INDEX)
+      return VE_SUCCESS;
 
    VEDeviceInternal *deviceInternal = (VEDeviceInternal *)device;
    if (!deviceInternal->deferredDeletionQueue)
@@ -202,7 +205,27 @@ VEResult veDestroySampler(VEDevice *device, VESamplerIndex index)
       veSetError("Deferred deletion queue not initialized");
       return VE_ERROR_NOT_INITIALIZED;
    }
-   deviceInternal->deferredDeletionQueue->enqueueSampler(index);
+
+   VESamplerInternal *sampler = deviceInternal->getSampler(index);
+   if (!sampler || sampler->pendingDestroy)
+   {
+      veSetError("Sampler is invalid or already pending destruction");
+      return VE_ERROR_INVALID_PARAMETER;
+   }
+   if (deviceInternal->defaultSamplersInitialized)
+   {
+      for (uint32_t i = 0; i < VE_DEFAULT_SAMPLER_COUNT; ++i)
+      {
+         if (deviceInternal->defaultSamplers[i] == index)
+         {
+            veSetError("Default samplers are owned by the device");
+            return VE_ERROR_INVALID_PARAMETER;
+         }
+      }
+   }
+
+   sampler->pendingDestroy = true;
+   deviceInternal->deferredDeletionQueue->enqueueSampler(deviceInternal, index);
    return VE_SUCCESS;
 }
 

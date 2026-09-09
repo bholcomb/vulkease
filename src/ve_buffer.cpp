@@ -136,7 +136,8 @@ VEBufferInternal *VEDeviceInternal::getBufferFromAddress(VEBufferAddress address
    std::lock_guard<std::mutex> lock(*bufferMapMutex);
    BufferMap *map = getBufferMap(this);
    auto it = map->find(address);
-   return (it != map->end()) ? it->second.get() : nullptr;
+   return (it != map->end() && it->second && it->second->isValid && !it->second->pendingDestroy) ? it->second.get()
+                                                                                                 : nullptr;
 }
 
 bool VEDeviceInternal::validateBufferAddress(VEBufferAddress address) const
@@ -149,7 +150,7 @@ bool VEDeviceInternal::validateBufferAddress(VEBufferAddress address) const
    std::lock_guard<std::mutex> lock(*bufferMapMutex);
    BufferMap *map = getBufferMap(const_cast<VEDeviceInternal *>(this));
    auto it = map->find(address);
-   return it != map->end() && it->second && it->second->isValid;
+   return it != map->end() && it->second && it->second->isValid && !it->second->pendingDestroy;
 }
 
 VkBuffer VEDeviceInternal::getVkBufferFromAddress(VEBufferAddress address) const
@@ -162,7 +163,7 @@ VkBuffer VEDeviceInternal::getVkBufferFromAddress(VEBufferAddress address) const
    std::lock_guard<std::mutex> lock(*bufferMapMutex);
    BufferMap *map = getBufferMap(const_cast<VEDeviceInternal *>(this));
    auto it = map->find(address);
-   if (it != map->end() && it->second && it->second->isValid)
+   if (it != map->end() && it->second && it->second->isValid && !it->second->pendingDestroy)
    {
       return it->second->buffer;
    }
@@ -291,6 +292,18 @@ VEResult VEDeviceInternal::submitTransferCommandBuffer(VECommandBufferInternal *
    submitInfo.commandBufferCount = 1;
    submitInfo.pCommandBuffers = &cmd->commandBuffer;
 
+   VkTimelineSemaphoreSubmitInfo timelineInfo{};
+   uint64_t submissionSerial = 0;
+   if (retirementTimeline != VK_NULL_HANDLE)
+   {
+      timelineInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+      timelineInfo.signalSemaphoreValueCount = 1;
+      timelineInfo.pSignalSemaphoreValues = &submissionSerial;
+      submitInfo.pNext = &timelineInfo;
+      submitInfo.signalSemaphoreCount = 1;
+      submitInfo.pSignalSemaphores = &retirementTimeline;
+   }
+
    {
       std::lock_guard<std::mutex> lock(locks->graphicsMutex());
       result = vkResetFences(device, 1, &fence);
@@ -299,7 +312,11 @@ VEResult VEDeviceInternal::submitTransferCommandBuffer(VECommandBufferInternal *
          veSetError("Failed to reset transfer fence (VkResult: %d)", result);
          return VE_ERROR_UNKNOWN;
       }
+      if (retirementTimeline != VK_NULL_HANDLE)
+         submissionSerial = ++nextSubmissionSerial;
       result = vkQueueSubmit(graphicsQueue, 1, &submitInfo, fence);
+      if (result == VK_SUCCESS && submissionSerial != 0)
+         lastSubmittedSerial.store(submissionSerial, std::memory_order_release);
    }
 
    if (result != VK_SUCCESS)
@@ -327,6 +344,7 @@ VEResult VEDeviceInternal::submitTransferCommandBuffer(VECommandBufferInternal *
 
       cmd->clearFenceTracking();
       veFreeCommandBuffer(cmd);
+      veAdvanceDeferredDeletions(this);
       // Nothing was tracked for async reclaim on this path.
       return VE_SUCCESS;
    }
@@ -335,6 +353,7 @@ VEResult VEDeviceInternal::submitTransferCommandBuffer(VECommandBufferInternal *
    // Track for async reclaim using 'this' (we are a VEDeviceInternal member function)
    this->threadCommandPools.trackInFlight(fence, cmd);
    this->threadCommandPools.reclaimInFlight(this);
+   veAdvanceDeferredDeletions(this);
 
    return VE_SUCCESS;
 }
@@ -350,6 +369,7 @@ extern "C" VEResult veCreateBuffer(VEDevice *device, const VEBufferDesc *desc, V
       veSetError("outAddress cannot be NULL");
       return VE_ERROR_INVALID_PARAMETER;
    }
+   *outAddress = VE_INVALID_ADDRESS;
 
    if (!device || !desc || desc->size == 0)
    {
@@ -528,11 +548,13 @@ void veDestroyBufferImmediate(VEDeviceInternal *deviceInternal, VEBufferAddress 
 
 extern "C" VEResult veDestroyBuffer(VEDevice *device, VEBufferAddress address)
 {
-   if (!device || address == VE_INVALID_ADDRESS)
+   if (!device)
    {
       veSetError("Invalid parameters for buffer destruction");
       return VE_ERROR_INVALID_PARAMETER;
    }
+   if (address == VE_INVALID_ADDRESS)
+      return VE_SUCCESS;
 
    VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
    if (!deviceInternal->deferredDeletionQueue)
@@ -540,7 +562,22 @@ extern "C" VEResult veDestroyBuffer(VEDevice *device, VEBufferAddress address)
       veSetError("Deferred deletion queue not initialized");
       return VE_ERROR_NOT_INITIALIZED;
    }
-   deviceInternal->deferredDeletionQueue->enqueueBuffer(address);
+
+   BufferMap *bufferMap = getBufferMap(deviceInternal);
+   if (!bufferMap || !deviceInternal->bufferMapMutex)
+      return VE_ERROR_NOT_INITIALIZED;
+   {
+      std::lock_guard<std::mutex> lock(*deviceInternal->bufferMapMutex);
+      auto it = bufferMap->find(address);
+      if (it == bufferMap->end() || !it->second || !it->second->isValid || it->second->pendingDestroy)
+      {
+         veSetError("Buffer is invalid or already pending destruction");
+         return VE_ERROR_INVALID_PARAMETER;
+      }
+      it->second->pendingDestroy = true;
+   }
+
+   deviceInternal->deferredDeletionQueue->enqueueBuffer(deviceInternal, address);
    return VE_SUCCESS;
 }
 

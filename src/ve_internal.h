@@ -112,6 +112,7 @@ struct VEDeviceFeatures
    // Core Vulkan 1.2 features (mandatory in 1.4)
    bool bufferDeviceAddress;
    bool descriptorIndexing;
+   bool timelineSemaphore;
    bool scalarBlockLayout; // Mandatory in 1.4
    bool updateAfterBind;
    bool updateUnusedWhilePending;
@@ -286,6 +287,7 @@ struct VEBufferInternal
    void *mappedData;
    char debugName[VE_MAX_DEBUG_NAME_LENGTH];
    bool isValid;
+   bool pendingDestroy;
 };
 
 // Forward declaration for sparse texture data
@@ -308,7 +310,9 @@ struct VETextureInternal
    VkImageLayout currentLayout; // Track current layout for optimized transitions
    char debugName[VE_MAX_DEBUG_NAME_LENGTH];
    bool isValid;
+   bool pendingDestroy;
    bool isExternal; // If true, VkImage is not owned by VulkEase (imported from external source)
+   bool isSwapchainImage; // If true, the texture handle is borrowed from a swapchain
    bool isSparse;   // If true, texture uses sparse binding
    uint32_t index;
    VETextureView defaultView;
@@ -327,6 +331,7 @@ struct VETextureViewInternal
    VETextureView nextView;
    bool ownsImageView;
    bool isValid;
+   bool pendingDestroy;
 };
 
 // Sparse page info for tracking individual page allocations
@@ -386,6 +391,7 @@ struct VESamplerInternal
    VESamplerDesc desc;
    char debugName[VE_MAX_DEBUG_NAME_LENGTH];
    bool isValid;
+   bool pendingDestroy;
    uint32_t index;
 };
 
@@ -400,6 +406,8 @@ struct VEShaderInternal
    std::atomic<bool> pendingReload;
    bool fromFile;
    bool isValid;
+   bool pendingDestroy;
+   std::atomic<uint32_t> pipelineReferences{0};
    VEDeviceInternal *device;
 };
 
@@ -483,6 +491,17 @@ struct VEDrawStateInternal
    VEDeviceInternal *device;
 };
 
+struct VEQueryPoolInternal
+{
+   VkQueryPool queryPool;
+   VEQueryType type;
+   uint32_t queryCount;
+   VEDeviceInternal *device;
+   char debugName[VE_MAX_DEBUG_NAME_LENGTH];
+   bool isValid;
+   bool pendingDestroy;
+};
+
 // =============================================================================
 // Shader Hot Reload State
 // =============================================================================
@@ -506,20 +525,26 @@ enum class VEDeferredResourceType
 {
    Buffer,
    Texture,
+   TextureView,
    Sampler,
-   Shader
+   Shader,
+   ShaderObject,
+   QueryPool
 };
 
 struct VEDeferredDeletion
 {
    VEDeferredResourceType type;
-   uint64_t frameIndex; // Frame when deletion was requested
+   uint64_t retireValue;
    union
    {
       VEBufferAddress bufferAddress;
       VETexture textureIndex;
+      VETextureView textureView;
       VESamplerIndex samplerIndex;
       VEShader *shader;
+      VkShaderEXT shaderObject;
+      VEQueryPool *queryPool;
    };
 };
 
@@ -527,14 +552,13 @@ struct VEDeferredDeletionQueue
 {
    std::mutex mutex;
    std::vector<VEDeferredDeletion> pending;
-   uint64_t currentFrame{0};
-   static constexpr uint64_t kFrameDelay = VE_MAX_FRAMES_IN_FLIGHT + 1;
-
-   void enqueueBuffer(VEBufferAddress address);
-   void enqueueTexture(VETexture index);
-   void enqueueSampler(VESamplerIndex index);
-   void enqueueShader(VEShader *shader);
-   void advanceFrame();
+   void enqueueBuffer(VEDeviceInternal *device, VEBufferAddress address);
+   void enqueueTexture(VEDeviceInternal *device, VETexture index);
+   void enqueueTextureView(VEDeviceInternal *device, VETextureView view);
+   void enqueueSampler(VEDeviceInternal *device, VESamplerIndex index);
+   void enqueueShader(VEDeviceInternal *device, VEShader *shader);
+   void enqueueShaderObject(VEDeviceInternal *device, VkShaderEXT shaderObject);
+   void enqueueQueryPool(VEDeviceInternal *device, VEQueryPool *pool);
    void processPending(VEDeviceInternal *device);
    void flush(VEDeviceInternal *device);
 };
@@ -547,6 +571,7 @@ VEResult veCreateTextureViewInternal(VEDeviceInternal *device, VETexture texture
 void veDestroyTextureViewImmediate(VEDeviceInternal *device, VETextureView view);
 void veDestroySamplerImmediate(VEDeviceInternal *device, VESamplerIndex index);
 void veDestroyShaderImmediate(VEShader *shader);
+void veDestroyQueryPoolImmediate(VEQueryPool *pool);
 
 struct VESwapchainInternal
 {
@@ -615,6 +640,12 @@ struct VEDeviceInternal
    VkQueue computeQueue;
    VkQueue transferQueue;
 
+   // Every VulkEase queue submission signals this timeline. Deferred resources
+   // can therefore retire without stalling unrelated work with vkDeviceWaitIdle.
+   VkSemaphore retirementTimeline{VK_NULL_HANDLE};
+   uint64_t nextSubmissionSerial{0}; // Accessed while holding the queue lock
+   std::atomic<uint64_t> lastSubmittedSerial{0};
+
    VmaAllocator allocator;
 
    // Resource management - simplified for address-only API
@@ -634,6 +665,11 @@ struct VEDeviceInternal
    std::atomic<uint32_t> textureViewCount{0};
    uint32_t maxTextureViews;
    std::unique_ptr<std::mutex> textureViewIndexMutex;
+
+   std::mutex shaderMutex;
+   std::vector<VEShaderInternal *> liveShaders;
+   std::mutex queryPoolMutex;
+   std::vector<VEQueryPoolInternal *> liveQueryPools;
 
    VESamplerInternal *samplers;
    uint32_t *freeSamplerIndices;
