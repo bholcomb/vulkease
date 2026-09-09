@@ -20,6 +20,8 @@
 #endif
 
 #include "vulkease.h"
+#include "vulkease_util.h"
+#include "vulkease_vk.h"
 
 // VMA integration - declare interface only
 #define VMA_STATIC_VULKAN_FUNCTIONS 0
@@ -174,6 +176,7 @@ struct VECommandBufferInternal
    bool isSecondary{false};
    bool isRecording{false};
    bool isOneTime{false};
+   VkRenderingFlags currentRenderingFlags{0};
    uint32_t index{0};
    VkShaderStageFlags boundShaders{0};
    VkFence inFlightFence{VK_NULL_HANDLE};
@@ -291,7 +294,6 @@ struct VESparseTextureData;
 struct VETextureInternal
 {
    VkImage image;
-   VkImageView imageView;
    VmaAllocation allocation;
    VmaAllocationInfo allocationInfo;
    uint32_t width;
@@ -300,6 +302,7 @@ struct VETextureInternal
    uint32_t mipLevels;
    uint32_t arrayLayers;
    VkFormat format;
+   VkImageViewType defaultViewType;
    VkImageUsageFlags usage;
    VkSampleCountFlags sampleCount;
    VkImageLayout currentLayout; // Track current layout for optimized transitions
@@ -308,7 +311,22 @@ struct VETextureInternal
    bool isExternal; // If true, VkImage is not owned by VulkEase (imported from external source)
    bool isSparse;   // If true, texture uses sparse binding
    uint32_t index;
+   VETextureView defaultView;
+   VETextureView firstView;
    VESparseTextureData *sparseData; // Only set if isSparse is true
+};
+
+struct VETextureViewInternal
+{
+   VkImageView imageView;
+   VETexture texture;
+   VkFormat format;
+   VkComponentMapping components;
+   VkImageSubresourceRange subresourceRange;
+   VkImageViewType viewType;
+   VETextureView nextView;
+   bool ownsImageView;
+   bool isValid;
 };
 
 // Sparse page info for tracking individual page allocations
@@ -340,7 +358,7 @@ struct VESparseTextureData
 // Pending sparse bind operation
 struct VESparsePendingBind
 {
-   VETextureIndex texture;
+   VETexture texture;
    std::vector<VkSparseImageMemoryBind> imageBinds;
    std::vector<VkSparseMemoryBind> opaqueBinds;
 };
@@ -499,7 +517,7 @@ struct VEDeferredDeletion
    union
    {
       VEBufferAddress bufferAddress;
-      VETextureIndex textureIndex;
+      VETexture textureIndex;
       VESamplerIndex samplerIndex;
       VEShader *shader;
    };
@@ -513,7 +531,7 @@ struct VEDeferredDeletionQueue
    static constexpr uint64_t kFrameDelay = VE_MAX_FRAMES_IN_FLIGHT + 1;
 
    void enqueueBuffer(VEBufferAddress address);
-   void enqueueTexture(VETextureIndex index);
+   void enqueueTexture(VETexture index);
    void enqueueSampler(VESamplerIndex index);
    void enqueueShader(VEShader *shader);
    void advanceFrame();
@@ -523,7 +541,10 @@ struct VEDeferredDeletionQueue
 
 void veAdvanceDeferredDeletions(VEDeviceInternal *device);
 void veDestroyBufferImmediate(VEDeviceInternal *device, VEBufferAddress address);
-void veDestroyTextureImmediate(VEDeviceInternal *device, VETextureIndex index);
+void veDestroyTextureImmediate(VEDeviceInternal *device, VETexture index);
+VEResult veCreateTextureViewInternal(VEDeviceInternal *device, VETexture texture, const VETextureViewDesc &desc,
+                                     VkImageView existingView, bool ownsImageView, VETextureView *outView);
+void veDestroyTextureViewImmediate(VEDeviceInternal *device, VETextureView view);
 void veDestroySamplerImmediate(VEDeviceInternal *device, VESamplerIndex index);
 void veDestroyShaderImmediate(VEShader *shader);
 
@@ -538,7 +559,7 @@ struct VESwapchainInternal
    uint32_t imageCount{0};
    VkImage images[VE_MAX_SWAPCHAIN_IMAGES]{};
    VkImageView imageViews[VE_MAX_SWAPCHAIN_IMAGES]{};
-   VETextureIndex textureIndices[VE_MAX_SWAPCHAIN_IMAGES]{};
+   VETexture textureIndices[VE_MAX_SWAPCHAIN_IMAGES]{};
    uint32_t currentImageIndex{UINT32_MAX};
 
    uint32_t maxFramesInFlight{VE_MAX_FRAMES_IN_FLIGHT};
@@ -560,7 +581,7 @@ struct VESwapchainInternal
 
    void attachDevice(VEDeviceInternal *deviceInternal) noexcept;
    void markForResize(uint32_t newWidth, uint32_t newHeight) noexcept;
-   [[nodiscard]] VETextureIndex acquireNextImage();
+   [[nodiscard]] VETexture acquireNextImage();
    [[nodiscard]] VEResult present(VECommandBufferInternal &cmd, bool releaseCommandBuffer);
    void querySize(uint32_t *outWidth, uint32_t *outHeight) const noexcept;
    [[nodiscard]] VkFormat currentFormat() const noexcept;
@@ -606,6 +627,13 @@ struct VEDeviceInternal
    std::atomic<uint32_t> textureCount{0};
    uint32_t maxTextures;
    std::unique_ptr<std::mutex> textureIndexMutex; // Protects texture index allocation
+
+   VETextureViewInternal *textureViews;
+   uint32_t *freeTextureViewIndices;
+   std::atomic<uint32_t> freeTextureViewCount{0};
+   std::atomic<uint32_t> textureViewCount{0};
+   uint32_t maxTextureViews;
+   std::unique_ptr<std::mutex> textureViewIndexMutex;
 
    VESamplerInternal *samplers;
    uint32_t *freeSamplerIndices;
@@ -677,14 +705,18 @@ struct VEDeviceInternal
    void cleanupBindlessDescriptors();
    uint32_t allocateTextureIndex();
    void freeTextureIndex(uint32_t index);
-   VETextureInternal *getTexture(VETextureIndex index);
-   const VETextureInternal *getTexture(VETextureIndex index) const;
-   VkImageView getImageViewFromTexture(VETextureIndex index) const;
+   VETextureInternal *getTexture(VETexture index);
+   const VETextureInternal *getTexture(VETexture index) const;
+   uint32_t allocateTextureViewIndex();
+   void freeTextureViewIndex(uint32_t index);
+   VETextureViewInternal *getTextureView(VETextureView view);
+   const VETextureViewInternal *getTextureView(VETextureView view) const;
+   VkImageView getVkImageView(VETextureView view) const;
    uint32_t allocateSamplerIndex();
    void freeSamplerIndex(uint32_t index);
    VESamplerInternal *getSampler(VESamplerIndex index);
    const VESamplerInternal *getSampler(VESamplerIndex index) const;
-   VEResult updateTextureDescriptor(VETextureIndex index);
+   VEResult updateTextureDescriptor(VETextureView view);
    VEResult updateSamplerDescriptor(VESamplerIndex index);
    VECommandBufferInternal *beginTransferCommandBuffer();
    VEResult submitTransferCommandBuffer(VECommandBufferInternal *cmd, bool waitForCompletion);
@@ -702,8 +734,8 @@ struct VEDeviceInternal
    void cleanupSparseBindingSupport();
    VEResult flushPendingSparseBinds(bool blocking);
    bool hasPendingSparseBinds() const;
-   void queueSparseBind(VETextureIndex texture, const VkSparseImageMemoryBind &bind);
-   void queueSparseUnbind(VETextureIndex texture, const VkSparseImageMemoryBind &bind);
+   void queueSparseBind(VETexture texture, const VkSparseImageMemoryBind &bind);
+   void queueSparseUnbind(VETexture texture, const VkSparseImageMemoryBind &bind);
 };
 
 // =============================================================================
@@ -791,6 +823,6 @@ bool initializeInstanceFunctions(VkInstance instance);
 bool initializeDeviceFunctions(VkDevice device);
 
 // Internal functions (not part of public API)
-extern "C" VETextureIndex veAcquireNextImage(VESwapchain *swapchain);
+extern "C" VETexture veAcquireNextImage(VESwapchain *swapchain);
 
 #endif // VE_INTERNAL_H

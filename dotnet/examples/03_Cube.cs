@@ -14,7 +14,7 @@ namespace VulkEaseExamples
 {
     /// <summary>
     /// Example 3: Spinning Cube
-    /// A classic spinning textured cube using VulkEase's modern Vulkan 1.3 API
+    /// A classic spinning textured cube using VulkEase's modern Vulkan 1.4 API
     /// with shader objects, dynamic rendering, and bindless resources
     /// </summary>
     public class CubeExample : GameWindow
@@ -74,14 +74,14 @@ namespace VulkEaseExamples
         private VEDevice _device;
         private VESwapchain _swapchain;
         private VERenderTarget _renderTarget;
-        private VETextureIndex _colorTexture;
-        private VETextureIndex _depthTexture;
+        private VETexture _colorTexture;
+        private VETexture _depthTexture;
 
         // Resources
         private VEBufferAddress _vertexBuffer;
         private VEBufferAddress _indexBuffer;
         private VEBufferAddress _uniformBuffer;
-        private VETextureIndex _texture;
+        private VETexture _texture;
         private VESamplerIndex _sampler;
 
         // Shaders
@@ -167,9 +167,9 @@ namespace VulkEaseExamples
             {
                 VE.ResizeSwapchain(_swapchain, (uint)e.Width, (uint)e.Height);
                 VE.ResizeRenderTarget(_device, ref _renderTarget, (uint)e.Width, (uint)e.Height);
-                _colorTexture = _renderTarget.ColorAttachments[0].texture;
+                _colorTexture = VulkEase.VulkEase.GetTextureFromView(_device, _renderTarget.ColorAttachments[0].view);
                 if (_renderTarget.DepthAttachment.HasValue)
-                    _depthTexture = _renderTarget.DepthAttachment.Value.texture;
+                    _depthTexture = VulkEase.VulkEase.GetTextureFromView(_device, _renderTarget.DepthAttachment.Value.view);
             }
         }
 
@@ -385,7 +385,7 @@ namespace VulkEaseExamples
                 _texture = VE.LoadTexture(_device, "examples/data/testCard.png",
                     VkImageUsageFlags.VK_IMAGE_USAGE_SAMPLED_BIT, true);
 
-                if (_texture.native == VEConstants.VE_INVALID_TEXTURE_INDEX.native)
+                if (_texture.native == VEConstants.VE_INVALID_TEXTURE.native)
                 {
                     Console.WriteLine("Texture file not found, creating fallback texture...");
                     
@@ -393,7 +393,7 @@ namespace VulkEaseExamples
                     _texture = VE.CreateTexture2D(_device, 2, 2, VkFormat.VK_FORMAT_R8G8B8A8_UNORM,
                         VkImageUsageFlags.VK_IMAGE_USAGE_SAMPLED_BIT | VkImageUsageFlags.VK_IMAGE_USAGE_TRANSFER_DST_BIT, "FallbackTexture");
 
-                    if (_texture.native == VEConstants.VE_INVALID_TEXTURE_INDEX.native)
+                    if (_texture.native == VEConstants.VE_INVALID_TEXTURE.native)
                     {
                         Console.Error.WriteLine("Failed to create fallback texture");
                         return false;
@@ -557,7 +557,8 @@ namespace VulkEaseExamples
                     vertexBuffer = _vertexBuffer.native,
                     indexBuffer = _indexBuffer.native,
                     uniformBuffers = new ulong[8] { _uniformBuffer.native, 0, 0, 0, 0, 0, 0, 0 },
-                    textures = new uint[16] { _texture.native, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+                    textures = new uint[16] { VulkEase.VulkEase.GetDefaultTextureView(_device, _texture).native,
+                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
                     samplers = new uint[16] { _sampler.native, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
                     reserved = new uint[7],
                     objectScale = 1.0f,
@@ -587,9 +588,9 @@ namespace VulkEaseExamples
                     {
                         VE.ResizeSwapchain(_swapchain, newWidth, newHeight);
                         VE.ResizeRenderTarget(_device, ref _renderTarget, newWidth, newHeight);
-                        _colorTexture = _renderTarget.ColorAttachments[0].texture;
+                        _colorTexture = VulkEase.VulkEase.GetTextureFromView(_device, _renderTarget.ColorAttachments[0].view);
                         if (_renderTarget.DepthAttachment.HasValue)
-                            _depthTexture = _renderTarget.DepthAttachment.Value.texture;
+                            _depthTexture = VulkEase.VulkEase.GetTextureFromView(_device, _renderTarget.DepthAttachment.Value.view);
                     }
                     return;
                 }
@@ -606,9 +607,9 @@ namespace VulkEaseExamples
                     {
                         VE.ResizeSwapchain(_swapchain, newWidth, newHeight);
                         VE.ResizeRenderTarget(_device, ref _renderTarget, newWidth, newHeight);
-                        _colorTexture = _renderTarget.ColorAttachments[0].texture;
+                        _colorTexture = VulkEase.VulkEase.GetTextureFromView(_device, _renderTarget.ColorAttachments[0].view);
                         if (_renderTarget.DepthAttachment.HasValue)
-                            _depthTexture = _renderTarget.DepthAttachment.Value.texture;
+                            _depthTexture = VulkEase.VulkEase.GetTextureFromView(_device, _renderTarget.DepthAttachment.Value.view);
                     }
                 }
             }
@@ -658,7 +659,7 @@ namespace VulkEaseExamples
                 VE.DestroySampler(_device, _sampler);
             }
 
-            if (_texture.native != VEConstants.VE_INVALID_TEXTURE_INDEX.native)
+            if (_texture.native != VEConstants.VE_INVALID_TEXTURE.native)
             {
                 VE.DestroyTexture(_device, _texture);
             }
@@ -679,11 +680,11 @@ namespace VulkEaseExamples
             }
 
             // Destroy VulkEase objects
-            if (_colorTexture.native != VEConstants.VE_INVALID_TEXTURE_INDEX.native)
+            if (_colorTexture.native != VEConstants.VE_INVALID_TEXTURE.native)
             {
                 VE.DestroyTexture(_device, _colorTexture);
             }
-            if (_depthTexture.native != VEConstants.VE_INVALID_TEXTURE_INDEX.native)
+            if (_depthTexture.native != VEConstants.VE_INVALID_TEXTURE.native)
             {
                 VE.DestroyTexture(_device, _depthTexture);
             }

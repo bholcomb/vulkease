@@ -294,10 +294,10 @@ void veBarrierBuffer(VECommandBuffer *cmd, VEBufferAddress buffer, uint32_t srcS
    vkCmdPipelineBarrier2(internal->commandBuffer, &dependencyInfo);
 }
 
-void veBarrierImage(VECommandBuffer *cmd, VETextureIndex texture, uint32_t oldLayout, uint32_t newLayout,
-                    uint32_t srcStage, uint32_t dstStage, uint32_t srcAccess, uint32_t dstAccess)
+void veBarrierImage(VECommandBuffer *cmd, VETexture texture, uint32_t oldLayout, uint32_t newLayout, uint32_t srcStage,
+                    uint32_t dstStage, uint32_t srcAccess, uint32_t dstAccess)
 {
-   if (!cmd || texture == VE_INVALID_TEXTURE_INDEX)
+   if (!cmd || texture == VE_INVALID_TEXTURE)
    {
       return;
    }

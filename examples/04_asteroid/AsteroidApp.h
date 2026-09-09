@@ -12,6 +12,7 @@
 extern "C"
 {
 #include <vulkease.h>
+#include <vulkease_util.h>
 }
 
 struct CommandLineOptions
@@ -78,8 +79,8 @@ private:
    VEShader *fragmentShader_{nullptr};
    VEGraphicsPipeline *pipeline_{nullptr};
    VERenderTarget renderTarget_{};
-   VETextureIndex colorTexture_{VE_INVALID_TEXTURE_INDEX};
-   VETextureIndex depthTexture_{VE_INVALID_TEXTURE_INDEX};
+   VETexture colorTexture_{VE_INVALID_TEXTURE};
+   VETexture depthTexture_{VE_INVALID_TEXTURE};
 
    VEBufferAddress vertexBuffer_{VE_INVALID_ADDRESS};
    VEBufferAddress indexBuffer_{VE_INVALID_ADDRESS};
@@ -106,5 +107,4 @@ private:
 
 
 };
-
 

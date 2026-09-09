@@ -187,18 +187,18 @@ pushConstants.vertexBuffer = vertexBuffer;
 
 ## Textures and Samplers
 
-Textures and samplers use **32-bit bindless indices**. VulkEase manages a global texture/sampler array that shaders access via these indices.
+`VETexture` is an owning image resource. `VETextureView` is the 32-bit bindless handle used by shaders and render targets; it selects a format, mip range, and layer range. Every texture has a full-resource view returned by `veGetDefaultTextureView()`, and `veCreateTextureView()` creates additional interpretations when needed. Samplers remain independent 32-bit bindless handles.
 
 ```c
 // Load texture from file
-VETextureIndex texture = veLoadTexture(device, "texture.png",
+VETexture texture = veLoadTexture(device, "texture.png",
     VK_IMAGE_USAGE_SAMPLED_BIT, true);  // true = generate mipmaps
 
 // Create sampler
 VESamplerIndex sampler = veCreateLinearSampler(device);
 
 // Use in push constants
-pushConstants.textures[0] = texture;
+pushConstants.textures[0] = veGetDefaultTextureView(device, texture);
 pushConstants.samplers[0] = sampler;
 ```
 
@@ -495,7 +495,7 @@ typedef struct CubeApp {
     VEBufferAddress vertexBuffer;
     VEBufferAddress indexBuffer;
     VEBufferAddress uniformBuffer;
-    VETextureIndex texture;
+    VETexture texture;
     VESamplerIndex sampler;
     
     VEShader* vertexShader;
@@ -684,7 +684,7 @@ while (!glfwWindowShouldClose(app->window)) {
     VEGraphicsPushConstants pushConstants = VE_INIT_GRAPHICS_PUSH_CONSTANTS();
     pushConstants.vertexBuffer = app->vertexBuffer;
     pushConstants.uniformBuffers[0] = app->uniformBuffer;
-    pushConstants.textures[0] = app->texture;
+    pushConstants.textures[0] = veGetDefaultTextureView(app->device, app->texture);
     pushConstants.samplers[0] = app->sampler;
     pushConstants.activeUniformCount = 1;
     pushConstants.activeTextureCount = 1;

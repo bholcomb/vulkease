@@ -209,8 +209,8 @@ namespace VulkEaseExamples
         private VEDevice _device;
         private VESwapchain _swapchain;
         private VERenderTarget _renderTarget;
-        private VETextureIndex _colorTexture;
-        private VETextureIndex _depthTexture;
+        private VETexture _colorTexture;
+        private VETexture _depthTexture;
 
         private VEShader _vertexShader;
         private VEShader _fragmentShader;
@@ -327,9 +327,9 @@ namespace VulkEaseExamples
             if (_vertexShader.native != IntPtr.Zero)
                 DestroyShader(_vertexShader);
 
-            if (_colorTexture.native != VEConstants.VE_INVALID_TEXTURE_INDEX.native)
+            if (_colorTexture.native != VEConstants.VE_INVALID_TEXTURE.native)
                 DestroyTexture(_device, _colorTexture);
-            if (_depthTexture.native != VEConstants.VE_INVALID_TEXTURE_INDEX.native)
+            if (_depthTexture.native != VEConstants.VE_INVALID_TEXTURE.native)
                 DestroyTexture(_device, _depthTexture);
             if (_swapchain.native != IntPtr.Zero)
                 DestroySwapchain(_swapchain);
@@ -349,9 +349,9 @@ namespace VulkEaseExamples
             {
                 ResizeSwapchain(_swapchain, (uint)e.Width, (uint)e.Height);
                 ResizeRenderTarget(_device, ref _renderTarget, (uint)e.Width, (uint)e.Height);
-                _colorTexture = _renderTarget.ColorAttachments[0].texture;
+                _colorTexture = VulkEase.VulkEase.GetTextureFromView(_device, _renderTarget.ColorAttachments[0].view);
                 if (_renderTarget.DepthAttachment.HasValue)
-                    _depthTexture = _renderTarget.DepthAttachment.Value.texture;
+                    _depthTexture = VulkEase.VulkEase.GetTextureFromView(_device, _renderTarget.DepthAttachment.Value.view);
             }
         }
 
@@ -445,7 +445,8 @@ namespace VulkEaseExamples
                 VkFormat.VK_FORMAT_D32_SFLOAT,
                 new VEColor(0.01f, 0.01f, 0.015f, 1.0f), 1.0f,
                 out _colorTexture, out _depthTexture);
-            if (_colorTexture.native == VEConstants.VE_INVALID_TEXTURE_INDEX.native)
+            _renderTarget.RenderingFlags = VkRenderingFlags.VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT;
+            if (_colorTexture.native == VEConstants.VE_INVALID_TEXTURE.native)
             {
                 Console.Error.WriteLine("Failed to create render target");
                 return false;
@@ -663,9 +664,9 @@ namespace VulkEaseExamples
                 {
                     ResizeSwapchain(_swapchain, newWidth, newHeight);
                     ResizeRenderTarget(_device, ref _renderTarget, newWidth, newHeight);
-                    _colorTexture = _renderTarget.ColorAttachments[0].texture;
+                    _colorTexture = VulkEase.VulkEase.GetTextureFromView(_device, _renderTarget.ColorAttachments[0].view);
                     if (_renderTarget.DepthAttachment.HasValue)
-                        _depthTexture = _renderTarget.DepthAttachment.Value.texture;
+                        _depthTexture = VulkEase.VulkEase.GetTextureFromView(_device, _renderTarget.DepthAttachment.Value.view);
                 }
                 sw.Stop();
                 return sw.Elapsed.TotalMilliseconds;
@@ -682,9 +683,9 @@ namespace VulkEaseExamples
                 {
                     ResizeSwapchain(_swapchain, newWidth, newHeight);
                     ResizeRenderTarget(_device, ref _renderTarget, newWidth, newHeight);
-                    _colorTexture = _renderTarget.ColorAttachments[0].texture;
+                    _colorTexture = VulkEase.VulkEase.GetTextureFromView(_device, _renderTarget.ColorAttachments[0].view);
                     if (_renderTarget.DepthAttachment.HasValue)
-                        _depthTexture = _renderTarget.DepthAttachment.Value.texture;
+                        _depthTexture = VulkEase.VulkEase.GetTextureFromView(_device, _renderTarget.DepthAttachment.Value.view);
                 }
             }
 
@@ -803,6 +804,7 @@ namespace VulkEaseExamples
             {
                 usageFlags = (uint)(VkCommandBufferUsageFlags.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT |
                                     VkCommandBufferUsageFlags.VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT),
+                renderingFlags = VkRenderingFlags.VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT,
                 colorAttachmentCount = 1,
                 colorAttachmentFormats = new VkFormat[8],
                 depthAttachmentFormat = VkFormat.VK_FORMAT_D32_SFLOAT,
@@ -811,7 +813,11 @@ namespace VulkEaseExamples
                 viewMask = 0,
                 occlusionQueryEnable = false,
                 occlusionQueryFlags = 0,
-                beginRecording = true
+                beginRecording = true,
+                renderAreaX = 0,
+                renderAreaY = 0,
+                renderAreaWidth = (uint)ClientSize.X,
+                renderAreaHeight = (uint)ClientSize.Y
             };
             desc.colorAttachmentFormats[0] = _swapchainFormat;
 
@@ -978,4 +984,3 @@ namespace VulkEaseExamples
         }
     }
 }
-

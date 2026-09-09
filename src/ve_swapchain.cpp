@@ -43,12 +43,12 @@ void VESwapchainInternal::markForResize(uint32_t newWidth, uint32_t newHeight) n
    requestRecreation(true);
 }
 
-VETextureIndex VESwapchainInternal::acquireNextImage()
+VETexture VESwapchainInternal::acquireNextImage()
 {
    if (!device)
    {
       veSetError("Cannot acquire image - device reference not available");
-      return VE_INVALID_TEXTURE_INDEX;
+      return VE_INVALID_TEXTURE;
    }
 
    // Handle recreation if needed
@@ -57,13 +57,13 @@ VETextureIndex VESwapchainInternal::acquireNextImage()
       VEResult recreateResult = recreate();
       if (recreateResult != VE_SUCCESS)
       {
-         return VE_INVALID_TEXTURE_INDEX;
+         return VE_INVALID_TEXTURE;
       }
    }
 
    if (waitForCurrentFrameFence() != VE_SUCCESS)
    {
-      return VE_INVALID_TEXTURE_INDEX;
+      return VE_INVALID_TEXTURE;
    }
 
    VkSemaphore acquireSemaphore = imageAvailableSemaphores[currentFrame];
@@ -77,7 +77,7 @@ VETextureIndex VESwapchainInternal::acquireNextImage()
       VEResult recreateResult = recreate();
       if (recreateResult != VE_SUCCESS)
       {
-         return VE_INVALID_TEXTURE_INDEX;
+         return VE_INVALID_TEXTURE;
       }
       // Try to acquire again after recreation
       result =
@@ -85,13 +85,13 @@ VETextureIndex VESwapchainInternal::acquireNextImage()
       if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
       {
          veSetError("Failed to acquire swapchain image after recreation (VkResult: %d)", result);
-         return VE_INVALID_TEXTURE_INDEX;
+         return VE_INVALID_TEXTURE;
       }
    }
    else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
    {
       veSetError("Failed to acquire swapchain image (VkResult: %d)", result);
-      return VE_INVALID_TEXTURE_INDEX;
+      return VE_INVALID_TEXTURE;
    }
 
    currentImageIndex = imageIndex;
@@ -365,11 +365,10 @@ void VESwapchainInternal::releaseTextureIndices()
 
    for (uint32_t i = 0; i < imageCount; ++i)
    {
-      if (textureIndices[i] != VE_INVALID_TEXTURE_INDEX)
+      if (textureIndices[i] != VE_INVALID_TEXTURE)
       {
-         device->freeTextureIndex(textureIndices[i]);
-         memset(&device->textures[textureIndices[i]], 0, sizeof(VETextureInternal));
-         textureIndices[i] = VE_INVALID_TEXTURE_INDEX;
+         veDestroyTextureImmediate(device, textureIndices[i]);
+         textureIndices[i] = VE_INVALID_TEXTURE;
       }
    }
 }
@@ -656,7 +655,7 @@ VEResult veCreateSwapchain(VEDevice *device, const VESwapchainDesc *desc, VESwap
    swapchain->currentImageIndex = UINT32_MAX;
    swapchain->vsyncEnabled = desc->vsync;
    swapchain->surfaceDesc = desc->surface;
-   std::fill_n(&swapchain->textureIndices[0], VE_MAX_SWAPCHAIN_IMAGES, VE_INVALID_TEXTURE_INDEX);
+   std::fill_n(&swapchain->textureIndices[0], VE_MAX_SWAPCHAIN_IMAGES, VE_INVALID_TEXTURE);
 
    // Create surface
    VkResult result = veCreateSurfaceFromDesc(deviceInternal->context, &desc->surface, &swapchain->surface);
@@ -768,29 +767,50 @@ VEResult veCreateSwapchain(VEDevice *device, const VESwapchainDesc *desc, VESwap
 
       // Create texture index for bindless access
       uint32_t textureIndex = deviceInternal->allocateTextureIndex();
-      if (textureIndex != VE_INVALID_TEXTURE_INDEX)
+      if (textureIndex != VE_INVALID_TEXTURE)
       {
          VETextureInternal *texture = &deviceInternal->textures[textureIndex];
          texture->image = swapchain->images[i];
-         texture->imageView = swapchain->imageViews[i];
          texture->width = swapchain->width;
          texture->height = swapchain->height;
          texture->depth = 1;
          texture->mipLevels = 1;
          texture->arrayLayers = 1;
          texture->format = swapchain->format;
+         texture->defaultViewType = VK_IMAGE_VIEW_TYPE_2D;
          texture->usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
          texture->sampleCount = VK_SAMPLE_COUNT_1_BIT;
+         texture->currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
          texture->index = textureIndex;
          texture->isValid = true;
+         texture->isExternal = true;
+         texture->defaultView = VE_INVALID_TEXTURE_VIEW;
+         texture->firstView = VE_INVALID_TEXTURE_VIEW;
          snprintf(texture->debugName, sizeof(texture->debugName), "SwapchainImage_%u", i);
 
-         swapchain->textureIndices[i] = textureIndex;
-         deviceInternal->updateTextureDescriptor(textureIndex);
+         VETextureViewDesc viewDesc{};
+         viewDesc.viewType = VK_IMAGE_VIEW_TYPE_2D;
+         viewDesc.format = swapchain->format;
+         viewDesc.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+         viewDesc.mipLevelCount = 1;
+         viewDesc.arrayLayerCount = 1;
+         VEResult viewResult = veCreateTextureViewInternal(deviceInternal, textureIndex, viewDesc,
+                                                           swapchain->imageViews[i], false, &texture->defaultView);
+         if (viewResult == VE_SUCCESS)
+         {
+            swapchain->textureIndices[i] = textureIndex;
+         }
+         else
+         {
+            memset(texture, 0, sizeof(*texture));
+            deviceInternal->freeTextureIndex(textureIndex);
+            swapchain->textureIndices[i] = VE_INVALID_TEXTURE;
+            return viewResult;
+         }
       }
       else
       {
-         swapchain->textureIndices[i] = VE_INVALID_TEXTURE_INDEX;
+         swapchain->textureIndices[i] = VE_INVALID_TEXTURE;
       }
    }
 
@@ -849,12 +869,12 @@ VEResult veDestroySwapchain(VESwapchain *swapchain)
    return VE_SUCCESS;
 }
 
-VETextureIndex veAcquireNextImage(VESwapchain *swapchain)
+VETexture veAcquireNextImage(VESwapchain *swapchain)
 {
    if (!swapchain)
    {
       veSetError("Swapchain cannot be NULL");
-      return VE_INVALID_TEXTURE_INDEX;
+      return VE_INVALID_TEXTURE;
    }
 
    VESwapchainInternal *internal = reinterpret_cast<VESwapchainInternal *>(swapchain);
@@ -1069,29 +1089,50 @@ VEResult VESwapchainInternal::createSwapchainResources()
 
       // Create texture index for bindless access
       uint32_t textureIndex = device->allocateTextureIndex();
-      if (textureIndex != VE_INVALID_TEXTURE_INDEX)
+      if (textureIndex != VE_INVALID_TEXTURE)
       {
          VETextureInternal *texture = &device->textures[textureIndex];
          texture->image = images[i];
-         texture->imageView = imageViews[i];
          texture->width = width;
          texture->height = height;
          texture->depth = 1;
          texture->mipLevels = 1;
          texture->arrayLayers = 1;
          texture->format = format;
+         texture->defaultViewType = VK_IMAGE_VIEW_TYPE_2D;
          texture->usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
          texture->sampleCount = VK_SAMPLE_COUNT_1_BIT;
+         texture->currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
          texture->index = textureIndex;
          texture->isValid = true;
+         texture->isExternal = true;
+         texture->defaultView = VE_INVALID_TEXTURE_VIEW;
+         texture->firstView = VE_INVALID_TEXTURE_VIEW;
          snprintf(texture->debugName, sizeof(texture->debugName), "SwapchainImage_%u", i);
 
-         textureIndices[i] = textureIndex;
-         device->updateTextureDescriptor(textureIndex);
+         VETextureViewDesc viewDesc{};
+         viewDesc.viewType = VK_IMAGE_VIEW_TYPE_2D;
+         viewDesc.format = format;
+         viewDesc.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+         viewDesc.mipLevelCount = 1;
+         viewDesc.arrayLayerCount = 1;
+         VEResult viewResult =
+             veCreateTextureViewInternal(device, textureIndex, viewDesc, imageViews[i], false, &texture->defaultView);
+         if (viewResult == VE_SUCCESS)
+         {
+            textureIndices[i] = textureIndex;
+         }
+         else
+         {
+            memset(texture, 0, sizeof(*texture));
+            device->freeTextureIndex(textureIndex);
+            textureIndices[i] = VE_INVALID_TEXTURE;
+            return viewResult;
+         }
       }
       else
       {
-         textureIndices[i] = VE_INVALID_TEXTURE_INDEX;
+         textureIndices[i] = VE_INVALID_TEXTURE;
       }
    }
 

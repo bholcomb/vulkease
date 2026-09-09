@@ -4,6 +4,7 @@
  */
 
 #include "vulkease.h"
+#include "vulkease_util.h"
 #include <GLFW/glfw3.h>
 #if defined(__linux__) || defined(_WIN32)
 #include <GLFW/glfw3native.h>
@@ -67,7 +68,7 @@ static VEGraphicsPipeline* g_pipeline = NULL;
 static VEBufferAddress g_particleBuffer = VE_INVALID_ADDRESS;
 static VEBufferAddress g_vertexBuffer = VE_INVALID_ADDRESS;
 static VERenderTarget g_renderTarget;
-static VETextureIndex g_colorTexture = VE_INVALID_TEXTURE_INDEX;
+static VETexture g_colorTexture = VE_INVALID_TEXTURE;
 
 int win_width = 800;
 int win_height = 600;
@@ -94,9 +95,10 @@ static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
         if (g_swapchain) {
             veResizeSwapchain(g_swapchain, (uint32_t)width, (uint32_t)height);
         }
-        if (g_colorTexture != VE_INVALID_TEXTURE_INDEX) {
-            veResizeRenderTarget(g_device, &g_renderTarget, (uint32_t)width, (uint32_t)height);
-            g_colorTexture = g_renderTarget.attachments[0].texture;
+        if (g_colorTexture != VE_INVALID_TEXTURE)
+        {
+           veResizeRenderTarget(g_device, &g_renderTarget, (uint32_t)width, (uint32_t)height);
+           g_colorTexture = veGetTextureFromView(g_device, g_renderTarget.attachments[0].view);
         }
     }
 }
@@ -184,9 +186,10 @@ static bool initVulkEase(GLFWwindow* window) {
                                                  clearColor, 1.0f,
                                                  &g_colorTexture, NULL);
 
-    if (g_colorTexture == VE_INVALID_TEXTURE_INDEX) {
-        fprintf(stderr, "Failed to create render target\n");
-        return false;
+    if (g_colorTexture == VE_INVALID_TEXTURE)
+    {
+       fprintf(stderr, "Failed to create render target\n");
+       return false;
     }
 
     printf("Render target created: %dx%d\n", win_width, win_height);
@@ -455,9 +458,10 @@ static void cleanup() {
     if (g_fragmentShader) {
         (void)veDestroyShader(g_fragmentShader);
     }
-    
-    if (g_colorTexture != VE_INVALID_TEXTURE_INDEX) {
-        veDestroyTexture(g_device, g_colorTexture);
+
+    if (g_colorTexture != VE_INVALID_TEXTURE)
+    {
+       veDestroyTexture(g_device, g_colorTexture);
     }
 
     if (g_swapchain) {

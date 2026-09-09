@@ -12,7 +12,8 @@ namespace VulkEase
     public static class VEConstants
     {
         public static VEBufferAddress VE_INVALID_ADDRESS = new VEBufferAddress { native = 0UL };
-        public static VETextureIndex VE_INVALID_TEXTURE_INDEX = new VETextureIndex { native = 0xFFFFFFFF };
+        public static VETexture VE_INVALID_TEXTURE = new VETexture { native = 0xFFFFFFFF };
+        public static VETextureView VE_INVALID_TEXTURE_VIEW = new VETextureView { native = 0xFFFFFFFF };
         public static VESamplerIndex VE_INVALID_SAMPLER_INDEX = new VESamplerIndex { native = 0xFFFFFFFF };
 
         public const UInt32 VULKEASE_VERSION_MAJOR = 2;
@@ -408,24 +409,24 @@ namespace VulkEase
         /// Get the VkImage handle from a texture index.
         /// </summary>
         /// <param name="device">Valid VulkEase device.</param>
-        /// <param name="texture">Texture index obtained from CreateTexture().</param>
+        /// <param name="texture">Texture obtained from CreateTexture().</param>
         /// <returns>VkImage handle, or IntPtr.Zero if device is invalid or index is invalid.</returns>
         /// <remarks>Warning: The returned handle is owned by VulkEase. Lifetime matches the texture.</remarks>
-        public static IntPtr GetVkImageFromTexture(VEDevice device, VETextureIndex texture)
+        public static IntPtr GetVkImageFromTexture(VEDevice device, VETexture texture)
         {
             return VulkEaseDll.veGetVkImageFromTexture(device.native, texture.native);
         }
 
         /// <summary>
-        /// Get the VkImageView handle from a texture index.
+        /// Get the VkImageView handle from a texture view.
         /// </summary>
         /// <param name="device">Valid VulkEase device.</param>
-        /// <param name="texture">Texture index obtained from CreateTexture().</param>
+        /// <param name="view">Texture view obtained from GetDefaultTextureView() or CreateTextureView().</param>
         /// <returns>VkImageView handle, or IntPtr.Zero if device is invalid or index is invalid.</returns>
         /// <remarks>Warning: The returned handle is owned by VulkEase. Lifetime matches the texture.</remarks>
-        public static IntPtr GetVkImageViewFromTexture(VEDevice device, VETextureIndex texture)
+        public static IntPtr GetVkImageView(VEDevice device, VETextureView view)
         {
-            return VulkEaseDll.veGetVkImageViewFromTexture(device.native, texture.native);
+            return VulkEaseDll.veGetVkImageView(device.native, view.native);
         }
 
         /// <summary>
@@ -932,20 +933,20 @@ namespace VulkEase
         /// The returned index can be used to sample the texture via the global texture array.
         /// Call DestroyTexture() when done.
         /// </remarks>
-        public static VETextureIndex CreateTexture(VEDevice device, VETextureDesc desc)
+        public static VETexture CreateTexture(VEDevice device, VETextureDesc desc)
         {
             VEResult result = VulkEaseDll.veCreateTexture(device.native, ref desc, out uint index);
             if (result != VEResult.VE_SUCCESS)
                 throw new InvalidOperationException($"veCreateTexture failed: {result}");
-            return new VETextureIndex { native = index };
+            return new VETexture { native = index };
         }
 
         /// <summary>
         /// Destroy a texture by its bindless index.
         /// </summary>
         /// <param name="device">Valid VulkEase device.</param>
-        /// <param name="index">Texture index to destroy. Can be VE_INVALID_TEXTURE_INDEX (no-op).</param>
-        public static void DestroyTexture(VEDevice device, VETextureIndex index)
+        /// <param name="index">Texture index to destroy. Can be VE_INVALID_TEXTURE (no-op).</param>
+        public static void DestroyTexture(VEDevice device, VETexture index)
         {
             _ = VulkEaseDll.veDestroyTexture(device.native, index.native);
         }
@@ -967,12 +968,12 @@ namespace VulkEase
         /// 
         /// VulkEase creates and owns the VkImageView for the imported image.
         /// </remarks>
-        public static VETextureIndex ImportExternalTexture(VEDevice device, VEExternalTextureDesc desc)
+        public static VETexture ImportExternalTexture(VEDevice device, VEExternalTextureDesc desc)
         {
             VEResult result = VulkEaseDll.veImportExternalTexture(device.native, ref desc, out uint index);
             if (result != VEResult.VE_SUCCESS)
                 throw new InvalidOperationException($"veImportExternalTexture failed: {result}");
-            return new VETextureIndex { native = index };
+            return new VETexture { native = index };
         }
 
         /// <summary>
@@ -986,7 +987,7 @@ namespace VulkEase
         /// 
         /// After calling this, the caller is responsible for destroying the external VkImage.
         /// </remarks>
-        public static void ReleaseExternalTexture(VEDevice device, VETextureIndex index)
+        public static void ReleaseExternalTexture(VEDevice device, VETexture index)
         {
             _ = VulkEaseDll.veReleaseExternalTexture(device.native, index.native);
         }
@@ -997,7 +998,7 @@ namespace VulkEase
         /// <param name="device">Valid VulkEase device.</param>
         /// <param name="index">Texture index to query.</param>
         /// <returns>VkExtent3D with width, height, and depth.</returns>
-        public static VkExtent3D GetTextureSize(VEDevice device, VETextureIndex index)
+        public static VkExtent3D GetTextureSize(VEDevice device, VETexture index)
         {
             return VulkEaseDll.veGetTextureSize(device.native, index.native);
         }
@@ -1008,9 +1009,32 @@ namespace VulkEase
         /// <param name="device">Valid VulkEase device.</param>
         /// <param name="index">Texture index to query.</param>
         /// <returns>VkFormat of the texture, or VK_FORMAT_UNDEFINED if invalid.</returns>
-        public static VkFormat GetTextureFormat(VEDevice device, VETextureIndex index)
+        public static VkFormat GetTextureFormat(VEDevice device, VETexture index)
         {
             return VulkEaseDll.veGetTextureFormat(device.native, index.native);
+        }
+
+        public static VETextureView GetDefaultTextureView(VEDevice device, VETexture texture)
+        {
+            return new VETextureView { native = VulkEaseDll.veGetDefaultTextureView(device.native, texture.native) };
+        }
+
+        public static VETexture GetTextureFromView(VEDevice device, VETextureView view)
+        {
+            return new VETexture { native = VulkEaseDll.veGetTextureFromView(device.native, view.native) };
+        }
+
+        public static VETextureView CreateTextureView(VEDevice device, VETexture texture, VETextureViewDesc desc)
+        {
+            VEResult result = VulkEaseDll.veCreateTextureView(device.native, texture.native, ref desc, out uint view);
+            if (result != VEResult.VE_SUCCESS)
+                throw new InvalidOperationException($"veCreateTextureView failed: {result}");
+            return new VETextureView { native = view };
+        }
+
+        public static void DestroyTextureView(VEDevice device, VETextureView view)
+        {
+            _ = VulkEaseDll.veDestroyTextureView(device.native, view.native);
         }
 
         /// <summary>
@@ -1023,7 +1047,7 @@ namespace VulkEase
         /// <param name="debugName">Optional debug name for tools like RenderDoc.</param>
         /// <returns>Bindless texture index.</returns>
         /// <exception cref="InvalidOperationException">Thrown if texture creation fails.</exception>
-        public static VETextureIndex CreateTexture1D(VEDevice device, UInt32 width, VkFormat format, VkImageUsageFlags usage, string? debugName = null)
+        public static VETexture CreateTexture1D(VEDevice device, UInt32 width, VkFormat format, VkImageUsageFlags usage, string? debugName = null)
         {
             var namePtr = StringToHGlobalAnsi(debugName ?? string.Empty);
             try
@@ -1031,7 +1055,7 @@ namespace VulkEase
                 VEResult result = VulkEaseDll.veCreateTexture1D(device.native, width, format, usage, namePtr, out uint index);
                 if (result != VEResult.VE_SUCCESS)
                     throw new InvalidOperationException($"veCreateTexture1D failed: {result}");
-                return new VETextureIndex { native = index };
+                return new VETexture { native = index };
             }
             finally
             {
@@ -1051,7 +1075,7 @@ namespace VulkEase
         /// <param name="debugName">Optional debug name for tools like RenderDoc.</param>
         /// <returns>Bindless texture index.</returns>
         /// <exception cref="InvalidOperationException">Thrown if texture creation fails.</exception>
-        public static VETextureIndex CreateTexture2D(VEDevice device, UInt32 width, UInt32 height, VkFormat format, VkImageUsageFlags usage, string? debugName = null)
+        public static VETexture CreateTexture2D(VEDevice device, UInt32 width, UInt32 height, VkFormat format, VkImageUsageFlags usage, string? debugName = null)
         {
             var namePtr = StringToHGlobalAnsi(debugName ?? string.Empty);
             try
@@ -1059,7 +1083,7 @@ namespace VulkEase
                 VEResult result = VulkEaseDll.veCreateTexture2D(device.native, width, height, format, usage, namePtr, out uint index);
                 if (result != VEResult.VE_SUCCESS)
                     throw new InvalidOperationException($"veCreateTexture2D failed: {result}");
-                return new VETextureIndex { native = index };
+                return new VETexture { native = index };
             }
             finally
             {
@@ -1080,7 +1104,7 @@ namespace VulkEase
         /// <param name="debugName">Optional debug name for tools like RenderDoc.</param>
         /// <returns>Bindless texture index.</returns>
         /// <exception cref="InvalidOperationException">Thrown if texture creation fails.</exception>
-        public static VETextureIndex CreateTexture3D(VEDevice device, UInt32 width, UInt32 height, UInt32 depth, VkFormat format, VkImageUsageFlags usage, string? debugName = null)
+        public static VETexture CreateTexture3D(VEDevice device, UInt32 width, UInt32 height, UInt32 depth, VkFormat format, VkImageUsageFlags usage, string? debugName = null)
         {
             var namePtr = StringToHGlobalAnsi(debugName ?? string.Empty);
             try
@@ -1088,7 +1112,7 @@ namespace VulkEase
                 VEResult result = VulkEaseDll.veCreateTexture3D(device.native, width, height, depth, format, usage, namePtr, out uint index);
                 if (result != VEResult.VE_SUCCESS)
                     throw new InvalidOperationException($"veCreateTexture3D failed: {result}");
-                return new VETextureIndex { native = index };
+                return new VETexture { native = index };
             }
             finally
             {
@@ -1109,7 +1133,7 @@ namespace VulkEase
         /// <param name="debugName">Optional debug name for tools like RenderDoc.</param>
         /// <returns>Bindless texture index.</returns>
         /// <exception cref="InvalidOperationException">Thrown if texture creation fails.</exception>
-        public static VETextureIndex CreateTexture2DArray(VEDevice device, UInt32 width, UInt32 height, UInt32 layers, VkFormat format, VkImageUsageFlags usage, string? debugName = null)
+        public static VETexture CreateTexture2DArray(VEDevice device, UInt32 width, UInt32 height, UInt32 layers, VkFormat format, VkImageUsageFlags usage, string? debugName = null)
         {
             var namePtr = StringToHGlobalAnsi(debugName ?? string.Empty);
             try
@@ -1117,7 +1141,7 @@ namespace VulkEase
                 VEResult result = VulkEaseDll.veCreateTexture2DArray(device.native, width, height, layers, format, usage, namePtr, out uint index);
                 if (result != VEResult.VE_SUCCESS)
                     throw new InvalidOperationException($"veCreateTexture2DArray failed: {result}");
-                return new VETextureIndex { native = index };
+                return new VETexture { native = index };
             }
             finally
             {
@@ -1136,7 +1160,7 @@ namespace VulkEase
         /// <param name="debugName">Optional debug name for tools like RenderDoc.</param>
         /// <returns>Bindless texture index.</returns>
         /// <exception cref="InvalidOperationException">Thrown if texture creation fails.</exception>
-        public static VETextureIndex CreateTextureCube(VEDevice device, UInt32 size, VkFormat format, VkImageUsageFlags usage, string? debugName = null)
+        public static VETexture CreateTextureCube(VEDevice device, UInt32 size, VkFormat format, VkImageUsageFlags usage, string? debugName = null)
         {
             var namePtr = StringToHGlobalAnsi(debugName ?? string.Empty);
             try
@@ -1144,7 +1168,7 @@ namespace VulkEase
                 VEResult result = VulkEaseDll.veCreateTextureCube(device.native, size, format, usage, namePtr, out uint index);
                 if (result != VEResult.VE_SUCCESS)
                     throw new InvalidOperationException($"veCreateTextureCube failed: {result}");
-                return new VETextureIndex { native = index };
+                return new VETexture { native = index };
             }
             finally
             {
@@ -1165,7 +1189,7 @@ namespace VulkEase
         /// <param name="debugName">Optional debug name for tools like RenderDoc.</param>
         /// <returns>Bindless texture index.</returns>
         /// <exception cref="InvalidOperationException">Thrown if texture creation fails.</exception>
-        public static VETextureIndex CreateTexture2DMultisample(VEDevice device, UInt32 width, UInt32 height, VkFormat format, VkSampleCountFlags sampleCount, VkImageUsageFlags usage, string? debugName = null)
+        public static VETexture CreateTexture2DMultisample(VEDevice device, UInt32 width, UInt32 height, VkFormat format, VkSampleCountFlags sampleCount, VkImageUsageFlags usage, string? debugName = null)
         {
             var namePtr = StringToHGlobalAnsi(debugName ?? string.Empty);
             try
@@ -1173,7 +1197,7 @@ namespace VulkEase
                 VEResult result = VulkEaseDll.veCreateTexture2DMultisample(device.native, width, height, format, sampleCount, usage, namePtr, out uint index);
                 if (result != VEResult.VE_SUCCESS)
                     throw new InvalidOperationException($"veCreateTexture2DMultisample failed: {result}");
-                return new VETextureIndex { native = index };
+                return new VETexture { native = index };
             }
             finally
             {
@@ -1191,7 +1215,7 @@ namespace VulkEase
         /// <param name="generateMips">If true, automatically generates mipmaps.</param>
         /// <returns>Bindless texture index.</returns>
         /// <exception cref="InvalidOperationException">Thrown if loading fails.</exception>
-        public static VETextureIndex LoadTexture(VEDevice device, string filename, VkImageUsageFlags usage, bool generateMips)
+        public static VETexture LoadTexture(VEDevice device, string filename, VkImageUsageFlags usage, bool generateMips)
         {
             var namePtr = StringToHGlobalAnsi(filename);
             try
@@ -1199,7 +1223,7 @@ namespace VulkEase
                 VEResult result = VulkEaseDll.veLoadTexture(device.native, namePtr, usage, generateMips, out uint index);
                 if (result != VEResult.VE_SUCCESS)
                     throw new InvalidOperationException($"veLoadTexture failed: {result}");
-                return new VETextureIndex { native = index };
+                return new VETexture { native = index };
             }
             finally
             {
@@ -1217,7 +1241,7 @@ namespace VulkEase
         /// <param name="generateMips">If true, automatically generates mipmaps.</param>
         /// <returns>Bindless texture index.</returns>
         /// <exception cref="InvalidOperationException">Thrown if loading fails.</exception>
-        public static VETextureIndex LoadHDRTexture(VEDevice device, string filename, VkImageUsageFlags usage, bool generateMips)
+        public static VETexture LoadHDRTexture(VEDevice device, string filename, VkImageUsageFlags usage, bool generateMips)
         {
             var namePtr = StringToHGlobalAnsi(filename);
             try
@@ -1225,7 +1249,7 @@ namespace VulkEase
                 VEResult result = VulkEaseDll.veLoadHDRTexture(device.native, namePtr, usage, generateMips, out uint index);
                 if (result != VEResult.VE_SUCCESS)
                     throw new InvalidOperationException($"veLoadHDRTexture failed: {result}");
-                return new VETextureIndex { native = index };
+                return new VETexture { native = index };
             }
             finally
             {
@@ -1244,7 +1268,7 @@ namespace VulkEase
         /// <returns>Bindless texture index.</returns>
         /// <exception cref="ArgumentException">Thrown if filenames is null or does not contain exactly 6 paths.</exception>
         /// <exception cref="InvalidOperationException">Thrown if loading fails.</exception>
-        public static VETextureIndex LoadCubeTexture(VEDevice device, string[] filenames, VkImageUsageFlags usage, bool generateMips)
+        public static VETexture LoadCubeTexture(VEDevice device, string[] filenames, VkImageUsageFlags usage, bool generateMips)
         {
             if (filenames == null || filenames.Length != 6)
                 throw new ArgumentException("Cube texture requires exactly 6 filenames");
@@ -1264,7 +1288,7 @@ namespace VulkEase
                     VEResult result = VulkEaseDll.veLoadCubeTexture(device.native, arrayPtr, usage, generateMips, out uint index);
                     if (result != VEResult.VE_SUCCESS)
                         throw new InvalidOperationException($"veLoadCubeTexture failed: {result}");
-                    return new VETextureIndex { native = index };
+                    return new VETexture { native = index };
                 }
                 finally
                 {
@@ -1293,7 +1317,7 @@ namespace VulkEase
         /// The bufferOffset, bufferRowLength, and bufferImageHeight fields are ignored.
         /// Use layerCount=0 for single layer.</param>
         /// <returns>VE_SUCCESS on success.</returns>
-        public static VEResult HostWriteTextureRegion(VEDevice device, VETextureIndex texture, IntPtr srcData,
+        public static VEResult HostWriteTextureRegion(VEDevice device, VETexture texture, IntPtr srcData,
             UIntPtr dataSize, ref VEBufferTextureCopyRegion region)
         {
             return VulkEaseDll.veHostWriteTextureRegion(device.native, texture.native, srcData, dataSize, ref region);
@@ -1307,7 +1331,7 @@ namespace VulkEase
         /// <param name="srcData">Pointer to source data.</param>
         /// <param name="dataSize">Size of the source data in bytes.</param>
         /// <returns>VE_SUCCESS on success.</returns>
-        public static VEResult HostWriteTextureRegion(VEDevice device, VETextureIndex texture, IntPtr srcData,
+        public static VEResult HostWriteTextureRegion(VEDevice device, VETexture texture, IntPtr srcData,
             UIntPtr dataSize)
         {
             return VulkEaseDll.veHostWriteTextureRegion(device.native, texture.native, srcData, dataSize, IntPtr.Zero);
@@ -1325,7 +1349,7 @@ namespace VulkEase
         /// The bufferOffset, bufferRowLength, and bufferImageHeight fields are ignored.
         /// Use layerCount=0 for single layer.</param>
         /// <returns>VE_SUCCESS on success.</returns>
-        public static VEResult HostReadTextureRegion(VEDevice device, VETextureIndex texture, IntPtr dstData,
+        public static VEResult HostReadTextureRegion(VEDevice device, VETexture texture, IntPtr dstData,
             UIntPtr dataSize, ref VEBufferTextureCopyRegion region)
         {
             return VulkEaseDll.veHostReadTextureRegion(device.native, texture.native, dstData, dataSize, ref region);
@@ -1339,7 +1363,7 @@ namespace VulkEase
         /// <param name="dstData">Pointer to destination buffer.</param>
         /// <param name="dataSize">Size of the destination buffer in bytes.</param>
         /// <returns>VE_SUCCESS on success.</returns>
-        public static VEResult HostReadTextureRegion(VEDevice device, VETextureIndex texture, IntPtr dstData,
+        public static VEResult HostReadTextureRegion(VEDevice device, VETexture texture, IntPtr dstData,
             UIntPtr dataSize)
         {
             return VulkEaseDll.veHostReadTextureRegion(device.native, texture.native, dstData, dataSize, IntPtr.Zero);
@@ -1353,7 +1377,7 @@ namespace VulkEase
         /// <param name="texture">Sparse texture index.</param>
         /// <param name="info">Receives the sparse texture information.</param>
         /// <returns>VE_SUCCESS on success, or VE_ERROR_INVALID_PARAMETER if texture is not sparse.</returns>
-        public static VEResult GetSparseTextureInfo(VEDevice device, VETextureIndex texture, out VESparseTextureInfo info)
+        public static VEResult GetSparseTextureInfo(VEDevice device, VETexture texture, out VESparseTextureInfo info)
         {
             return VulkEaseDll.veGetSparseTextureInfo(device.native, texture.native, out info);
         }
@@ -1368,7 +1392,7 @@ namespace VulkEase
         /// <param name="texture">Sparse texture index.</param>
         /// <param name="regions">Array of page regions to commit.</param>
         /// <returns>VE_SUCCESS on success, or VE_ERROR_OUT_OF_MEMORY if allocation failed.</returns>
-        public static VEResult CommitSparsePages(VEDevice device, VETextureIndex texture, VESparsePageRegion[] regions)
+        public static VEResult CommitSparsePages(VEDevice device, VETexture texture, VESparsePageRegion[] regions)
         {
             return VulkEaseDll.veCommitSparsePages(device.native, texture.native, regions, (uint)regions.Length);
         }
@@ -1381,7 +1405,7 @@ namespace VulkEase
         /// <param name="texture">Sparse texture index.</param>
         /// <param name="regions">Array of page regions to uncommit.</param>
         /// <returns>VE_SUCCESS on success.</returns>
-        public static VEResult UncommitSparsePages(VEDevice device, VETextureIndex texture, VESparsePageRegion[] regions)
+        public static VEResult UncommitSparsePages(VEDevice device, VETexture texture, VESparsePageRegion[] regions)
         {
             return VulkEaseDll.veUncommitSparsePages(device.native, texture.native, regions, (uint)regions.Length);
         }
@@ -1409,7 +1433,7 @@ namespace VulkEase
         /// <param name="pageY">Y index of the page.</param>
         /// <param name="pageZ">Z index of the page.</param>
         /// <returns>True if committed, false if not committed or if texture is invalid/not sparse.</returns>
-        public static bool IsSparsePagesCommitted(VEDevice device, VETextureIndex texture,
+        public static bool IsSparsePagesCommitted(VEDevice device, VETexture texture,
             uint mipLevel, uint arrayLayer, uint pageX, uint pageY, uint pageZ)
         {
             return VulkEaseDll.veIsSparsePagesCommitted(device.native, texture.native,
@@ -1422,7 +1446,7 @@ namespace VulkEase
         /// <param name="device">Valid VulkEase device.</param>
         /// <param name="texture">Sparse texture index.</param>
         /// <returns>Number of committed pages, or 0 if texture is invalid/not sparse.</returns>
-        public static uint GetSparseCommittedPageCount(VEDevice device, VETextureIndex texture)
+        public static uint GetSparseCommittedPageCount(VEDevice device, VETexture texture)
         {
             return VulkEaseDll.veGetSparseCommittedPageCount(device.native, texture.native);
         }
@@ -1435,7 +1459,7 @@ namespace VulkEase
         /// <param name="device">Valid VulkEase device.</param>
         /// <param name="texture">Sparse texture index.</param>
         /// <returns>Total page count, or 0 if texture is invalid/not sparse.</returns>
-        public static uint GetSparseTotalPageCount(VEDevice device, VETextureIndex texture)
+        public static uint GetSparseTotalPageCount(VEDevice device, VETexture texture)
         {
             return VulkEaseDll.veGetSparseTotalPageCount(device.native, texture.native);
         }
@@ -1448,7 +1472,7 @@ namespace VulkEase
         /// <param name="texture">Texture to generate mipmaps for.</param>
         /// <returns>VE_SUCCESS on success.</returns>
         /// <remarks>Records mipmap generation commands into the command buffer for later execution.</remarks>
-        public static VEResult CmdGenerateMipmaps(VECommandBuffer cmd, VETextureIndex texture)
+        public static VEResult CmdGenerateMipmaps(VECommandBuffer cmd, VETexture texture)
         {
             return VulkEaseDll.veCmdGenerateMipmaps(cmd.native, texture.native);
         }
@@ -1460,7 +1484,7 @@ namespace VulkEase
         /// <param name="texture">Texture to generate mipmaps for.</param>
         /// <returns>VE_SUCCESS on success.</returns>
         /// <remarks>Executes immediately and blocks until complete.</remarks>
-        public static VEResult GenerateMipmaps(VEDevice device, VETextureIndex texture)
+        public static VEResult GenerateMipmaps(VEDevice device, VETexture texture)
         {
             return VulkEaseDll.veGenerateMipmaps(device.native, texture.native);
         }
@@ -1472,7 +1496,7 @@ namespace VulkEase
         /// <param name="texture">Texture to save.</param>
         /// <param name="filename">Output file path. Format is determined by extension (PNG, JPG, BMP, TGA).</param>
         /// <returns>VE_SUCCESS on success, or VE_ERROR_IO_FAILED if writing fails.</returns>
-        public static VEResult SaveTexture(VEDevice device, VETextureIndex texture, string filename)
+        public static VEResult SaveTexture(VEDevice device, VETexture texture, string filename)
         {
             var namePtr = StringToHGlobalAnsi(filename);
             try
@@ -1494,7 +1518,7 @@ namespace VulkEase
         /// <param name="dst">Destination texture.</param>
         /// <param name="region">Optional region to copy. If null, copies entire texture.</param>
         /// <returns>VE_SUCCESS on success.</returns>
-        public static VEResult CmdCopyTexture(VECommandBuffer cmd, VETextureIndex src, VETextureIndex dst, VETextureCopyRegion? region = null)
+        public static VEResult CmdCopyTexture(VECommandBuffer cmd, VETexture src, VETexture dst, VETextureCopyRegion? region = null)
         {
             if (region.HasValue)
             {
@@ -1521,7 +1545,7 @@ namespace VulkEase
         /// <param name="region">Optional region to copy. If null, copies entire texture.</param>
         /// <param name="fence">Optional fence to signal when complete.</param>
         /// <returns>VE_SUCCESS on success.</returns>
-        public static VEResult CopyTexture(VEDevice device, VETextureIndex src, VETextureIndex dst,
+        public static VEResult CopyTexture(VEDevice device, VETexture src, VETexture dst,
             VETextureCopyRegion? region = null, IntPtr fence = default)
         {
             if (region.HasValue)
@@ -1549,7 +1573,7 @@ namespace VulkEase
         /// <param name="region">Optional region to blit. If null, blits entire texture.</param>
         /// <param name="filter">Filtering mode for scaling (linear or nearest).</param>
         /// <returns>VE_SUCCESS on success.</returns>
-        public static VEResult CmdBlitTexture(VECommandBuffer cmd, VETextureIndex src, VETextureIndex dst,
+        public static VEResult CmdBlitTexture(VECommandBuffer cmd, VETexture src, VETexture dst,
             VETextureBlitRegion? region = null, VkFilter filter = VkFilter.VK_FILTER_LINEAR)
         {
             if (region.HasValue)
@@ -1578,7 +1602,7 @@ namespace VulkEase
         /// <param name="filter">Filtering mode for scaling (linear or nearest).</param>
         /// <param name="fence">Optional fence to signal when complete.</param>
         /// <returns>VE_SUCCESS on success.</returns>
-        public static VEResult BlitTexture(VEDevice device, VETextureIndex src, VETextureIndex dst,
+        public static VEResult BlitTexture(VEDevice device, VETexture src, VETexture dst,
             VETextureBlitRegion? region = null, VkFilter filter = VkFilter.VK_FILTER_LINEAR, IntPtr fence = default)
         {
             if (region.HasValue)
@@ -1605,7 +1629,7 @@ namespace VulkEase
         /// <param name="dst">Destination texture.</param>
         /// <param name="region">Optional region specifying the copy parameters. If null, uses defaults.</param>
         /// <returns>VE_SUCCESS on success.</returns>
-        public static VEResult CmdCopyBufferToTexture(VECommandBuffer cmd, VEBufferAddress src, VETextureIndex dst,
+        public static VEResult CmdCopyBufferToTexture(VECommandBuffer cmd, VEBufferAddress src, VETexture dst,
             VEBufferTextureCopyRegion? region = null)
         {
             if (region.HasValue)
@@ -1633,7 +1657,7 @@ namespace VulkEase
         /// <param name="region">Optional region specifying the copy parameters. If null, uses defaults.</param>
         /// <param name="fence">Optional fence to signal when complete.</param>
         /// <returns>VE_SUCCESS on success.</returns>
-        public static VEResult CopyBufferToTexture(VEDevice device, VEBufferAddress src, VETextureIndex dst,
+        public static VEResult CopyBufferToTexture(VEDevice device, VEBufferAddress src, VETexture dst,
             VEBufferTextureCopyRegion? region = null, IntPtr fence = default)
         {
             if (region.HasValue)
@@ -1660,7 +1684,7 @@ namespace VulkEase
         /// <param name="dst">Destination buffer address.</param>
         /// <param name="region">Optional region specifying the copy parameters. If null, uses defaults.</param>
         /// <returns>VE_SUCCESS on success.</returns>
-        public static VEResult CmdCopyTextureToBuffer(VECommandBuffer cmd, VETextureIndex src, VEBufferAddress dst,
+        public static VEResult CmdCopyTextureToBuffer(VECommandBuffer cmd, VETexture src, VEBufferAddress dst,
             VEBufferTextureCopyRegion? region = null)
         {
             if (region.HasValue)
@@ -1688,7 +1712,7 @@ namespace VulkEase
         /// <param name="region">Optional region specifying the copy parameters. If null, uses defaults.</param>
         /// <param name="fence">Optional fence to signal when complete.</param>
         /// <returns>VE_SUCCESS on success.</returns>
-        public static VEResult CopyTextureToBuffer(VEDevice device, VETextureIndex src, VEBufferAddress dst,
+        public static VEResult CopyTextureToBuffer(VEDevice device, VETexture src, VEBufferAddress dst,
             VEBufferTextureCopyRegion? region = null, IntPtr fence = default)
         {
             if (region.HasValue)
@@ -2377,15 +2401,15 @@ namespace VulkEase
         /// Add a color attachment to a render target.
         /// </summary>
         /// <param name="target">Render target to modify.</param>
-        /// <param name="texture">Texture for the color attachment.</param>
+        /// <param name="view">Texture view for the color attachment.</param>
         /// <param name="loadOp">Load operation (clear, load, or don't care).</param>
         /// <param name="clearColor">Clear color value if loadOp is CLEAR.</param>
         /// <returns>VE_SUCCESS on success, or VE_ERROR_INVALID_PARAMETER if attachment limit exceeded.</returns>
-        public static VEResult RenderTargetAddColorAttachment(ref VERenderTarget target, VETextureIndex texture,
+        public static VEResult RenderTargetAddColorAttachment(ref VERenderTarget target, VETextureView view,
             VkAttachmentLoadOp loadOp, VEColor clearColor)
         {
             var internalTarget = target.ToInternal();
-            var result = VulkEaseDll.veRenderTargetAddColorAttachment(ref internalTarget, texture.native, loadOp, clearColor);
+            var result = VulkEaseDll.veRenderTargetAddColorAttachment(ref internalTarget, view.native, loadOp, clearColor);
             target.FromInternal(internalTarget);
             return result;
         }
@@ -2394,17 +2418,17 @@ namespace VulkEase
         /// Add a color attachment with MSAA resolve target.
         /// </summary>
         /// <param name="target">Render target to modify.</param>
-        /// <param name="texture">Multisampled texture for rendering.</param>
-        /// <param name="resolveTexture">Single-sampled texture to resolve into.</param>
+        /// <param name="view">Multisampled texture view for rendering.</param>
+        /// <param name="resolveView">Single-sampled texture view to resolve into.</param>
         /// <param name="loadOp">Load operation.</param>
         /// <param name="clearColor">Clear color value.</param>
         /// <returns>VE_SUCCESS on success.</returns>
-        public static VEResult RenderTargetAddColorAttachmentResolve(ref VERenderTarget target, VETextureIndex texture,
-            VETextureIndex resolveTexture, VkAttachmentLoadOp loadOp, VEColor clearColor)
+        public static VEResult RenderTargetAddColorAttachmentResolve(ref VERenderTarget target, VETextureView view,
+            VETextureView resolveView, VkAttachmentLoadOp loadOp, VEColor clearColor)
         {
             var internalTarget = target.ToInternal();
-            var result = VulkEaseDll.veRenderTargetAddColorAttachmentResolve(ref internalTarget, texture.native,
-                resolveTexture.native, loadOp, clearColor);
+            var result = VulkEaseDll.veRenderTargetAddColorAttachmentResolve(ref internalTarget, view.native,
+                resolveView.native, loadOp, clearColor);
             target.FromInternal(internalTarget);
             return result;
         }
@@ -2413,15 +2437,15 @@ namespace VulkEase
         /// Set the depth attachment for rendering.
         /// </summary>
         /// <param name="target">Render target to modify.</param>
-        /// <param name="texture">Texture for depth attachment (must have depth format).</param>
+        /// <param name="view">Texture view for the depth attachment (must have a depth format).</param>
         /// <param name="loadOp">Load operation.</param>
         /// <param name="clearDepth">Clear depth value (typically 1.0 for reverse-Z, 0.0 otherwise).</param>
         /// <returns>VE_SUCCESS on success.</returns>
-        public static VEResult RenderTargetSetDepthAttachment(ref VERenderTarget target, VETextureIndex texture,
+        public static VEResult RenderTargetSetDepthAttachment(ref VERenderTarget target, VETextureView view,
             VkAttachmentLoadOp loadOp, float clearDepth)
         {
             var internalTarget = target.ToInternal();
-            var result = VulkEaseDll.veRenderTargetSetDepthAttachment(ref internalTarget, texture.native, loadOp, clearDepth);
+            var result = VulkEaseDll.veRenderTargetSetDepthAttachment(ref internalTarget, view.native, loadOp, clearDepth);
             target.FromInternal(internalTarget);
             return result;
         }
@@ -2430,15 +2454,15 @@ namespace VulkEase
         /// Set the stencil attachment for rendering.
         /// </summary>
         /// <param name="target">Render target to modify.</param>
-        /// <param name="texture">Texture for stencil attachment.</param>
+        /// <param name="view">Texture view for the stencil attachment.</param>
         /// <param name="loadOp">Load operation.</param>
         /// <param name="clearStencil">Clear stencil value.</param>
         /// <returns>VE_SUCCESS on success.</returns>
-        public static VEResult RenderTargetSetStencilAttachment(ref VERenderTarget target, VETextureIndex texture,
+        public static VEResult RenderTargetSetStencilAttachment(ref VERenderTarget target, VETextureView view,
             VkAttachmentLoadOp loadOp, uint clearStencil)
         {
             var internalTarget = target.ToInternal();
-            var result = VulkEaseDll.veRenderTargetSetStencilAttachment(ref internalTarget, texture.native, loadOp, clearStencil);
+            var result = VulkEaseDll.veRenderTargetSetStencilAttachment(ref internalTarget, view.native, loadOp, clearStencil);
             target.FromInternal(internalTarget);
             return result;
         }
@@ -2474,12 +2498,12 @@ namespace VulkEase
         /// <returns>Configured VERenderTarget.</returns>
         public static VERenderTarget CreateSimpleRenderTarget(VEDevice device, uint width, uint height,
             VkFormat colorFormat, VkFormat depthFormat, VEColor clearColor, float clearDepth,
-            out VETextureIndex colorTexture, out VETextureIndex depthTexture)
+            out VETexture colorTexture, out VETexture depthTexture)
         {
             var internalTarget = VulkEaseDll.veCreateSimpleRenderTarget(device.native, width, height,
                 colorFormat, depthFormat, clearColor, clearDepth, out uint colorTex, out uint depthTex);
-            colorTexture = new VETextureIndex { native = colorTex };
-            depthTexture = new VETextureIndex { native = depthTex };
+            colorTexture = new VETexture { native = colorTex };
+            depthTexture = new VETexture { native = depthTex };
             var target = new VERenderTarget();
             target.FromInternal(internalTarget);
             return target;
@@ -2493,7 +2517,7 @@ namespace VulkEase
         /// <param name="swapchain">Destination swapchain.</param>
         /// <param name="filter">Filtering mode (NEAREST or LINEAR).</param>
         /// <returns>VE_SUCCESS on success, or VE_ERROR_SWAPCHAIN_OUT_OF_DATE if resize needed.</returns>
-        public static VEResult BlitTextureToSwapchain(VECommandBuffer cmd, VETextureIndex texture,
+        public static VEResult BlitTextureToSwapchain(VECommandBuffer cmd, VETexture texture,
             VESwapchain swapchain, VkFilter filter)
         {
             return VulkEaseDll.veBlitTextureToSwapchain(cmd.native, texture.native, swapchain.native, filter);
@@ -3409,7 +3433,7 @@ namespace VulkEase
         /// <param name="texture">Texture to transition.</param>
         /// <param name="oldLayout">Current layout of the texture.</param>
         /// <param name="newLayout">Desired layout for the texture.</param>
-        public static void TransitionTexture(VECommandBuffer cmd, VETextureIndex texture, VkImageLayout oldLayout, VkImageLayout newLayout)
+        public static void TransitionTexture(VECommandBuffer cmd, VETexture texture, VkImageLayout oldLayout, VkImageLayout newLayout)
         {
             VulkEaseDll.veTransitionTexture(cmd.native, texture.native, oldLayout, newLayout);
         }
@@ -3419,7 +3443,7 @@ namespace VulkEase
         /// </summary>
         /// <param name="cmd">Command buffer in recording state.</param>
         /// <param name="texture">Texture to transition.</param>
-        public static void TransitionTextureForShaderRead(VECommandBuffer cmd, VETextureIndex texture) =>
+        public static void TransitionTextureForShaderRead(VECommandBuffer cmd, VETexture texture) =>
             VulkEaseDll.veTransitionTextureForShaderRead(cmd.native, texture.native);
 
         /// <summary>
@@ -3427,7 +3451,7 @@ namespace VulkEase
         /// </summary>
         /// <param name="cmd">Command buffer in recording state.</param>
         /// <param name="texture">Texture to transition.</param>
-        public static void TransitionTextureForColorAttachment(VECommandBuffer cmd, VETextureIndex texture) =>
+        public static void TransitionTextureForColorAttachment(VECommandBuffer cmd, VETexture texture) =>
             VulkEaseDll.veTransitionTextureForColorAttachment(cmd.native, texture.native);
 
         /// <summary>
@@ -3435,7 +3459,7 @@ namespace VulkEase
         /// </summary>
         /// <param name="cmd">Command buffer in recording state.</param>
         /// <param name="texture">Texture to transition.</param>
-        public static void TransitionTextureForDepthAttachment(VECommandBuffer cmd, VETextureIndex texture) =>
+        public static void TransitionTextureForDepthAttachment(VECommandBuffer cmd, VETexture texture) =>
             VulkEaseDll.veTransitionTextureForDepthAttachment(cmd.native, texture.native);
 
         /// <summary>
@@ -3443,7 +3467,7 @@ namespace VulkEase
         /// </summary>
         /// <param name="cmd">Command buffer in recording state.</param>
         /// <param name="texture">Texture to transition.</param>
-        public static void TransitionTextureForTransferSrc(VECommandBuffer cmd, VETextureIndex texture) =>
+        public static void TransitionTextureForTransferSrc(VECommandBuffer cmd, VETexture texture) =>
             VulkEaseDll.veTransitionTextureForTransferSrc(cmd.native, texture.native);
 
         /// <summary>
@@ -3451,7 +3475,7 @@ namespace VulkEase
         /// </summary>
         /// <param name="cmd">Command buffer in recording state.</param>
         /// <param name="texture">Texture to transition.</param>
-        public static void TransitionTextureForTransferDst(VECommandBuffer cmd, VETextureIndex texture) =>
+        public static void TransitionTextureForTransferDst(VECommandBuffer cmd, VETexture texture) =>
             VulkEaseDll.veTransitionTextureForTransferDst(cmd.native, texture.native);
 
         /// <summary>
@@ -3459,7 +3483,7 @@ namespace VulkEase
         /// </summary>
         /// <param name="cmd">Command buffer in recording state.</param>
         /// <param name="texture">Texture to transition.</param>
-        public static void TransitionTextureForPresent(VECommandBuffer cmd, VETextureIndex texture) =>
+        public static void TransitionTextureForPresent(VECommandBuffer cmd, VETexture texture) =>
             VulkEaseDll.veTransitionTextureForPresent(cmd.native, texture.native);
 
         /// <summary>
@@ -3468,7 +3492,7 @@ namespace VulkEase
         /// <param name="cmd">Command buffer in recording state.</param>
         /// <param name="texture">Texture to transition.</param>
         /// <param name="newLayout">Target layout for the texture.</param>
-        public static void TransitionTextureToLayout(VECommandBuffer cmd, VETextureIndex texture, VkImageLayout newLayout)
+        public static void TransitionTextureToLayout(VECommandBuffer cmd, VETexture texture, VkImageLayout newLayout)
         {
             VulkEaseDll.veTransitionTextureToLayout(cmd.native, texture.native, newLayout);
         }
@@ -3679,7 +3703,7 @@ namespace VulkEase
         /// <param name="texture">Texture index.</param>
         /// <param name="name">Debug name to set.</param>
         /// <returns>VE_SUCCESS on success.</returns>
-        public static VEResult SetTextureDebugName(VEDevice device, VETextureIndex texture, string name)
+        public static VEResult SetTextureDebugName(VEDevice device, VETexture texture, string name)
         {
             var namePtr = StringToHGlobalAnsi(name);
             try

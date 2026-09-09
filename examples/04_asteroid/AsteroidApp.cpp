@@ -372,8 +372,9 @@ bool AsteroidApp::initVulkEase()
                                                VK_FORMAT_D32_SFLOAT,
                                                clearColor, 1.0f,
                                                &colorTexture_, &depthTexture_);
+   renderTarget_.flags = VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT;
 
-   if (colorTexture_ == VE_INVALID_TEXTURE_INDEX)
+   if (colorTexture_ == VE_INVALID_TEXTURE)
    {
       std::fprintf(stderr, "Failed to create render target\n");
       return false;
@@ -391,15 +392,15 @@ void AsteroidApp::shutdownVulkEase()
 
    destroyAssets();
 
-   if (colorTexture_ != VE_INVALID_TEXTURE_INDEX)
+   if (colorTexture_ != VE_INVALID_TEXTURE)
    {
       veDestroyTexture(device_, colorTexture_);
-      colorTexture_ = VE_INVALID_TEXTURE_INDEX;
+      colorTexture_ = VE_INVALID_TEXTURE;
    }
-   if (depthTexture_ != VE_INVALID_TEXTURE_INDEX)
+   if (depthTexture_ != VE_INVALID_TEXTURE)
    {
       veDestroyTexture(device_, depthTexture_);
-      depthTexture_ = VE_INVALID_TEXTURE_INDEX;
+      depthTexture_ = VE_INVALID_TEXTURE;
    }
 
    if (swapchain_)
@@ -717,6 +718,7 @@ void AsteroidApp::recordChunks(uint32_t width, uint32_t height, std::vector<Reco
       VESecondaryCommandBufferDesc desc{};
       desc.beginRecording = true;
       desc.usageFlags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+      desc.renderingFlags = VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT;
       desc.colorAttachmentCount = 1;
       desc.colorAttachmentFormats[0] = swapchainFormat_;
       desc.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
@@ -855,11 +857,6 @@ void AsteroidApp::submitFrame(const std::vector<RecordedChunk> &recorded, double
 
    veUpdateBuffer(device_, cameraBuffer_, &cameraData, sizeof(CameraData), 0);
 
-   // Set render state once in the primary buffer - this is inherited by all secondary buffers.
-   // Note: With VK_EXT_shader_object, dynamic state is NOT inherited by secondary command buffers,
-   // so each secondary must also set state. We set it here for reference/documentation.
-   veApplyGraphicsState(primary, pipeline_, nullptr, nullptr, nullptr);
-
    if (!recorded.empty())
    {
       std::vector<VECommandBuffer *> secondaryCmds;
@@ -892,8 +889,8 @@ void AsteroidApp::submitFrame(const std::vector<RecordedChunk> &recorded, double
                            static_cast<uint32_t>(framebufferHeight));
          veResizeRenderTarget(device_, &renderTarget_, static_cast<uint32_t>(framebufferWidth),
                               static_cast<uint32_t>(framebufferHeight));
-         colorTexture_ = renderTarget_.attachments[0].texture;
-         depthTexture_ = renderTarget_.attachments[VE_DEPTH_ATTACHMENT_INDEX].texture;
+         colorTexture_ = veGetTextureFromView(device_, renderTarget_.attachments[0].view);
+         depthTexture_ = veGetTextureFromView(device_, renderTarget_.attachments[VE_DEPTH_ATTACHMENT_INDEX].view);
       }
       // Release command buffer manually on early return
       veReleaseCommandBuffer(primary);
@@ -971,5 +968,3 @@ void AsteroidApp::appendCsv(const MetricsSummary &summary)
                 summary.latest.instanceCount, summary.latest.multithreaded ? "true" : "false");
    std::fflush(csvFile_.get());
 }
-
-

@@ -247,7 +247,19 @@ namespace VulkEase
         VK_IMAGE_VIEW_TYPE_CUBE = 3,
         VK_IMAGE_VIEW_TYPE_1D_ARRAY = 4,
         VK_IMAGE_VIEW_TYPE_2D_ARRAY = 5,
-        VK_IMAGE_VIEW_TYPE_CUBE_ARRAY = 6
+        VK_IMAGE_VIEW_TYPE_CUBE_ARRAY = 6,
+        VK_IMAGE_VIEW_TYPE_MAX_ENUM = 0x7FFFFFFF
+    }
+
+    public enum VkComponentSwizzle : Int32
+    {
+        VK_COMPONENT_SWIZZLE_IDENTITY = 0,
+        VK_COMPONENT_SWIZZLE_ZERO = 1,
+        VK_COMPONENT_SWIZZLE_ONE = 2,
+        VK_COMPONENT_SWIZZLE_R = 3,
+        VK_COMPONENT_SWIZZLE_G = 4,
+        VK_COMPONENT_SWIZZLE_B = 5,
+        VK_COMPONENT_SWIZZLE_A = 6
     }
 
     [Flags]
@@ -257,6 +269,16 @@ namespace VulkEase
         VK_IMAGE_ASPECT_DEPTH_BIT = 0x00000002,
         VK_IMAGE_ASPECT_STENCIL_BIT = 0x00000004,
         VK_IMAGE_ASPECT_METADATA_BIT = 0x00000008
+    }
+
+    [Flags]
+    public enum VkRenderingFlags : UInt32
+    {
+        None = 0,
+        VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT = 0x00000001,
+        VK_RENDERING_SUSPENDING_BIT = 0x00000002,
+        VK_RENDERING_RESUMING_BIT = 0x00000004,
+        VK_RENDERING_CONTENTS_INLINE_BIT_KHR = 0x00000010
     }
 
     [Flags]

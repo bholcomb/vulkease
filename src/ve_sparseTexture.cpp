@@ -183,7 +183,7 @@ bool VEDeviceInternal::hasPendingSparseBinds() const
    return !pendingSparseBinds.empty();
 }
 
-void VEDeviceInternal::queueSparseBind(VETextureIndex texture, const VkSparseImageMemoryBind &bind)
+void VEDeviceInternal::queueSparseBind(VETexture texture, const VkSparseImageMemoryBind &bind)
 {
    if (!sparseBindMutex)
       return;
@@ -206,7 +206,7 @@ void VEDeviceInternal::queueSparseBind(VETextureIndex texture, const VkSparseIma
    pendingSparseBinds.push_back(std::move(newPending));
 }
 
-void VEDeviceInternal::queueSparseUnbind(VETextureIndex texture, const VkSparseImageMemoryBind &bind)
+void VEDeviceInternal::queueSparseUnbind(VETexture texture, const VkSparseImageMemoryBind &bind)
 {
    // Unbind is the same as bind but with memory = VK_NULL_HANDLE
    queueSparseBind(texture, bind);
@@ -352,7 +352,7 @@ static uint32_t calculateLinearPageIndex(VESparseTextureData *sparseData, uint32
 // Public API Implementation
 // =============================================================================
 
-VULKEASE_API VEResult veGetSparseTextureInfo(VEDevice *device, VETextureIndex texture, VESparseTextureInfo *outInfo)
+VULKEASE_API VEResult veGetSparseTextureInfo(VEDevice *device, VETexture texture, VESparseTextureInfo *outInfo)
 {
    if (!device || !outInfo)
    {
@@ -382,8 +382,8 @@ VULKEASE_API VEResult veGetSparseTextureInfo(VEDevice *device, VETextureIndex te
    return VE_SUCCESS;
 }
 
-VULKEASE_API VEResult veCommitSparsePages(VEDevice *device, VETextureIndex texture,
-                                          const VESparsePageRegion *regions, uint32_t regionCount)
+VULKEASE_API VEResult veCommitSparsePages(VEDevice *device, VETexture texture, const VESparsePageRegion *regions,
+                                          uint32_t regionCount)
 {
    if (!device)
    {
@@ -516,8 +516,8 @@ VULKEASE_API VEResult veCommitSparsePages(VEDevice *device, VETextureIndex textu
    return VE_SUCCESS;
 }
 
-VULKEASE_API VEResult veUncommitSparsePages(VEDevice *device, VETextureIndex texture,
-                                            const VESparsePageRegion *regions, uint32_t regionCount)
+VULKEASE_API VEResult veUncommitSparsePages(VEDevice *device, VETexture texture, const VESparsePageRegion *regions,
+                                            uint32_t regionCount)
 {
    if (!device)
    {
@@ -632,8 +632,8 @@ VULKEASE_API VEResult veFlushSparseBindings(VEDevice *device)
    return deviceInternal->flushPendingSparseBinds(true); // Blocking
 }
 
-VULKEASE_API bool veIsSparsePagesCommitted(VEDevice *device, VETextureIndex texture, uint32_t mipLevel,
-                                           uint32_t arrayLayer, uint32_t pageX, uint32_t pageY, uint32_t pageZ)
+VULKEASE_API bool veIsSparsePagesCommitted(VEDevice *device, VETexture texture, uint32_t mipLevel, uint32_t arrayLayer,
+                                           uint32_t pageX, uint32_t pageY, uint32_t pageZ)
 {
    if (!device)
       return false;
@@ -658,7 +658,7 @@ VULKEASE_API bool veIsSparsePagesCommitted(VEDevice *device, VETextureIndex text
    return sparseData->pages[pageIndex].isCommitted;
 }
 
-VULKEASE_API uint32_t veGetSparseCommittedPageCount(VEDevice *device, VETextureIndex texture)
+VULKEASE_API uint32_t veGetSparseCommittedPageCount(VEDevice *device, VETexture texture)
 {
    if (!device)
       return 0;
@@ -672,7 +672,7 @@ VULKEASE_API uint32_t veGetSparseCommittedPageCount(VEDevice *device, VETextureI
    return tex->sparseData->committedPageCount;
 }
 
-VULKEASE_API uint32_t veGetSparseTotalPageCount(VEDevice *device, VETextureIndex texture)
+VULKEASE_API uint32_t veGetSparseTotalPageCount(VEDevice *device, VETexture texture)
 {
    if (!device)
       return 0;

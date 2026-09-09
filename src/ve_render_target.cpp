@@ -5,6 +5,9 @@
 
 #include "ve_internal.h"
 #include <cstring>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 // =============================================================================
 // Resize Render Target
@@ -31,148 +34,109 @@ VEResult veResizeRenderTarget(VEDevice *device, VERenderTarget *target, uint32_t
    }
 
    VEDeviceInternal *deviceInternal = reinterpret_cast<VEDeviceInternal *>(device);
-
-   // Resize all attached textures
-   // Color attachments
-   for (uint32_t i = 0; i < target->colorAttachmentCount; i++)
+   std::vector<VETextureView *> attachmentViews;
+   for (uint32_t i = 0; i < target->colorAttachmentCount; ++i)
    {
-      VERenderTargetAttachment *attachment = &target->attachments[i];
-      if (attachment->texture != VE_INVALID_TEXTURE_INDEX)
-      {
-         VETextureInternal *tex = deviceInternal->getTexture(attachment->texture);
-         if (tex)
-         {
-            // Get current texture properties
-            VETextureDesc desc{};
-            desc.width = width;
-            desc.height = height;
-            desc.depth = 1;
-            desc.mipLevels = tex->mipLevels;
-            desc.arrayLayers = tex->arrayLayers;
-            desc.format = tex->format;
-            desc.usage = tex->usage;
-            desc.sampleCount = tex->sampleCount;
-
-            // Destroy old texture and create new one
-            VETextureIndex oldTex = attachment->texture;
-            VETextureIndex newTex = VE_INVALID_TEXTURE_INDEX;
-
-            VEResult result = veCreateTexture(device, &desc, &newTex);
-            if (result != VE_SUCCESS)
-            {
-               veSetError("veResizeRenderTarget: failed to resize color texture %u", i);
-               return result;
-            }
-
-            attachment->texture = newTex;
-            veDestroyTexture(device, oldTex);
-         }
-      }
-
-      // Resize resolve texture if present
-      if (attachment->resolveTexture != VE_INVALID_TEXTURE_INDEX)
-      {
-         VETextureInternal *tex = deviceInternal->getTexture(attachment->resolveTexture);
-         if (tex)
-         {
-            VETextureDesc desc{};
-            desc.width = width;
-            desc.height = height;
-            desc.depth = 1;
-            desc.mipLevels = tex->mipLevels;
-            desc.arrayLayers = tex->arrayLayers;
-            desc.format = tex->format;
-            desc.usage = tex->usage;
-            desc.sampleCount = VK_SAMPLE_COUNT_1_BIT;
-
-            VETextureIndex oldTex = attachment->resolveTexture;
-            VETextureIndex newTex = VE_INVALID_TEXTURE_INDEX;
-
-            VEResult result = veCreateTexture(device, &desc, &newTex);
-            if (result != VE_SUCCESS)
-            {
-               veSetError("veResizeRenderTarget: failed to resize resolve texture %u", i);
-               return result;
-            }
-
-            attachment->resolveTexture = newTex;
-            veDestroyTexture(device, oldTex);
-         }
-      }
+      attachmentViews.push_back(&target->attachments[i].view);
+      attachmentViews.push_back(&target->attachments[i].resolveView);
    }
-
-   // Depth attachment
    if (target->hasDepthAttachment)
-   {
-      VERenderTargetAttachment *attachment = &target->attachments[VE_DEPTH_ATTACHMENT_INDEX];
-      if (attachment->texture != VE_INVALID_TEXTURE_INDEX)
-      {
-         VETextureInternal *tex = deviceInternal->getTexture(attachment->texture);
-         if (tex)
-         {
-            VETextureDesc desc{};
-            desc.width = width;
-            desc.height = height;
-            desc.depth = 1;
-            desc.mipLevels = tex->mipLevels;
-            desc.arrayLayers = tex->arrayLayers;
-            desc.format = tex->format;
-            desc.usage = tex->usage;
-            desc.sampleCount = tex->sampleCount;
-
-            VETextureIndex oldTex = attachment->texture;
-            VETextureIndex newTex = VE_INVALID_TEXTURE_INDEX;
-
-            VEResult result = veCreateTexture(device, &desc, &newTex);
-            if (result != VE_SUCCESS)
-            {
-               veSetError("veResizeRenderTarget: failed to resize depth texture");
-               return result;
-            }
-
-            attachment->texture = newTex;
-            veDestroyTexture(device, oldTex);
-         }
-      }
-   }
-
-   // Stencil attachment (if separate from depth)
+      attachmentViews.push_back(&target->attachments[VE_DEPTH_ATTACHMENT_INDEX].view);
    if (target->hasStencilAttachment)
+      attachmentViews.push_back(&target->attachments[VE_STENCIL_ATTACHMENT_INDEX].view);
+
+   std::unordered_map<VETexture, VETexture> replacementTextures;
+   std::unordered_map<VETextureView, VETextureView> replacementViews;
+   std::vector<std::pair<VETextureView *, VETextureView>> updates;
+
+   auto cleanupReplacements = [&]()
    {
-      VERenderTargetAttachment *attachment = &target->attachments[VE_STENCIL_ATTACHMENT_INDEX];
-      // Only resize if it's a different texture from depth
-      if (attachment->texture != VE_INVALID_TEXTURE_INDEX &&
-          (!target->hasDepthAttachment ||
-           attachment->texture != target->attachments[VE_DEPTH_ATTACHMENT_INDEX].texture))
+      for (const auto &entry : replacementTextures)
+         veDestroyTextureImmediate(deviceInternal, entry.second);
+   };
+
+   for (VETextureView *attachmentView : attachmentViews)
+   {
+      if (*attachmentView == VE_INVALID_TEXTURE_VIEW)
+         continue;
+
+      auto existingReplacement = replacementViews.find(*attachmentView);
+      if (existingReplacement != replacementViews.end())
       {
-         VETextureInternal *tex = deviceInternal->getTexture(attachment->texture);
-         if (tex)
+         updates.emplace_back(attachmentView, existingReplacement->second);
+         continue;
+      }
+
+      VETextureViewInternal *oldView = deviceInternal->getTextureView(*attachmentView);
+      VETextureInternal *oldTexture = oldView ? deviceInternal->getTexture(oldView->texture) : nullptr;
+      if (!oldView || !oldTexture || oldTexture->isExternal)
+      {
+         cleanupReplacements();
+         veSetError("veResizeRenderTarget: attachment view %u is invalid or externally owned", *attachmentView);
+         return VE_ERROR_INVALID_PARAMETER;
+      }
+
+      VETexture newTexture = VE_INVALID_TEXTURE;
+      auto existingTexture = replacementTextures.find(oldView->texture);
+      if (existingTexture == replacementTextures.end())
+      {
+         VETextureDesc desc{};
+         desc.width = width;
+         desc.height = height;
+         desc.depth = oldTexture->depth;
+         desc.mipLevels = oldTexture->mipLevels;
+         desc.arrayLayers = oldTexture->arrayLayers;
+         desc.format = oldTexture->format;
+         desc.usage = oldTexture->usage;
+         desc.sampleCount = oldTexture->sampleCount;
+         desc.debugName = oldTexture->debugName;
+         VEResult result = veCreateTexture(device, &desc, &newTexture);
+         if (result != VE_SUCCESS)
          {
-            VETextureDesc desc{};
-            desc.width = width;
-            desc.height = height;
-            desc.depth = 1;
-            desc.mipLevels = tex->mipLevels;
-            desc.arrayLayers = tex->arrayLayers;
-            desc.format = tex->format;
-            desc.usage = tex->usage;
-            desc.sampleCount = tex->sampleCount;
+            cleanupReplacements();
+            veSetError("veResizeRenderTarget: failed to recreate attachment texture");
+            return result;
+         }
+         replacementTextures.emplace(oldView->texture, newTexture);
+      }
+      else
+      {
+         newTexture = existingTexture->second;
+      }
 
-            VETextureIndex oldTex = attachment->texture;
-            VETextureIndex newTex = VE_INVALID_TEXTURE_INDEX;
-
-            VEResult result = veCreateTexture(device, &desc, &newTex);
-            if (result != VE_SUCCESS)
-            {
-               veSetError("veResizeRenderTarget: failed to resize stencil texture");
-               return result;
-            }
-
-            attachment->texture = newTex;
-            veDestroyTexture(device, oldTex);
+      VETextureView newView = VE_INVALID_TEXTURE_VIEW;
+      if (*attachmentView == oldTexture->defaultView)
+      {
+         newView = veGetDefaultTextureView(device, newTexture);
+      }
+      else
+      {
+         VETextureViewDesc viewDesc{};
+         viewDesc.viewType = oldView->viewType;
+         viewDesc.format = oldView->format;
+         viewDesc.components = oldView->components;
+         viewDesc.aspectMask = oldView->subresourceRange.aspectMask;
+         viewDesc.baseMipLevel = oldView->subresourceRange.baseMipLevel;
+         viewDesc.mipLevelCount = oldView->subresourceRange.levelCount;
+         viewDesc.baseArrayLayer = oldView->subresourceRange.baseArrayLayer;
+         viewDesc.arrayLayerCount = oldView->subresourceRange.layerCount;
+         VEResult result = veCreateTextureView(device, newTexture, &viewDesc, &newView);
+         if (result != VE_SUCCESS)
+         {
+            cleanupReplacements();
+            veSetError("veResizeRenderTarget: failed to recreate attachment view");
+            return result;
          }
       }
+
+      replacementViews.emplace(*attachmentView, newView);
+      updates.emplace_back(attachmentView, newView);
    }
+
+   for (const auto &update : updates)
+      *update.first = update.second;
+   for (const auto &entry : replacementTextures)
+      veDestroyTexture(device, entry.first);
 
    // Update render area dimensions
    target->renderAreaWidth = width;
@@ -187,7 +151,7 @@ VEResult veResizeRenderTarget(VEDevice *device, VERenderTarget *target, uint32_t
 
 VERenderTarget veCreateSimpleRenderTarget(VEDevice *device, uint32_t width, uint32_t height, VkFormat colorFormat,
                                           VkFormat depthFormat, VEColor clearColor, float clearDepth,
-                                          VETextureIndex *outColorTexture, VETextureIndex *outDepthTexture)
+                                          VETexture *outColorTexture, VETexture *outDepthTexture)
 {
    VERenderTarget target = veCreateRenderTarget(width, height);
 
@@ -200,14 +164,15 @@ VERenderTarget veCreateSimpleRenderTarget(VEDevice *device, uint32_t width, uint
    // Create and add color texture
    if (colorFormat != VK_FORMAT_UNDEFINED)
    {
-      VETextureIndex colorTex = VE_INVALID_TEXTURE_INDEX;
+      VETexture colorTex = VE_INVALID_TEXTURE;
       VEResult result = veCreateTexture2D(device, width, height, colorFormat,
                                           VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                               VK_IMAGE_USAGE_SAMPLED_BIT,
                                           "SimpleRT_Color", &colorTex);
-      if (result == VE_SUCCESS && colorTex != VE_INVALID_TEXTURE_INDEX)
+      if (result == VE_SUCCESS && colorTex != VE_INVALID_TEXTURE)
       {
-         veRenderTargetAddColorAttachment(&target, colorTex, VK_ATTACHMENT_LOAD_OP_CLEAR, clearColor);
+         veRenderTargetAddColorAttachment(&target, veGetDefaultTextureView(device, colorTex),
+                                          VK_ATTACHMENT_LOAD_OP_CLEAR, clearColor);
          if (outColorTexture)
          {
             *outColorTexture = colorTex;
@@ -218,13 +183,14 @@ VERenderTarget veCreateSimpleRenderTarget(VEDevice *device, uint32_t width, uint
    // Create and add depth texture
    if (depthFormat != VK_FORMAT_UNDEFINED)
    {
-      VETextureIndex depthTex = VE_INVALID_TEXTURE_INDEX;
+      VETexture depthTex = VE_INVALID_TEXTURE;
       VEResult result = veCreateTexture2D(device, width, height, depthFormat,
                                           VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                                           "SimpleRT_Depth", &depthTex);
-      if (result == VE_SUCCESS && depthTex != VE_INVALID_TEXTURE_INDEX)
+      if (result == VE_SUCCESS && depthTex != VE_INVALID_TEXTURE)
       {
-         veRenderTargetSetDepthAttachment(&target, depthTex, VK_ATTACHMENT_LOAD_OP_CLEAR, clearDepth);
+         veRenderTargetSetDepthAttachment(&target, veGetDefaultTextureView(device, depthTex),
+                                          VK_ATTACHMENT_LOAD_OP_CLEAR, clearDepth);
          if (outDepthTexture)
          {
             *outDepthTexture = depthTex;
@@ -239,9 +205,9 @@ VERenderTarget veCreateSimpleRenderTarget(VEDevice *device, uint32_t width, uint
 // Blit Texture to Swapchain
 // =============================================================================
 
-VEResult veBlitTextureToSwapchain(VECommandBuffer *cmd, VETextureIndex texture, VESwapchain *swapchain, VkFilter filter)
+VEResult veBlitTextureToSwapchain(VECommandBuffer *cmd, VETexture texture, VESwapchain *swapchain, VkFilter filter)
 {
-   if (!cmd || texture == VE_INVALID_TEXTURE_INDEX || !swapchain)
+   if (!cmd || texture == VE_INVALID_TEXTURE || !swapchain)
    {
       veSetError("veBlitTextureToSwapchain: invalid parameters");
       return VE_ERROR_INVALID_PARAMETER;
@@ -251,8 +217,8 @@ VEResult veBlitTextureToSwapchain(VECommandBuffer *cmd, VETextureIndex texture, 
    VESwapchainInternal *swapInternal = reinterpret_cast<VESwapchainInternal *>(swapchain);
 
    // Acquire next swapchain image
-   VETextureIndex backbuffer = veAcquireNextImage(swapchain);
-   if (backbuffer == VE_INVALID_TEXTURE_INDEX)
+   VETexture backbuffer = veAcquireNextImage(swapchain);
+   if (backbuffer == VE_INVALID_TEXTURE)
    {
       return VE_ERROR_SWAPCHAIN_OUT_OF_DATE;
    }

@@ -7,8 +7,9 @@
  * Build with: gcc -o cube 03_cube.c -lvulkease -lglfw -lm
  */
 
-#include <vulkease.h>
 #include <GLFW/glfw3.h>
+#include <vulkease.h>
+#include <vulkease_util.h>
 
 #if defined(_WIN32) || defined(__linux__)
 #include <GLFW/glfw3native.h>
@@ -92,7 +93,7 @@ typedef struct CubeApp {
     VEBufferAddress vertexBuffer;
     VEBufferAddress indexBuffer;
     VEBufferAddress uniformBuffer;
-    VETextureIndex texture;
+    VETexture texture;
     VESamplerIndex sampler;
     
     // Shaders
@@ -104,9 +105,9 @@ typedef struct CubeApp {
     
     // Render target and textures
     VERenderTarget renderTarget;
-    VETextureIndex colorTexture;
-    VETextureIndex depthTexture;
-    
+    VETexture colorTexture;
+    VETexture depthTexture;
+
     // Animation
     float rotationAngle;
     double lastTime;
@@ -176,10 +177,12 @@ static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
         if (app->swapchain) {
             veResizeSwapchain(app->swapchain, (uint32_t)width, (uint32_t)height);
         }
-        if (app->colorTexture != VE_INVALID_TEXTURE_INDEX) {
-            veResizeRenderTarget(app->device, &app->renderTarget, (uint32_t)width, (uint32_t)height);
-            app->colorTexture = app->renderTarget.attachments[0].texture;
-            app->depthTexture = app->renderTarget.attachments[VE_DEPTH_ATTACHMENT_INDEX].texture;
+        if (app->colorTexture != VE_INVALID_TEXTURE)
+        {
+           veResizeRenderTarget(app->device, &app->renderTarget, (uint32_t)width, (uint32_t)height);
+           app->colorTexture = veGetTextureFromView(app->device, app->renderTarget.attachments[0].view);
+           app->depthTexture =
+               veGetTextureFromView(app->device, app->renderTarget.attachments[VE_DEPTH_ATTACHMENT_INDEX].view);
         }
     }
 }
@@ -273,11 +276,12 @@ static bool initVulkEase(CubeApp* app) {
                                                     clearColor, 1.0f,
                                                     &app->colorTexture, &app->depthTexture);
 
-    if (app->colorTexture == VE_INVALID_TEXTURE_INDEX) {
-        fprintf(stderr, "Failed to create render target\n");
-        return false;
+    if (app->colorTexture == VE_INVALID_TEXTURE)
+    {
+       fprintf(stderr, "Failed to create render target\n");
+       return false;
     }
-    
+
     printf("VulkEase initialized successfully\n");
     printf("Device: %s\n", veGetDeviceName(app->device));
     printf("Driver: %s\n", veGetDriverVersion(app->device));
@@ -335,25 +339,29 @@ static bool createGeometry(CubeApp* app) {
 // Load texture
 static bool loadTexture(CubeApp* app) {
     // Load texture from file
-    if (veLoadTexture(app->device, "data/03_cube/testCard.png", VK_IMAGE_USAGE_SAMPLED_BIT, true, &app->texture) != VE_SUCCESS ||
-        app->texture == VE_INVALID_TEXTURE_INDEX) {
-        fprintf(stderr, "Failed to load texture\n");
-        // Create a simple fallback texture if file doesn't exist
-        if (veCreateTexture2D(app->device, 2, 2, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, "FallbackTexture",
-                              &app->texture) != VE_SUCCESS ||
-            app->texture == VE_INVALID_TEXTURE_INDEX) {
-            fprintf(stderr, "Failed to create fallback texture\n");
-            return false;
-        }
-        
-        // Fill with simple checkerboard pattern
-        uint32_t pixels[4] = {0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFFFFFFFF};
-        VEResult result = veHostWriteTextureRegion(app->device, app->texture, pixels, sizeof(pixels), NULL);
-        if (result != VE_SUCCESS) {
-            printf("Warning: Could not update fallback texture\n");
-        }
+    if (veLoadTexture(app->device, "data/03_cube/testCard.png", VK_IMAGE_USAGE_SAMPLED_BIT, true, &app->texture) !=
+            VE_SUCCESS ||
+        app->texture == VE_INVALID_TEXTURE)
+    {
+       fprintf(stderr, "Failed to load texture\n");
+       // Create a simple fallback texture if file doesn't exist
+       if (veCreateTexture2D(app->device, 2, 2, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, "FallbackTexture",
+                             &app->texture) != VE_SUCCESS ||
+           app->texture == VE_INVALID_TEXTURE)
+       {
+          fprintf(stderr, "Failed to create fallback texture\n");
+          return false;
+       }
+
+       // Fill with simple checkerboard pattern
+       uint32_t pixels[4] = {0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFFFFFFFF};
+       VEResult result = veHostWriteTextureRegion(app->device, app->texture, pixels, sizeof(pixels), NULL);
+       if (result != VE_SUCCESS)
+       {
+          printf("Warning: Could not update fallback texture\n");
+       }
     }
-    
+
     // Create linear sampler
     if (veCreateLinearSampler(app->device, &app->sampler) != VE_SUCCESS || app->sampler == VE_INVALID_SAMPLER_INDEX) {
         fprintf(stderr, "Failed to create sampler\n");
@@ -466,7 +474,7 @@ static void renderFrame(CubeApp* app) {
     pushConstants.vertexBuffer = app->vertexBuffer;
     pushConstants.indexBuffer = app->indexBuffer;
     pushConstants.uniformBuffers[0] = app->uniformBuffer;
-    pushConstants.textures[0] = app->texture;
+    pushConstants.textures[0] = veGetDefaultTextureView(app->device, app->texture);
     pushConstants.samplers[0] = app->sampler;
     pushConstants.activeUniformCount = 1;
     pushConstants.activeTextureCount = 1;
@@ -581,8 +589,9 @@ static void cleanup(CubeApp* app) {
     if (app->sampler != VE_INVALID_SAMPLER_INDEX) {
         (void)veDestroySampler(app->device, app->sampler);
     }
-    if (app->texture != VE_INVALID_TEXTURE_INDEX) {
-        (void)veDestroyTexture(app->device, app->texture);
+    if (app->texture != VE_INVALID_TEXTURE)
+    {
+       (void)veDestroyTexture(app->device, app->texture);
     }
     if (app->uniformBuffer != VE_INVALID_ADDRESS) {
         (void)veDestroyBuffer(app->device, app->uniformBuffer);
@@ -595,11 +604,13 @@ static void cleanup(CubeApp* app) {
     }
     
     // Destroy render target textures
-    if (app->colorTexture != VE_INVALID_TEXTURE_INDEX) {
-        veDestroyTexture(app->device, app->colorTexture);
+    if (app->colorTexture != VE_INVALID_TEXTURE)
+    {
+       veDestroyTexture(app->device, app->colorTexture);
     }
-    if (app->depthTexture != VE_INVALID_TEXTURE_INDEX) {
-        veDestroyTexture(app->device, app->depthTexture);
+    if (app->depthTexture != VE_INVALID_TEXTURE)
+    {
+       veDestroyTexture(app->device, app->depthTexture);
     }
     if (app->swapchain) {
         (void)veDestroySwapchain(app->swapchain);

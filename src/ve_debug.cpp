@@ -65,9 +65,9 @@ VEResult veSetBufferDebugName(VEDevice *device, VEBufferAddress address, const c
    return VE_SUCCESS;
 }
 
-VEResult veSetTextureDebugName(VEDevice *device, VETextureIndex texture, const char *name)
+VEResult veSetTextureDebugName(VEDevice *device, VETexture texture, const char *name)
 {
-   if (!device || texture == VE_INVALID_TEXTURE_INDEX || !name)
+   if (!device || texture == VE_INVALID_TEXTURE || !name)
    {
       return VE_ERROR_INVALID_PARAMETER;
    }
@@ -84,7 +84,9 @@ VEResult veSetTextureDebugName(VEDevice *device, VETextureIndex texture, const c
 
    // Set debug names on both the image and image view
    veSetObjectDebugName(deviceInternal, (uint64_t)textureInternal->image, VK_OBJECT_TYPE_IMAGE, name);
-   veSetObjectDebugName(deviceInternal, (uint64_t)textureInternal->imageView, VK_OBJECT_TYPE_IMAGE_VIEW, name);
+   VETextureViewInternal *defaultView = deviceInternal->getTextureView(textureInternal->defaultView);
+   if (defaultView)
+      veSetObjectDebugName(deviceInternal, (uint64_t)defaultView->imageView, VK_OBJECT_TYPE_IMAGE_VIEW, name);
 
    return VE_SUCCESS;
 }
@@ -613,9 +615,9 @@ bool veValidateBuffer(VEDevice *device, VEBufferAddress address)
    return deviceInternal->validateBufferAddress(address);
 }
 
-bool veValidateTexture(VEDevice *device, VETextureIndex index)
+bool veValidateTexture(VEDevice *device, VETexture index)
 {
-   if (!device || index == VE_INVALID_TEXTURE_INDEX)
+   if (!device || index == VE_INVALID_TEXTURE)
    {
       return false;
    }
