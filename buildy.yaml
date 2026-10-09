@@ -8,9 +8,11 @@ project:
 
 variables:
   import_env_vars:
-    # These are only required on Windows; Linux uses system packages
+    # Required on every platform. On Linux, source the Vulkan SDK's
+    # setup-env.sh first: the distribution's loader is older than Vulkan 1.4.
     - name: VULKAN_SDK
-      default: ""                   # Empty default for Linux (uses system paths)
+      default: ~
+    # Only required on Windows; Linux builds GLFW from source
     - name: GLFW_ROOT
       default: ""                   # Empty default for Linux (uses system paths)
 
