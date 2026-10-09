@@ -313,16 +313,17 @@ static void cleanup() {
         (void)veDestroyBuffer(g_device, g_vertexBuffer);
     }
     
+    // The pipeline borrows the shaders, so it goes first
+    if (g_pipeline) {
+        (void)veDestroyGraphicsPipeline(g_pipeline);
+    }
+
     if (g_vertexShader) {
         (void)veDestroyShader(g_vertexShader);
     }
     
     if (g_fragmentShader) {
         (void)veDestroyShader(g_fragmentShader);
-    }
-    
-    if (g_pipeline) {
-        (void)veDestroyGraphicsPipeline(g_pipeline);
     }
 
     if (g_colorTexture != VE_INVALID_TEXTURE)
