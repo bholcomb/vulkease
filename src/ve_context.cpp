@@ -1006,12 +1006,7 @@ VEResult veCreateDevice(VEContext *context, VkPhysicalDevice preferredDevice,
 
    deviceCreateInfo.enabledExtensionCount = allDeviceExtensionCount;
    deviceCreateInfo.ppEnabledExtensionNames = allDeviceExtensions;
-
-   if (contextInternal->validationEnabled)
-   {
-      deviceCreateInfo.enabledLayerCount = sizeof(VALIDATION_LAYERS) / sizeof(VALIDATION_LAYERS[0]);
-      deviceCreateInfo.ppEnabledLayerNames = VALIDATION_LAYERS;
-   }
+   // Device layers are deprecated; validation is enabled on the instance only
 
    VkResult result = vkCreateDevice(device->physicalDevice, &deviceCreateInfo, NULL, &device->device);
    if (result != VK_SUCCESS)
