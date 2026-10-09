@@ -12,6 +12,34 @@ A few of the design choices:
 
 This is a work in progress.  The examples should build and run without validation errors, but don't exercise every feature yet.  It still has a bit of AI slop that needs to be cleaned up.
 
+## Building and running on Linux
+
+VulkEase builds against the LunarG Vulkan SDK (1.4 or later); the loader that distributions package is usually older.
+Source the SDK's environment script, then build with buildy:
+
+```sh
+source /path/to/vulkan/1.4.350.1/setup-env.sh
+./buildy -r -n 3    # release; drop -r for a debug build with validation layers
+```
+
+The build stops with an error if `VULKAN_SDK` is not set. The library and public headers are staged to `dist/`, the
+examples to `bin/`.
+
+Run from a shell with the same environment. `setup-env.sh` puts the SDK's loader on `LD_LIBRARY_PATH` and its
+validation layers on `VK_ADD_LAYER_PATH`. Without it the system loader is picked up and `veCreateContext` fails with
+"Vulkan 1.4 or later required".
+
+```sh
+cd bin && ./01_triangle
+```
+
+Debug builds enable `VK_LAYER_KHRONOS_validation` when it is available. To run on a particular driver, point the loader
+at its manifest, for example lavapipe (CPU):
+
+```sh
+VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ./01_triangle
+```
+
 ## Public headers
 
 - `vulkease.h` is the core API: device and resource ownership, commands, synchronization, rendering, and explicit barriers.

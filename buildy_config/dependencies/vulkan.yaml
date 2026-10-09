@@ -1,19 +1,17 @@
 # Vulkan SDK dependency
-# Linux: uses system-installed Vulkan via apt packages
-# Windows: uses VULKAN_SDK environment variable
+# All platforms use the LunarG Vulkan SDK through the VULKAN_SDK environment
+# variable. On Linux, source the SDK's setup-env.sh before building; the
+# distribution packages ship an older loader that lacks Vulkan 1.4.
 
 vulkan:
   description: "Vulkan graphics API"
   
   linux:
-    include_dirs: ["/usr/include"]
-    lib_dirs: ["/usr/lib/x86_64-linux-gnu"]
+    include_dirs: ["${VULKAN_SDK}/include"]
+    lib_dirs: ["${VULKAN_SDK}/lib/VulkanLoader/lib"]
     libs: ["vulkan"]
     defines: ["VK_USE_PLATFORM_XCB_KHR"]
     
-  linux-arm64:
-    lib_dirs: ["/usr/lib/aarch64-linux-gnu"]
-  
   windows:
     include_dirs: ["${VULKAN_SDK}/Include"]
     lib_dirs: ["${VULKAN_SDK}/Lib"]
